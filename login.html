@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>P3 · Entrar</title>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f4f6f3;font-family:system-ui,"Segoe UI",Arial,sans-serif;color:#1c2b22}
+form{background:#fff;padding:28px 24px;border-radius:14px;box-shadow:0 6px 24px rgba(0,0,0,.08);width:min(340px,calc(100vw - 32px));box-sizing:border-box}
+.m{display:inline-grid;place-items:center;width:44px;height:44px;border-radius:10px;background:#1d5c3a;color:#c9e265;font-weight:800}
+h1{font-size:18px;margin:14px 0 4px}p{margin:0 0 18px;color:#5b6b61;font-size:14px}input{width:100%;box-sizing:border-box;padding:12px;border:1px solid #cdd6cf;border-radius:8px;font-size:16px;margin-bottom:10px}
+button{margin-top:2px;width:100%;padding:12px;border:0;border-radius:8px;background:#1d5c3a;color:#fff;font-size:15px;font-weight:600;cursor:pointer}button:disabled{opacity:.6}.e{color:#b3261e;font-size:14px;margin-top:10px}</style></head>
+<body><form id="f"><span class="m">P3</span><h1>Gestão de Usinas</h1><p>Entre com o seu e-mail e senha.</p>
+<input type="email" id="email" placeholder="E-mail" autocomplete="username" required autofocus>
+<input type="password" id="senha" placeholder="Senha" autocomplete="current-password" required>
+<button id="b">Entrar</button><div class="e" id="e" role="alert"></div></form>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script>
+const sb = supabase.createClient(P3_CONFIG.url, P3_CONFIG.chave);
+const erro = t => { document.getElementById("e").textContent = t; };
+sb.auth.getSession().then(({ data }) => { if (data.session) location.href = "index.html"; });
+document.getElementById("f").onsubmit = async ev => {
+  ev.preventDefault();
+  const b = document.getElementById("b");
+  b.disabled = true; erro("");
+  const r = await sb.auth.signInWithPassword({ email: document.getElementById("email").value.trim(), password: document.getElementById("senha").value });
+  if (r.error) { erro("E-mail ou senha incorretos."); b.disabled = false; return; }
+  const a = await sb.rpc("e_autorizado");
+  if (a.error || !a.data) { await sb.auth.signOut(); erro("Este usuário não tem acesso à P3."); b.disabled = false; return; }
+  location.href = "index.html";
+};
+</script></body></html>

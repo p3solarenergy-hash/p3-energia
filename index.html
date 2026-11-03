@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>P3 · Gestão de Usinas</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231d5c3a'/%3E%3Ctext x='16' y='21.5' font-family='Arial' font-weight='800' font-size='14' fill='%23c9e265' text-anchor='middle'%3EP3%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="side" id="side">
+      <div class="brand"><div class="logo">P3</div><div><b>P3 Energy</b><small>Gestão de usinas</small></div></div>
+      <nav id="nav">
+        <a href="#/" data-r="painel"><span class="ic">◧</span>Painel</a>
+        <a href="#/faturas" data-r="faturas"><span class="ic">⇪</span>Faturas Copel</a>
+        <a href="#/fechamento" data-r="fechamento"><span class="ic">▤</span>Fechamento do mês</a>
+        <a href="#/financeiro" data-r="financeiro"><span class="ic">$</span>Financeiro</a>
+        <a href="#/energia" data-r="energia"><span class="ic">ϟ</span>Energia e créditos</a>
+        <a href="#/relatorios" data-r="relatorios"><span class="ic">⎙</span>Relatórios</a>
+        <a href="#/projecao" data-r="projecao"><span class="ic">↗</span>Projeção</a>
+        <p class="nav-sep">Cadastros</p>
+        <a href="#/usinas" data-r="usinas"><span class="ic">☀</span>Usinas</a>
+        <a href="#/clientes" data-r="clientes"><span class="ic">⌂</span>Clientes e UCs</a>
+        <a href="#/donos" data-r="donos"><span class="ic">◉</span>Donos</a>
+        <p class="nav-sep">Controle</p>
+        <a href="#/auditoria" data-r="auditoria"><span class="ic">✓</span>Auditoria <em id="navAlert" hidden></em></a>
+        <a href="#/sistema" data-r="sistema"><span class="ic">⚙</span>Base e backups</a>
+      </nav>
+      <div class="side-foot"><span class="dot"></span><span id="baseInfo">Base na nuvem</span></div>
+      <a href="#" id="sair" class="btn ghost sm" style="margin-top:6px">Sair</a>
+    </aside>
+    <header class="mobile-top"><button class="btn ghost" id="menuBtn" aria-label="Menu">☰</button><b>P3 · Gestão de Usinas</b></header>
+    <main id="main" tabindex="-1"><div class="loading">Carregando a base…</div></main>
+  </div>
+  <div id="toasts" aria-live="polite"></div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";</script>
+  <script src="config.js"></script>
+  <script src="motor.js"></script>
+  <script src="copel.js"></script>
+  <script src="conferencia.js"></script>
+  <script src="projecao.js"></script>
+  <script src="financeiro.js"></script>
+  <script src="relatorios.js"></script>
+  <script src="base.js"></script>
+  <script src="servico.js"></script>
+  <script src="servidor.js"></script>
+  <script src="app.js"></script>
+  <script src="views-faturas.js"></script>
+  <script src="views-gestao.js"></script>
+  <script src="views-cadastros.js"></script>
+  <script src="views-projecao.js"></script>
+  <script src="views-energia.js"></script>
+  <script src="views-financeiro.js"></script>
+  <script>P3.start();</script>
+</body>
+</html>
