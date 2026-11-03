@@ -171,8 +171,9 @@ function cliente(db, q) {
   const ucRows = [...porUc.values()].sort((a, b) => b.sem - a.sem);
   const rotulo = periodo(q.de, q.ate), curto = q.de === q.ate ? motor.monthLabel(q.ate) : rotulo;
   const ecoCls = v => v >= 0 ? "pill" : "pill neg";
-  const cabec = `<th>Mês</th><th class="n">Consumo</th><th class="n">Créditos</th><th class="n">Copel sem usina</th><th class="n">Copel com créditos</th><th class="n">Arrendamento</th>${temGer ? `<th class="n">UC geradora</th>` : ""}<th class="n">Custo total</th><th class="n">Economia</th><th class="n">%</th>`;
-  const celulas = m => `<td class="n">${kwh(m.consumo)}</td><td class="n">${kwh(m.compensado)}</td><td class="n neg">${brl(m.sem)}</td><td class="n">${brl(m.com)}</td><td class="n">${brl(m.arr)}</td>${temGer ? `<td class="n">${brl(m.ger)}</td>` : ""}<td class="n">${brl(m.custo)}</td><td class="n pos"><b>${brl(m.eco)}</b></td><td class="n"><span class="${ecoCls(m.eco)}">${pct(m.sem ? m.eco / m.sem : 0)}</span></td>`;
+  const cabec = `<th>Mês</th><th class="n">Consumo kWh</th><th class="n">Créditos kWh</th><th class="n">Copel sem usina</th><th class="n">Copel com créditos</th><th class="n">Arrendamento</th>${temGer ? `<th class="n">UC geradora</th>` : ""}<th class="n">Custo total</th><th class="n">Economia</th><th class="n">%</th>`;
+  const n0 = v => Math.round(Number(v) || 0).toLocaleString("pt-BR");
+  const celulas = m => `<td class="n">${n0(m.consumo)}</td><td class="n">${n0(m.compensado)}</td><td class="n neg">${brl(m.sem)}</td><td class="n">${brl(m.com)}</td><td class="n">${brl(m.arr)}</td>${temGer ? `<td class="n">${brl(m.ger)}</td>` : ""}<td class="n">${brl(m.custo)}</td><td class="n pos"><b>${brl(m.eco)}</b></td><td class="n"><span class="${ecoCls(m.eco)}">${pct(m.sem ? m.eco / m.sem : 0)}</span></td>`;
 
   const corpo = `
 ${meses.some(m => m.parcial) ? `<div class="box" style="border-left-color:#b4372f;margin:0 0 12px"><h3>Atenção: período com mês parcial</h3><p>Em ${meses.filter(m => m.parcial).map(m => esc(motor.monthLabel(m.competencia))).join(", ")} ainda faltam faturas de outras UCs ligadas à mesma usina. O arrendamento do mês foi todo para as UCs já lançadas; ele será redistribuído quando as demais faturas entrarem. Confira antes de enviar ao cliente.</p></div>` : ""}
@@ -193,7 +194,7 @@ ${meses.some(m => m.parcial) ? `<div class="box" style="border-left-color:#b4372
   <div class="card"><small>Meses com dados</small><b>${doAno.length} / 12</b><span>${ano}</span></div>
 </div>
 <h2>Detalhamento por conta <small>${esc(rotulo)}</small></h2>
-${ucRows.length ? `<table class="cli"><thead><tr><th>Conta / endereço</th><th class="n">Consumo</th><th class="n">Créditos</th><th class="n">Copel sem usina</th><th class="n">Copel c/ usina</th><th class="n">Arrendamento</th>${temGer ? `<th class="n">UC geradora</th>` : ""}<th class="n">Custo total</th><th class="n">Economia</th><th class="n">%</th></tr></thead>
+${ucRows.length ? `<table class="cli"><thead><tr><th>Conta / endereço</th><th class="n">Consumo kWh</th><th class="n">Créditos kWh</th><th class="n">Copel sem usina</th><th class="n">Copel c/ usina</th><th class="n">Arrendamento</th>${temGer ? `<th class="n">UC geradora</th>` : ""}<th class="n">Custo total</th><th class="n">Economia</th><th class="n">%</th></tr></thead>
 <tbody>${ucRows.map(r => `<tr><td><b>${esc(r.uc.descricao || ucNum(r.uc))}</b><small>${esc(ucNum(r.uc))}${r.uc.endereco ? " · " + esc(r.uc.endereco) : ""}</small></td>${celulas(r)}</tr>`).join("")}</tbody>
 ${ucRows.length > 1 ? `<tfoot><tr><td>Total</td>${celulas({ consumo: T("consumo"), compensado: T("compensado"), sem: T("sem"), com: T("com"), arr: T("arr"), ger: T("ger"), custo: T("custo"), eco: T("eco") })}</tr></tfoot>` : ""}</table>` : `<p class="empty">Nenhuma fatura lançada neste período.</p>`}
 ${doAno.length ? `<div class="section"><h2>Extrato mensal ${ano}</h2>
