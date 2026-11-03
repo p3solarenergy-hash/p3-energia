@@ -1,0 +1,16 @@
+{
+  "name": "P3 Gestão de Usinas",
+  "short_name": "P3 Usinas",
+  "description": "Gestão das usinas solares da P3 Energy",
+  "lang": "pt-BR",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4f6f3",
+  "theme_color": "#1d5c3a",
+  "icons": [
+    { "src": "icones/p3-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icones/p3-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icones/p3-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
