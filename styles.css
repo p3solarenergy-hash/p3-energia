@@ -2,7 +2,8 @@
 :root {
   --bg: #f4f6f3; --panel: #ffffff; --panel-2: #f8faf7; --line: #e1e7e0; --line-2: #eef2ed;
   --ink: #16211a; --ink-2: #44524a; --muted: #6c7a71;
-  --brand: #1d5c3a; --brand-2: #2b7a50; --brand-ink: #ffffff; --lime: #c9e265; --lime-ink: #2c3b0b;
+  --brand: #53663a; --brand-2: #6f8a45; --brand-ink: #ffffff; --lime: #c8dc5a; --lime-ink: #2f3a12;
+  --logo-a: #7b934a; --logo-b: #9aae2e;
   --ok: #1d7a45; --ok-bg: #e3f3e7; --warn: #8a5a00; --warn-bg: #fdf1d6; --bad: #a8322b; --bad-bg: #fbe5e2; --info: #2c5f86; --info-bg: #e5eff7;
   --shadow: 0 1px 2px rgba(16, 32, 20, .06), 0 4px 14px rgba(16, 32, 20, .05);
   --radius: 10px; --side: 232px;
@@ -13,7 +14,7 @@
   :root {
     --bg: #0f1511; --panel: #161e18; --panel-2: #1b241e; --line: #2a362d; --line-2: #222c25;
     --ink: #e7eee8; --ink-2: #b9c6bd; --muted: #8b998f;
-    --brand: #2f7d52; --brand-2: #3b9564; --lime: #c9e265;
+    --brand: #6a8146; --brand-2: #8aa356; --lime: #c8dc5a; --logo-a: #a9bb84; --logo-b: #c3d45a;
     --ok: #6fd39b; --ok-bg: #173825; --warn: #f2c25b; --warn-bg: #3a2e12; --bad: #f08a80; --bad-bg: #3d1d1a; --info: #8cc3ec; --info-bg: #15293a;
     --shadow: 0 1px 2px rgba(0,0,0,.4); color-scheme: dark;
   }
@@ -27,7 +28,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 /* Lateral */
 .side { position: sticky; top: 0; height: 100vh; background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; padding: 16px 12px; gap: 10px; overflow-y: auto; }
-.brand { display: flex; gap: 10px; align-items: center; padding: 2px 6px 12px; border-bottom: 1px solid var(--line-2); }
+.brand { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; padding: 4px 6px 12px; border-bottom: 1px solid var(--line-2); }
+.logo-p3 { height: 40px; width: auto; display: block; } .logo-p3 .lg-a { fill: var(--logo-a); } .logo-p3 .lg-b { fill: var(--logo-b); }
 .logo { width: 36px; height: 36px; border-radius: 9px; background: var(--brand); color: var(--lime); font-weight: 800; display: grid; place-items: center; letter-spacing: -.5px; flex: none; }
 .brand b { display: block; font-size: 15px; } .brand small { color: var(--muted); font-size: 12px; }
 nav { display: flex; flex-direction: column; gap: 2px; }

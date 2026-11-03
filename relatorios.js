@@ -23,6 +23,8 @@ const ucFmt = n => { const s = String(n || ""); return s.length >= 11 ? s.padSta
 const ucNum = u => ucFmt((u && (u.numero || u.numero_conces)) || "");
 const iniciais = nome => String(nome || "").split(/\s+/).filter(w => w.length > 2 || /^[A-Z]/.test(w)).map(w => w[0].toUpperCase() + ".").join("") || "—";
 const sum = (arr, f) => arr.reduce((s, x) => s + (Number(f(x)) || 0), 0);
+// Logo da P3 em vetor (redesenhada do arquivo oficial). a = cor do P e do "ENERGY", b = cor do 3.
+const logo = (a, b, alt) => `<svg viewBox="129 169 1743 757" style="height:${alt || 30}px;width:auto;display:block" role="img" aria-label="P3 Energy"><path fill="${a}" d="M129 169H993V623H320V461H817V313H287V926H129Z"/><path fill="${b}" d="M1052 169H1872V926H1052V771H1731V313H1052Z"/><rect fill="${b}" x="1061" y="461" width="636" height="162"/><text x="330" y="923" font-size="206" textLength="690" lengthAdjust="spacingAndGlyphs" fill="${a}" font-family="'Arial Narrow','Roboto Condensed',Arial,sans-serif">ENERGY</text></svg>`;
 const STATUS = { aberto: "Em aberto", cobrado: "Cobrado", recebido: "Recebido", repassado: "Repassado" };
 const GER = { cliente: "paga pelo cliente", dono: "paga pelo dono", p3: "paga pela P3" };
 
@@ -33,11 +35,29 @@ html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 body { margin: 0; font: 9.5pt/1.45 Inter, "Segoe UI", Arial, sans-serif; color: #17221b; background: #fff; }
 .page { max-width: 184mm; margin: 0 auto; }
 @media screen { body { background: #e9ede9; padding: 24px 0; } .page { background: #fff; padding: 14mm 13mm; box-shadow: 0 2px 18px rgba(0,0,0,.12); } }
-header.top { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #1d5c3a; padding-bottom: 10px; margin-bottom: 14px; }
-.brand { display: flex; gap: 10px; align-items: center; }
-.logo { width: 34px; height: 34px; border-radius: 8px; background: #1d5c3a; color: #c9e265; font: 800 15px/34px Inter, Arial; text-align: center; letter-spacing: -.5px; }
-.brand b { display: block; font-size: 11pt; color: #1d5c3a; } .brand small { color: #6b7a70; font-size: 8pt; }
-.doc { text-align: right; } .doc h1 { margin: 0; font-size: 15pt; letter-spacing: -.2px; color: #17221b; } .doc p { margin: 2px 0 0; color: #4b5a50; }
+header.top { display: flex; justify-content: space-between; align-items: center; background: linear-gradient(90deg, #4f5f42, #6f8547); color: #fff; border-radius: 10px; padding: 12px 16px; margin-bottom: 14px; }
+.brand { display: flex; gap: 12px; align-items: center; }
+.brand small { color: #dfe7d2; font-size: 8pt; border-left: 1px solid rgba(255,255,255,.35); padding-left: 12px; }
+.doc { text-align: right; } .doc h1 { margin: 0; font-size: 14pt; letter-spacing: -.2px; color: #fff; } .doc p { margin: 2px 0 0; color: #dfe7d2; }
+/* Extrato do cliente */
+.hero { display: flex; justify-content: space-between; gap: 16px; background: #eef3ea; border: 1px solid #dbe5d5; border-radius: 10px; padding: 12px 16px; margin-bottom: 10px; break-inside: avoid; }
+.hero h3 { margin: 0; font-size: 10.5pt; } .hero p { margin: 3px 0 0; color: #5b6b61; font-size: 8pt; max-width: 85mm; }
+.hero .v { text-align: right; } .hero .v b { display: block; font-size: 20pt; color: #53663a; letter-spacing: -.3px; font-variant-numeric: tabular-nums; }
+.hero .v span { display: block; font-size: 8.3pt; color: #4b5a50; } .hero .v .acum { margin-top: 4px; } .hero .v .acum b { display: inline; font-size: 8.3pt; color: #53663a; letter-spacing: 0; }
+.cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 8px; break-inside: avoid; }
+.card { border: 1px solid #dfe6df; border-radius: 10px; padding: 9px 12px; }
+.card small { display: block; color: #6b7a70; font-size: 7.3pt; text-transform: uppercase; letter-spacing: .4px; font-weight: 600; }
+.card b { display: block; font-size: 14pt; margin: 2px 0 1px; font-variant-numeric: tabular-nums; } .card span { color: #6b7a70; font-size: 7.8pt; line-height: 1.35; display: block; }
+.card.dest { border: 1.5px solid #53663a; } .card.dest b { color: #53663a; } .card b.ver { color: #b4372f; }
+.mini { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 4px; break-inside: avoid; }
+.mini .card b { font-size: 12pt; }
+.pill { display: inline-block; padding: 1px 7px; border-radius: 9px; background: #e2f3e6; color: #4a6b22; font-weight: 600; } .pill.neg { background: #fbe4e1; color: #a1302a; }
+.ind { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; break-inside: avoid; }
+.ind div.c { border: 1px solid #dfe6df; border-radius: 10px; overflow: hidden; }
+.ind h4 { margin: 0; padding: 7px 11px; background: #66793f; color: #fff; font-size: 8.8pt; }
+.ind dl { margin: 0; padding: 7px 11px; display: grid; grid-template-columns: 1fr auto; gap: 3px 8px; font-size: 8.3pt; }
+.ind dt { color: #4b5a50; } .ind dd { margin: 0; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+.nota { color: #6b7a70; font-size: 7.6pt; margin-top: 12px; line-height: 1.5; }
 .who { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 18px; background: #f3f6f2; border-radius: 8px; padding: 9px 12px; margin-bottom: 12px; }
 .who div small { display: block; color: #6b7a70; font-size: 7.5pt; text-transform: uppercase; letter-spacing: .4px; } .who div b { font-weight: 600; }
 .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 0 0 14px; }
@@ -45,25 +65,25 @@ header.top { display: flex; justify-content: space-between; align-items: flex-st
 .kpi small { display: block; color: #6b7a70; font-size: 7.5pt; text-transform: uppercase; letter-spacing: .4px; }
 .kpi b { display: block; font-size: 13pt; margin-top: 2px; font-variant-numeric: tabular-nums; }
 .kpi span { color: #6b7a70; font-size: 8pt; }
-.kpi.lead { background: #1d5c3a; border-color: #1d5c3a; color: #fff; } .kpi.lead small, .kpi.lead span { color: #c9e2c9; } .kpi.lead b { color: #d8ef7a; }
-h2 { font-size: 10.5pt; margin: 16px 0 6px; color: #1d5c3a; break-after: avoid; }
+.kpi.lead { background: #53663a; border-color: #53663a; color: #fff; } .kpi.lead small, .kpi.lead span { color: #c9e2c9; } .kpi.lead b { color: #d8ef7a; }
+h2 { font-size: 10.5pt; margin: 16px 0 6px; color: #53663a; break-after: avoid; }
 h2 small { color: #6b7a70; font-weight: 400; font-size: 8.5pt; margin-left: 6px; }
 table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; break-inside: auto; }
 th, td { padding: 4px 4px; font-size: 8.3pt; border-bottom: 1px solid #e3e9e3; text-align: left; vertical-align: top; }
 th { font-size: 6.8pt; text-transform: uppercase; letter-spacing: .2px; color: #4b5a50; background: #f3f6f2; font-weight: 600; }
 td.n, th.n { text-align: right; white-space: nowrap; }
 tr { break-inside: avoid; }
-tfoot td { font-weight: 700; border-top: 1.5px solid #1d5c3a; border-bottom: 0; background: #fafcf9; }
+tfoot td { font-weight: 700; border-top: 1.5px solid #53663a; border-bottom: 0; background: #fafcf9; }
 td small { display: block; color: #6b7a70; font-size: 7.5pt; font-weight: 400; }
-.pos { color: #1d7a45; } .neg { color: #b4372f; }
+.pos { color: #4f7d28; } .neg { color: #b4372f; }
 .badge { display: inline-block; padding: 1px 6px; border-radius: 9px; font-size: 7.5pt; background: #eef2ee; color: #4b5a50; }
-.badge.ok { background: #e2f3e6; color: #1d6b3d; } .badge.warn { background: #fdf1d8; color: #8a5a00; } .badge.bad { background: #fbe4e1; color: #a1302a; }
-.box { border: 1px solid #dfe6df; border-left: 3px solid #1d5c3a; border-radius: 6px; padding: 8px 11px; margin-top: 14px; background: #fbfcfb; break-inside: avoid; }
+.badge.ok { background: #e2f3e6; color: #4a6b22; } .badge.warn { background: #fdf1d8; color: #8a5a00; } .badge.bad { background: #fbe4e1; color: #a1302a; }
+.box { border: 1px solid #dfe6df; border-left: 3px solid #53663a; border-radius: 6px; padding: 8px 11px; margin-top: 14px; background: #fbfcfb; break-inside: avoid; }
 .box h3 { margin: 0 0 4px; font-size: 9pt; } .box p, .box li { margin: 2px 0; color: #34433a; font-size: 8.5pt; } .box ul { margin: 0; padding-left: 16px; }
 .section { break-inside: avoid-page; }
 .bars { display: flex; align-items: flex-end; gap: 4px; height: 70px; margin: 6px 0 2px; }
 .bars div { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: stretch; gap: 1px; }
-.bars i { display: block; background: #c9d8cc; border-radius: 2px 2px 0 0; } .bars i.e { background: #2f8f57; }
+.bars i { display: block; background: #c9d8cc; border-radius: 2px 2px 0 0; } .bars i.e { background: #7b934a; }
 .bars-l { display: flex; gap: 4px; font-size: 7pt; color: #6b7a70; } .bars-l span { flex: 1; text-align: center; }
 .legend { font-size: 7.5pt; color: #6b7a70; } .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin: 0 3px 0 8px; vertical-align: -1px; }
 .empty { color: #6b7a70; font-style: italic; padding: 10px 0; }
@@ -73,7 +93,7 @@ td small { display: block; color: #6b7a70; font-size: 7.5pt; font-weight: 400; }
 function shell(titulo, subtitulo, corpo, meta, rodape) {
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${esc(titulo)} · ${esc(subtitulo)}</title>
 <meta name="viewport" content="width=device-width, initial-scale=1"><style>${CSS}</style></head><body><div class="page">
-<header class="top"><div class="brand"><div class="logo">P3</div><div><b>P3 Energy</b><small>Gestão de usinas solares</small></div></div>
+<header class="top"><div class="brand">${logo("#eef3e2", "#cfe07a", 34)}<small>Gestão de usinas solares</small></div>
 <div class="doc"><h1>${esc(titulo)}</h1><p>${esc(subtitulo)}</p></div></header>
 ${corpo}
 <div class="foot"><span>Gerado em ${agora()} · ${esc(rodape || "números calculados a partir das faturas da Copel lançadas na base P3.")}</span><span>${esc(meta || "")}</span></div>
@@ -105,28 +125,11 @@ function grafico(meses, series, opts) {
   <div class="legend">${series.map(sr => `<i style="background:${sr.cor}"></i>${esc(sr.nome)}`).join("")}</div>`;
 }
 
-// Colunas com o valor escrito em cima (negativas em vermelho, para baixo).
-function colunas(meses, get) {
-  const W = 680, H = 150, L = 8, R = 8, T = 16, B = 22;
-  const vals = meses.map(get), topo = Math.max(1, ...vals), fundo = Math.min(0, ...vals);
-  const y = v => T + (H - T - B) * (topo - v) / (topo - fundo);
-  const larg = (W - L - R) / meses.length, bw = Math.min(46, larg * 0.62);
-  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;margin:4px 0 2px" role="img"><line x1="${L}" x2="${W - R}" y1="${y(0)}" y2="${y(0)}" stroke="#c9d3ca"/>
-  ${meses.map((m, i) => {
-    const v = get(m), cx = L + larg * (i + 0.5), cor = v >= 0 ? "#2f8f57" : "#b4372f";
-    return `<rect x="${cx - bw / 2}" y="${Math.min(y(v), y(0))}" width="${bw}" height="${Math.max(1, Math.abs(y(v) - y(0)))}" rx="2" fill="${cor}"/>
-    <text x="${cx}" y="${v >= 0 ? y(v) - 4 : y(v) + 10}" text-anchor="middle" font-size="8" font-weight="700" fill="${cor}">${esc(brlK(v))}</text>
-    <text x="${cx}" y="${H - 6}" text-anchor="middle" font-size="8" fill="#6b7a70">${esc(motor.monthLabel(m.competencia))}</text>`;
-  }).join("")}</svg>`;
-}
-
 // ───────────── Cliente ─────────────
 function cliente(db, q) {
   const cli = (db.clientes || []).find(c => c.id === q.cliente_id);
   if (!cli) throw new Error("Cliente não encontrado.");
-  const p = motor.calcPeriodo(db, q.de, q.ate, { cliente_id: cli.id });
-  const ix = p.ix;
-  const meses = p.meses.map(m => {
+  const linha = m => {
     const ucs = m.ucs;
     return {
       competencia: m.competencia, ucs,
@@ -134,69 +137,100 @@ function cliente(db, q) {
       arr: sum(ucs, u => u.arrendamento), ger: sum(ucs, u => u.geradora), custo: sum(ucs, u => u.custoTotal), eco: sum(ucs, u => u.economia), nFat: sum(ucs, u => u.faturas.length),
       parcial: ucs.some(u => u.parcial)
     };
-  }).filter(m => m.nFat > 0);
+  };
+  const p = motor.calcPeriodo(db, q.de, q.ate, { cliente_id: cli.id });
+  const ix = p.ix;
+  const meses = p.meses.map(linha).filter(m => m.nFat > 0);
   const T = k => sum(meses, m => m[k]);
-  const temGer = T("ger") > 0;
   const ucsCli = (db.ucs || []).filter(u => u.cliente_id === cli.id);
   const usinasCli = [...new Set(ucsCli.flatMap(u => (ix.vincPorUc.get(u.id) || []).map(v => v.usina_id)))].map(id => ix.usinas.get(id)).filter(Boolean);
   const ecoPct = T("sem") > 0 ? T("eco") / T("sem") : 0;
-  // Acumulado: da primeira fatura do cliente até o fim do período escolhido, com a mesma conta do extrato.
+
+  // Histórico: da primeira fatura do cliente até o fim do período, com a mesma conta do extrato.
   const ucIds = new Set(ucsCli.map(u => u.id));
   const primeira = (db.faturas || []).filter(f => ucIds.has(f.uc_id) && f.competencia).map(f => f.competencia).sort()[0];
-  let acum = 0;
-  const hist = primeira && primeira <= q.ate ? motor.calcPeriodo(db, primeira, q.ate, { cliente_id: cli.id }).meses.map(m => ({
-    competencia: m.competencia, sem: sum(m.ucs, u => u.semUsina), eco: sum(m.ucs, u => u.economia), nFat: sum(m.ucs, u => u.faturas.length)
-  })).filter(m => m.nFat > 0).map(m => ({ ...m, acum: (acum += m.eco) })) : [];
-  const semHist = sum(hist, m => m.sem);
+  let soma = 0;
+  const hist = primeira && primeira <= q.ate ? motor.calcPeriodo(db, primeira, q.ate, { cliente_id: cli.id }).meses.map(linha).filter(m => m.nFat > 0).map(m => ({ ...m, acum: (soma += m.eco) })) : [];
+  const ano = q.ate.slice(0, 4);
+  const doAno = hist.filter(m => m.competencia.startsWith(ano));
+  const A = k => sum(doAno, m => m[k]);
+  const desdeInicio = soma;
+  const temGer = T("ger") > 0 || A("ger") > 0;
+  // Comparação com o mês anterior (só quando o período é um mês).
+  const iUlt = hist.findIndex(m => m.competencia === q.ate);
+  const ant = q.de === q.ate && iUlt > 0 ? hist[iUlt - 1] : null;
+  const varAnt = ant && ant.eco ? (T("eco") - ant.eco) / Math.abs(ant.eco) : null;
 
   const porUc = new Map();
   for (const m of meses) for (const u of m.ucs) {
-    const r = porUc.get(u.uc_id) || { uc: u.uc, n: 0, consumo: 0, compensado: 0, sem: 0, com: 0, arr: 0, ger: 0, custo: 0, eco: 0 };
-    r.n += u.faturas.length; r.consumo += u.consumoKwh; r.compensado += u.compensadoKwh; r.sem += u.semUsina; r.com += u.comUsina; r.arr += u.arrendamento; r.ger += u.geradora; r.custo += u.custoTotal; r.eco += u.economia;
+    const r = porUc.get(u.uc_id) || { uc: u.uc, consumo: 0, compensado: 0, sem: 0, com: 0, arr: 0, ger: 0, custo: 0, eco: 0 };
+    r.consumo += u.consumoKwh; r.compensado += u.compensadoKwh; r.sem += u.semUsina; r.com += u.comUsina; r.arr += u.arrendamento; r.ger += u.geradora; r.custo += u.custoTotal; r.eco += u.economia;
     porUc.set(u.uc_id, r);
   }
   const ucRows = [...porUc.values()].sort((a, b) => b.sem - a.sem);
-  const ultimo = meses[meses.length - 1];
-  const faturasMes = ultimo ? (db.faturas || []).filter(f => f.competencia === ultimo.competencia && porUc.has(f.uc_id)) : [];
+  const rotulo = periodo(q.de, q.ate), curto = q.de === q.ate ? motor.monthLabel(q.ate) : rotulo;
+  const ecoCls = v => v >= 0 ? "pill" : "pill neg";
+  const cabec = `<th>Mês</th><th class="n">Consumo</th><th class="n">Créditos</th><th class="n">Copel sem usina</th><th class="n">Copel com créditos</th><th class="n">Arrendamento</th>${temGer ? `<th class="n">UC geradora</th>` : ""}<th class="n">Custo total</th><th class="n">Economia</th><th class="n">%</th>`;
+  const celulas = m => `<td class="n">${kwh(m.consumo)}</td><td class="n">${kwh(m.compensado)}</td><td class="n neg">${brl(m.sem)}</td><td class="n">${brl(m.com)}</td><td class="n">${brl(m.arr)}</td>${temGer ? `<td class="n">${brl(m.ger)}</td>` : ""}<td class="n">${brl(m.custo)}</td><td class="n pos"><b>${brl(m.eco)}</b></td><td class="n"><span class="${ecoCls(m.eco)}">${pct(m.sem ? m.eco / m.sem : 0)}</span></td>`;
 
   const corpo = `
-<div class="who">
-  <div><small>Cliente</small><b>${esc(cli.nome)}</b>${cli.documento ? ` · ${esc(cli.documento)}` : ""}</div>
-  <div><small>Período</small><b>${esc(periodo(q.de, q.ate))}</b></div>
-  <div><small>Unidades consumidoras</small><b>${ucsCli.length}</b> ${ucsCli.length ? `· ${ucsCli.slice(0, 3).map(u => esc(ucNum(u))).join(", ")}${ucsCli.length > 3 ? "…" : ""}` : ""}</div>
-  <div><small>Energia de</small><b>${usinasCli.map(u => esc(u.nome)).join(", ") || "—"}</b></div>
-</div>
 ${meses.some(m => m.parcial) ? `<div class="box" style="border-left-color:#b4372f;margin:0 0 12px"><h3>Atenção: período com mês parcial</h3><p>Em ${meses.filter(m => m.parcial).map(m => esc(motor.monthLabel(m.competencia))).join(", ")} ainda faltam faturas de outras UCs ligadas à mesma usina. O arrendamento do mês foi todo para as UCs já lançadas; ele será redistribuído quando as demais faturas entrarem. Confira antes de enviar ao cliente.</p></div>` : ""}
-<div class="kpis">
-  <div class="kpi"><small>Copel sem a usina</small><b>${brl(T("sem"))}</b><span>quanto seria a conta</span></div>
-  <div class="kpi"><small>Você pagou</small><b>${brl(T("custo"))}</b><span>Copel ${brl(T("com"))}<br>Arrendamento ${brl(T("arr"))}${temGer ? `<br>UC geradora ${brl(T("ger"))}` : ""}</span></div>
-  <div class="kpi lead"><small>Economia</small><b>${brl(T("eco"))}</b><span>${pct(ecoPct)} da conta sem usina</span></div>
-  <div class="kpi"><small>Energia compensada</small><b>${kwh(T("compensado"))}</b><span>de ${kwh(T("consumo"))} consumidos</span></div>
+<div class="hero">
+  <div><h3>Economia com a energia da usina</h3><p>Diferença entre a conta da Copel sem a usina e o que foi pago com ela: Copel com os créditos + arrendamento${temGer ? " + parte da conta da UC geradora" : ""}.</p></div>
+  <div class="v"><b>${brl(T("eco"))}</b><span>${pct(ecoPct)} · ${esc(curto)}${varAnt != null ? ` · ${varAnt >= 0 ? "▲" : "▼"} ${pct(Math.abs(varAnt))} vs. mês anterior` : ""}</span>
+  <span class="acum">Acumulado ${ano}: <b>${brl(A("eco"))}</b> (${pct(A("sem") ? A("eco") / A("sem") : 0)}) · Desde o início: <b>${brl(desdeInicio)}</b></span></div>
 </div>
-${meses.length > 1 ? `<div class="section"><h2>Economia mês a mês</h2>${colunas(meses, m => m.eco)}</div>
-<div class="section"><h2>Evolução <small>quanto seria a conta × quanto você pagou</small></h2>${grafico(meses, [{ get: m => m.sem, cor: "#b4372f", nome: "Copel sem a usina" }, { get: m => m.custo, cor: "#1d5c3a", nome: "Você pagou (Copel + arrendamento + UC geradora)" }], { justo: true })}</div>` : ""}
-<h2>Extrato por competência</h2>
-${meses.length ? `<table><thead><tr><th>Mês</th><th class="n">Consumo</th><th class="n">Compensado</th><th class="n">Copel sem usina</th><th class="n">Copel com usina</th><th class="n">Arrendamento</th>${temGer ? `<th class="n">UC geradora</th>` : ""}<th class="n">Total pago</th><th class="n">Economia</th></tr></thead>
-<tbody>${meses.map(m => `<tr><td><b>${esc(motor.monthLabel(m.competencia))}</b>${m.parcial ? `<small class="neg">parcial*</small>` : ""}</td><td class="n">${kwh(m.consumo)}</td><td class="n">${kwh(m.compensado)}</td><td class="n">${brl(m.sem)}</td><td class="n">${brl(m.com)}</td><td class="n">${brl(m.arr)}</td>${temGer ? `<td class="n">${brl(m.ger)}</td>` : ""}<td class="n">${brl(m.custo)}</td><td class="n ${m.eco >= 0 ? "pos" : "neg"}"><b>${brl(m.eco)}</b><small>${pct(m.sem ? m.eco / m.sem : 0)}</small></td></tr>`).join("")}</tbody>
-<tfoot><tr><td>Total</td><td class="n">${kwh(T("consumo"))}</td><td class="n">${kwh(T("compensado"))}</td><td class="n">${brl(T("sem"))}</td><td class="n">${brl(T("com"))}</td><td class="n">${brl(T("arr"))}</td>${temGer ? `<td class="n">${brl(T("ger"))}</td>` : ""}<td class="n">${brl(T("custo"))}</td><td class="n">${brl(T("eco"))}<small>${pct(ecoPct)}</small></td></tr></tfoot></table>` : `<p class="empty">Nenhuma fatura lançada neste período.</p>`}
-${ucRows.length > 1 ? `<h2>Por unidade consumidora <small>${esc(periodo(q.de, q.ate))}</small></h2>
-<table><thead><tr><th>UC</th><th class="n">Faturas</th><th class="n">Compensado</th><th class="n">Copel sem usina</th><th class="n">Total pago</th><th class="n">Economia</th></tr></thead>
-<tbody>${ucRows.map(r => `<tr><td><b>${esc(ucNum(r.uc))}</b><small>${esc(r.uc.descricao || r.uc.endereco || "")}</small></td><td class="n">${r.n}</td><td class="n">${kwh(r.compensado)}</td><td class="n">${brl(r.sem)}</td><td class="n">${brl(r.custo)}</td><td class="n ${r.eco >= 0 ? "pos" : "neg"}">${brl(r.eco)}<small>${pct(r.sem ? r.eco / r.sem : 0)}</small></td></tr>`).join("")}</tbody></table>` : ""}
-${faturasMes.length ? `<h2>Faturas Copel de ${esc(motor.monthLabel(ultimo.competencia))}</h2>
-<table><thead><tr><th>UC</th><th>Referência</th><th>Leitura</th><th>Vencimento</th><th class="n">Consumo</th><th class="n">Compensado</th><th class="n">Créditos da usina</th><th class="n">Total Copel</th></tr></thead>
-<tbody>${faturasMes.map(f => { const u = ix.ucs.get(f.uc_id) || {}; return `<tr><td>${esc(ucNum(u))}<small>${esc(u.descricao || "")}</small></td><td>${esc(motor.monthLabel(f.referencia))}</td><td>${dataBR(f.leitura_anterior)} a ${dataBR(f.leitura_atual)}</td><td>${dataBR(f.vencimento)}</td><td class="n">${kwh(f.consumo_kwh)}</td><td class="n">${kwh(f.compensado_kwh)}</td><td class="n pos">${brl(f.valor_creditos)}</td><td class="n">${brl(f.total)}</td></tr>`; }).join("")}</tbody></table>` : ""}
-${hist.length ? `<div class="section"><h2>Economia acumulada <small>desde ${esc(motor.monthLabel(hist[0].competencia))}</small></h2>
-<div class="kpis" style="grid-template-columns:repeat(3,1fr)">
-  <div class="kpi lead"><small>Economia acumulada</small><b>${brl(acum)}</b><span>${hist.length} mês(es) com a usina P3</span></div>
-  <div class="kpi"><small>Conta sem a usina</small><b>${brl(semHist)}</b><span>soma do mesmo período</span></div>
-  <div class="kpi"><small>Economia média</small><b>${brl(acum / hist.length)}</b><span>por mês · ${pct(semHist ? acum / semHist : 0)} da conta</span></div>
+<div class="cards">
+  <div class="card"><small>Copel sem usina</small><b class="ver">${brl(T("sem"))}</b><span>O que pagaria sem a energia solar</span></div>
+  <div class="card dest"><small>Custo total com usina</small><b>${brl(T("custo"))}</b><span>Copel com créditos ${brl(T("com"))}<br>Arrendamento ${brl(T("arr"))}${temGer ? `<br>UC geradora ${brl(T("ger"))}` : ""}</span></div>
+  <div class="card"><small>Arrendamento pago</small><b>${brl(T("arr"))}</b><span>${usinasCli.length ? esc(usinasCli.map(u => u.nome).join(", ")) : "Usina"} · ${esc(curto)}</span></div>
 </div>
-${hist.length > 1 ? grafico(hist, [{ get: m => m.acum, cor: "#2f8f57", nome: "Economia acumulada", area: true, rotuloFim: true }], { altura: 140 }) : ""}</div>` : ""}
-<div class="box"><h3>Como calculamos</h3><ul>
-<li><b>Copel sem a usina</b> = total da fatura + valor dos créditos de energia da usina que a própria Copel abateu na fatura (linhas "Energia injetada").</li>
-<li><b>Você pagou</b> = total da fatura da Copel + arrendamento da usina${temGer ? " + parte da fatura da UC geradora" : ""}. O arrendamento é dividido entre as UCs pelos kWh que cada uma recebeu da usina.</li>
-<li><b>Economia</b> = Copel sem a usina − você pagou. Tudo sai dos valores das faturas originais da Copel, arquivadas pela P3.</li></ul></div>`;
-  return shell("Extrato de economia", cli.nome, corpo, `${meses.length} mês(es) · ${sum(meses, m => m.nFat)} fatura(s)`);
+<div class="mini">
+  <div class="card"><small>kWh consumido</small><b>${Math.round(T("consumo")).toLocaleString("pt-BR")}</b></div>
+  <div class="card"><small>kWh em créditos</small><b>${Math.round(T("compensado")).toLocaleString("pt-BR")}</b><span>${pct(T("consumo") ? T("compensado") / T("consumo") : 0)} do consumo</span></div>
+  <div class="card"><small>Unidades</small><b>${ucsCli.length}</b><span>contas vinculadas</span></div>
+  <div class="card"><small>Meses com dados</small><b>${doAno.length} / 12</b><span>${ano}</span></div>
+</div>
+<h2>Detalhamento por conta <small>${esc(rotulo)}</small></h2>
+${ucRows.length ? `<table><thead><tr><th>Conta / endereço</th><th class="n">Consumo</th><th class="n">Créditos</th><th class="n">Copel sem usina</th><th class="n">Copel c/ usina</th><th class="n">Arrendamento</th>${temGer ? `<th class="n">UC geradora</th>` : ""}<th class="n">Custo total</th><th class="n">Economia</th><th class="n">%</th></tr></thead>
+<tbody>${ucRows.map(r => `<tr><td><b>${esc(r.uc.descricao || ucNum(r.uc))}</b><small>${esc(ucNum(r.uc))}${r.uc.endereco ? " · " + esc(r.uc.endereco) : ""}</small></td>${celulas(r)}</tr>`).join("")}</tbody>
+${ucRows.length > 1 ? `<tfoot><tr><td>Total</td>${celulas({ consumo: T("consumo"), compensado: T("compensado"), sem: T("sem"), com: T("com"), arr: T("arr"), ger: T("ger"), custo: T("custo"), eco: T("eco") })}</tr></tfoot>` : ""}</table>` : `<p class="empty">Nenhuma fatura lançada neste período.</p>`}
+${doAno.length ? `<div class="section"><h2>Extrato mensal ${ano}</h2>
+${doAno.length > 1 ? `${combo(doAno)}<div class="legend"><i style="background:#9aae2e"></i>Economia do mês<i style="background:#53663a"></i>Acumulado ${ano}</div>` : ""}</div>
+<table style="margin-top:8px"><thead><tr>${cabec}</tr></thead>
+<tbody>${doAno.map(m => `<tr><td><b>${esc(motor.monthLabel(m.competencia))}</b>${m.parcial ? `<small class="neg">parcial*</small>` : ""}</td>${celulas(m)}</tr>`).join("")}</tbody>
+<tfoot><tr><td>Total ${ano}</td>${celulas({ consumo: A("consumo"), compensado: A("compensado"), sem: A("sem"), com: A("com"), arr: A("arr"), ger: A("ger"), custo: A("custo"), eco: A("eco") })}</tr></tfoot></table>` : ""}
+${doAno.length > 1 ? `<div class="section"><h2>Evolução da conta <small>Copel sem usina × custo total com usina</small></h2>${grafico(doAno, [{ get: m => m.sem, cor: "#b4372f", nome: "Copel sem usina" }, { get: m => m.custo, cor: "#53663a", nome: "Custo total com usina" }], { justo: true, altura: 130 })}</div>` : ""}
+<h2>Indicadores gerais</h2>
+<div class="ind">
+  <div class="c"><h4>${esc(cli.nome)}</h4><dl>${cli.documento ? `<dt>CPF/CNPJ</dt><dd>${esc(cli.documento)}</dd>` : ""}<dt>Unidades beneficiárias</dt><dd>${ucsCli.length}</dd><dt>Usina(s)</dt><dd>${esc(usinasCli.map(u => u.nome).join(", ") || "—")}</dd><dt>Cliente desde</dt><dd>${hist.length ? esc(motor.monthLabel(hist[0].competencia)) : "—"}</dd></dl></div>
+  <div class="c"><h4>Resultado · ${esc(curto)}</h4><dl><dt>kWh consumido</dt><dd>${kwh(T("consumo"))}</dd><dt>kWh em créditos</dt><dd>${kwh(T("compensado"))}</dd><dt>Economia</dt><dd class="pos">${brl(T("eco"))} (${pct(ecoPct)})</dd><dt>Acumulado ${ano}</dt><dd class="pos">${brl(A("eco"))}</dd><dt>Desde o início</dt><dd class="pos">${brl(desdeInicio)}</dd></dl></div>
+  <div class="c"><h4>Composição do custo</h4><dl><dt>Copel com créditos</dt><dd>${brl(T("com"))}</dd><dt>Arrendamento</dt><dd>${brl(T("arr"))}</dd>${temGer ? `<dt>UC geradora</dt><dd>${brl(T("ger"))}</dd>` : ""}<dt>Custo total</dt><dd>${brl(T("custo"))}</dd><dt>Redução da conta</dt><dd class="pos">− ${brl(T("eco"))}</dd></dl></div>
+</div>
+<p class="nota"><b>Como calculamos.</b> Copel sem usina = total da fatura + valor dos créditos da usina que a própria Copel abateu (linhas "Energia injetada"). Custo total = fatura da Copel + arrendamento${temGer ? " + parte da fatura da UC geradora" : ""}; o arrendamento é dividido entre as contas pelos kWh que cada uma recebeu. Economia = Copel sem usina − custo total. Tudo sai das faturas originais da Copel, arquivadas pela P3.</p>`;
+  return shell("Relatório de economia", `${cli.nome} · ${rotulo}`, corpo, `${meses.length} mês(es) · ${sum(meses, m => m.nFat)} fatura(s)`);
+}
+
+// Colunas da economia do mês (com o valor escrito) e linha do acumulado do ano, cada uma na sua escala.
+function combo(meses) {
+  const W = 680, H = 180, L = 10, R = 10, T = 22, B = 22;
+  const larg = (W - L - R) / meses.length, bw = Math.min(42, larg * 0.56);
+  const maxE = Math.max(1, ...meses.map(m => m.eco)), minE = Math.min(0, ...meses.map(m => m.eco));
+  const yE = v => T + 26 + (H - T - B - 26) * (maxE - v) / (maxE - minE);
+  let a = 0; const acs = meses.map(m => (a += m.eco));
+  const maxA = Math.max(1, ...acs), yA = v => T + (H - T - B - 40) * (1 - Math.max(0, v) / maxA);
+  const cx = i => L + larg * (i + 0.5);
+  const barras = meses.map((m, i) => {
+    const v = m.eco, cor = v >= 0 ? "#9aae2e" : "#b4372f", y0 = yE(0), y1 = yE(v);
+    return `<rect x="${cx(i) - bw / 2}" y="${Math.min(y0, y1)}" width="${bw}" height="${Math.max(1, Math.abs(y1 - y0))}" rx="3" fill="${cor}"/>
+    <text x="${cx(i)}" y="${v >= 0 ? y1 - 4 : y1 + 10}" text-anchor="middle" font-size="7.5" fill="#4b5a50">${esc(brlK(v))}</text>
+    <text x="${cx(i)}" y="${H - 6}" text-anchor="middle" font-size="8" fill="#6b7a70">${esc(motor.monthLabel(m.competencia))}</text>`;
+  }).join("");
+  const pts = acs.map((v, i) => `${cx(i).toFixed(1)},${yA(v).toFixed(1)}`).join(" ");
+  const u = meses.length - 1;
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;margin:4px 0 2px" role="img"><line x1="${L}" x2="${W - R}" y1="${yE(0)}" y2="${yE(0)}" stroke="#d5ddd3"/>${barras}
+  <polyline points="${pts}" fill="none" stroke="#53663a" stroke-width="2.2" stroke-linejoin="round"/>${acs.map((v, i) => `<circle cx="${cx(i)}" cy="${yA(v)}" r="2.8" fill="#fff" stroke="#53663a" stroke-width="1.8"/>`).join("")}
+  <text x="${cx(u)}" y="${yA(acs[u]) - 8}" text-anchor="${meses.length > 1 ? "end" : "middle"}" font-size="9" font-weight="700" fill="#53663a">${esc(brl(acs[u]))}</text></svg>`;
 }
 
 // ───────────── Dono ─────────────
@@ -307,7 +341,7 @@ ${erros.length ? `<ul>${erros.map(a => `<li>${esc(a.texto)}</li>`).join("")}</ul
 // Página 1: o que o cliente quer ver — economia por mês, % médio e o ano, gráfico e tabela enxuta.
 // Página 2: como chegamos lá — energia/geração, transição do Fio B, tarifas e premissas.
 const CSS_PROJ = `
-.hero { display: grid; grid-template-columns: 1.25fr 1fr 1fr; gap: 0; background: #1d5c3a; color: #fff; border-radius: 10px; overflow: hidden; margin: 2px 0 9px; }
+.hero { display: grid; grid-template-columns: 1.25fr 1fr 1fr; gap: 0; background: #53663a; color: #fff; border-radius: 10px; overflow: hidden; margin: 2px 0 9px; }
 .hero > div { padding: 9px 15px; border-left: 1px solid rgba(255,255,255,.14); }
 .hero > div:first-child { border-left: 0; }
 .hero small { display: block; font-size: 7.5pt; text-transform: uppercase; letter-spacing: .5px; color: #c9e2c9; }
@@ -317,20 +351,20 @@ const CSS_PROJ = `
 .compare { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px; border: 1px solid #dfe6df; border-radius: 10px; padding: 7px 14px; margin-bottom: 10px; }
 .compare small { display: block; font-size: 7.5pt; text-transform: uppercase; letter-spacing: .4px; color: #6b7a70; }
 .compare b { font-size: 14pt; font-variant-numeric: tabular-nums; }
-.compare .arrow { font-size: 16pt; color: #2f8f57; }
+.compare .arrow { font-size: 16pt; color: #7b934a; }
 .compare .right { text-align: right; }
 .compare em, .who em { display: block; font-style: normal; color: #6b7a70; font-size: 7.8pt; margin-top: 1px; }
 .who3 { grid-template-columns: 1.3fr 1fr 1fr; }
 .mchart { display: flex; align-items: flex-end; gap: 6px; height: 68px; margin: 2px 0 2px; }
 .mchart .c { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; }
-.mchart-t { display: flex; gap: 6px; margin-top: 4px; } .mchart-t span { flex: 1; text-align: center; font-size: 7.4pt; font-weight: 700; color: #1d7a45; } .mchart-t span.neg { color: #b4372f; }
+.mchart-t { display: flex; gap: 6px; margin-top: 4px; } .mchart-t span { flex: 1; text-align: center; font-size: 7.4pt; font-weight: 700; color: #4f7d28; } .mchart-t span.neg { color: #b4372f; }
 .mchart .bars { display: flex; gap: 2px; align-items: flex-end; width: 100%; }
 .mchart .bars i { flex: 1; display: block; border-radius: 2px 2px 0 0; }
-.mchart .h { background: #c9d8cc; } .mchart .p { background: #2f8f57; }
+.mchart .h { background: #c9d8cc; } .mchart .p { background: #7b934a; }
 .mchart-l { display: flex; gap: 6px; font-size: 7pt; color: #6b7a70; } .mchart-l span { flex: 1; text-align: center; }
 table.proj td, table.proj th { font-size: 8.1pt; padding: 1.9px 6px; }
 table.proj td.eco { font-weight: 700; }
-.pill { display: inline-block; min-width: 42px; text-align: right; padding: 0 5px; border-radius: 8px; background: #e2f3e6; color: #1d6b3d; font-weight: 700; font-size: 7.8pt; }
+.pill { display: inline-block; min-width: 42px; text-align: right; padding: 0 5px; border-radius: 8px; background: #e2f3e6; color: #4a6b22; font-weight: 700; font-size: 7.8pt; }
 .pill.neg { background: #fbe4e1; color: #a1302a; }
 .cols2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .mini td, .mini th { font-size: 7.9pt; padding: 2px 5px; }
@@ -387,7 +421,7 @@ function projecao(pj) {
 <div class="mchart-t">${M.map(m => `<span class="${m.economia < 0 ? "neg" : ""}">${m.hoje ? pct(m.economia / m.hoje) : ""}</span>`).join("")}</div>
 <div class="mchart">${M.map(m => `<div class="c"><div class="bars"><i class="h" style="height:${m.hoje / max * 64}px"></i><i class="p" style="height:${Math.max(0, m.total) / max * 64}px"></i></div></div>`).join("")}</div>
 <div class="mchart-l">${M.map(m => `<span>${esc(motor.monthLabel(m.mes))}</span>`).join("")}</div>
-<div class="legend"><i style="background:#c9d8cc"></i>Conta hoje<i style="background:#2f8f57"></i>Com a usina P3 · acima de cada mês, a economia em %</div>
+<div class="legend"><i style="background:#c9d8cc"></i>Conta hoje<i style="background:#7b934a"></i>Com a usina P3 · acima de cada mês, a economia em %</div>
 <table class="proj" style="margin-top:10px"><thead><tr><th>Mês</th><th class="n">Consumo</th><th class="n">Conta hoje</th><th class="n">Com a usina P3</th><th class="n">Economia</th><th class="n">%</th></tr></thead>
 <tbody>${M.map(m => `<tr><td><b>${esc(motor.monthLabel(m.mes))}</b></td><td class="n">${kwh(m.consumo)}</td><td class="n">${brl(m.hoje)}</td><td class="n">${brl(m.total)}</td><td class="n eco ${m.economia >= 0 ? "pos" : "neg"}">${brl(m.economia)}</td><td class="n"><span class="pill ${m.economia < 0 ? "neg" : ""}">${pct(m.hoje ? m.economia / m.hoje : 0)}</span></td></tr>`).join("")}</tbody>
 <tfoot><tr><td>Total ${nM} meses</td><td class="n">${kwh(A.consumo)}</td><td class="n">${brl(A.hoje)}</td><td class="n">${brl(A.total)}</td><td class="n">${brl(A.economia)}</td><td class="n"><span class="pill">${pct(pctMedio)}</span></td></tr>
