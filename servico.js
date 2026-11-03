@@ -163,7 +163,12 @@
       const comp = {};
       if (f.uc && !uc.numero) comp.numero = f.uc;
       if (f.ucConces && !uc.numero_conces) comp.numero_conces = f.ucConces;
-      if (Object.keys(comp).length) await b.update("ucs", ucId, comp, `UC ${uc.numero || uc.numero_conces}: número completado pela fatura`);
+      // E os dados de acesso à Copel, quando ainda estão em branco (nunca troca o que já foi digitado).
+      if (f.titular && !uc.titular) comp.titular = f.titular;
+      if (f.documento && !uc.titular_documento) comp.titular_documento = f.documento;
+      if (f.cidade && !uc.cidade) comp.cidade = f.cidade;
+      if (f.endereco && !uc.endereco) comp.endereco = f.endereco;
+      if (Object.keys(comp).length) await b.update("ucs", ucId, comp, `UC ${uc.numero || uc.numero_conces}: cadastro completado pela fatura`);
       const fatura = dup ? await b.update("faturas", dup.id, row, `Fatura ${f.referencia} substituída pelo PDF`) : await b.insert("faturas", row);
       return { fatura_id: fatura.id, uc_id: ucId, competencia: fatura.competencia, substituida: !!dup };
     }
