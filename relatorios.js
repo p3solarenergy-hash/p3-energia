@@ -80,19 +80,14 @@ ${corpo}
 </div></body></html>`;
 }
 
-function barras(meses, getTotal, getParte) {
-  const max = Math.max(1, ...meses.map(getTotal));
-  return `<div class="bars">${meses.map(m => `<div><i style="height:${Math.max(0, (getTotal(m) - getParte(m)) / max * 68)}px"></i><i class="e" style="height:${Math.max(0, getParte(m) / max * 68)}px"></i></div>`).join("")}</div>
-  <div class="bars-l">${meses.map(m => `<span>${esc(motor.monthLabel(m.competencia))}</span>`).join("")}</div>`;
-}
-
 const brlK = v => Math.abs(v) >= 1000 ? `R$ ${(v / 1000).toFixed(1).replace(".", ",")} mil` : brl(v);
 
 // Linhas mês a mês em SVG (sai igual na tela e no PDF). series: [{ get, cor, nome, area, rotuloFim }]
 function grafico(meses, series, opts) {
   const o = opts || {}, W = 680, H = o.altura || 150, L = 58, R = 12, T = 14, B = 22;
   const vals = meses.flatMap(m => series.map(sr => sr.get(m)));
-  const topo = Math.max(1, ...vals) * 1.08, base = Math.min(0, ...vals);
+  // o.justo: eixo começa perto do menor valor, para a diferença entre as linhas aparecer.
+  const topo = Math.max(1, ...vals) * 1.08, base = o.justo ? Math.max(0, Math.min(...vals) * 0.8) : Math.min(0, ...vals);
   const x = i => meses.length === 1 ? (L + W - R) / 2 : L + i * (W - L - R) / (meses.length - 1);
   const y = v => T + (H - T - B) * (1 - (v - base) / (topo - base));
   const grade = [0, 0.5, 1].map(k => base + (topo / 1.08 - base) * k).map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="#e3e9e3"/><text x="${L - 6}" y="${y(v) + 3}" text-anchor="end" font-size="8" fill="#6b7a70">${esc(brlK(v))}</text>`).join("");
@@ -108,6 +103,21 @@ function grafico(meses, series, opts) {
   }).join("");
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;margin:4px 0 2px" role="img">${grade}${linhas}${rotulos}</svg>
   <div class="legend">${series.map(sr => `<i style="background:${sr.cor}"></i>${esc(sr.nome)}`).join("")}</div>`;
+}
+
+// Colunas com o valor escrito em cima (negativas em vermelho, para baixo).
+function colunas(meses, get) {
+  const W = 680, H = 150, L = 8, R = 8, T = 16, B = 22;
+  const vals = meses.map(get), topo = Math.max(1, ...vals), fundo = Math.min(0, ...vals);
+  const y = v => T + (H - T - B) * (topo - v) / (topo - fundo);
+  const larg = (W - L - R) / meses.length, bw = Math.min(46, larg * 0.62);
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;margin:4px 0 2px" role="img"><line x1="${L}" x2="${W - R}" y1="${y(0)}" y2="${y(0)}" stroke="#c9d3ca"/>
+  ${meses.map((m, i) => {
+    const v = get(m), cx = L + larg * (i + 0.5), cor = v >= 0 ? "#2f8f57" : "#b4372f";
+    return `<rect x="${cx - bw / 2}" y="${Math.min(y(v), y(0))}" width="${bw}" height="${Math.max(1, Math.abs(y(v) - y(0)))}" rx="2" fill="${cor}"/>
+    <text x="${cx}" y="${v >= 0 ? y(v) - 4 : y(v) + 10}" text-anchor="middle" font-size="8" font-weight="700" fill="${cor}">${esc(brlK(v))}</text>
+    <text x="${cx}" y="${H - 6}" text-anchor="middle" font-size="8" fill="#6b7a70">${esc(motor.monthLabel(m.competencia))}</text>`;
+  }).join("")}</svg>`;
 }
 
 // ───────────── Cliente ─────────────
@@ -163,9 +173,8 @@ ${meses.some(m => m.parcial) ? `<div class="box" style="border-left-color:#b4372
   <div class="kpi lead"><small>Economia</small><b>${brl(T("eco"))}</b><span>${pct(ecoPct)} da conta sem usina</span></div>
   <div class="kpi"><small>Energia compensada</small><b>${kwh(T("compensado"))}</b><span>de ${kwh(T("consumo"))} consumidos</span></div>
 </div>
-${meses.length > 1 ? `<div class="section"><h2>Economia mês a mês <small>conta sem usina × o que você pagou</small></h2>${barras(meses, m => m.sem, m => Math.max(0, m.eco))}
-<div class="legend"><i style="background:#c9d8cc"></i>Você pagou<i style="background:#2f8f57"></i>Economia</div></div>
-<div class="section"><h2>Evolução <small>quanto seria a conta × quanto você pagou</small></h2>${grafico(meses, [{ get: m => m.sem, cor: "#b4372f", nome: "Copel sem a usina" }, { get: m => m.custo, cor: "#1d5c3a", nome: "Você pagou (Copel + arrendamento)" }])}</div>` : ""}
+${meses.length > 1 ? `<div class="section"><h2>Economia mês a mês</h2>${colunas(meses, m => m.eco)}</div>
+<div class="section"><h2>Evolução <small>quanto seria a conta × quanto você pagou</small></h2>${grafico(meses, [{ get: m => m.sem, cor: "#b4372f", nome: "Copel sem a usina" }, { get: m => m.custo, cor: "#1d5c3a", nome: "Você pagou (Copel + arrendamento + UC geradora)" }], { justo: true })}</div>` : ""}
 <h2>Extrato por competência</h2>
 ${meses.length ? `<table><thead><tr><th>Mês</th><th class="n">Consumo</th><th class="n">Compensado</th><th class="n">Copel sem usina</th><th class="n">Copel com usina</th><th class="n">Arrendamento</th>${temGer ? `<th class="n">UC geradora</th>` : ""}<th class="n">Total pago</th><th class="n">Economia</th></tr></thead>
 <tbody>${meses.map(m => `<tr><td><b>${esc(motor.monthLabel(m.competencia))}</b>${m.parcial ? `<small class="neg">parcial*</small>` : ""}</td><td class="n">${kwh(m.consumo)}</td><td class="n">${kwh(m.compensado)}</td><td class="n">${brl(m.sem)}</td><td class="n">${brl(m.com)}</td><td class="n">${brl(m.arr)}</td>${temGer ? `<td class="n">${brl(m.ger)}</td>` : ""}<td class="n">${brl(m.custo)}</td><td class="n ${m.eco >= 0 ? "pos" : "neg"}"><b>${brl(m.eco)}</b><small>${pct(m.sem ? m.eco / m.sem : 0)}</small></td></tr>`).join("")}</tbody>
