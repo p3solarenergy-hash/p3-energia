@@ -57,6 +57,7 @@ header.top { display: flex; justify-content: space-between; align-items: center;
 .ind h4 { margin: 0; padding: 7px 11px; background: #66793f; color: #fff; font-size: 8.8pt; }
 .ind dl { margin: 0; padding: 7px 11px; display: grid; grid-template-columns: 1fr auto; gap: 3px 8px; font-size: 8.3pt; }
 .ind dt { color: #4b5a50; } .ind dd { margin: 0; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+table.cli th, table.cli td { font-size: 7.4pt; padding: 4px 3px; } table.cli th { font-size: 6.3pt; } table.cli td.n { white-space: normal; } table.cli .pill { padding: 1px 5px; }
 .nota { color: #6b7a70; font-size: 7.6pt; margin-top: 12px; line-height: 1.5; }
 .who { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 18px; background: #f3f6f2; border-radius: 8px; padding: 9px 12px; margin-bottom: 12px; }
 .who div small { display: block; color: #6b7a70; font-size: 7.5pt; text-transform: uppercase; letter-spacing: .4px; } .who div b { font-weight: 600; }
@@ -192,12 +193,12 @@ ${meses.some(m => m.parcial) ? `<div class="box" style="border-left-color:#b4372
   <div class="card"><small>Meses com dados</small><b>${doAno.length} / 12</b><span>${ano}</span></div>
 </div>
 <h2>Detalhamento por conta <small>${esc(rotulo)}</small></h2>
-${ucRows.length ? `<table><thead><tr><th>Conta / endereço</th><th class="n">Consumo</th><th class="n">Créditos</th><th class="n">Copel sem usina</th><th class="n">Copel c/ usina</th><th class="n">Arrendamento</th>${temGer ? `<th class="n">UC geradora</th>` : ""}<th class="n">Custo total</th><th class="n">Economia</th><th class="n">%</th></tr></thead>
+${ucRows.length ? `<table class="cli"><thead><tr><th>Conta / endereço</th><th class="n">Consumo</th><th class="n">Créditos</th><th class="n">Copel sem usina</th><th class="n">Copel c/ usina</th><th class="n">Arrendamento</th>${temGer ? `<th class="n">UC geradora</th>` : ""}<th class="n">Custo total</th><th class="n">Economia</th><th class="n">%</th></tr></thead>
 <tbody>${ucRows.map(r => `<tr><td><b>${esc(r.uc.descricao || ucNum(r.uc))}</b><small>${esc(ucNum(r.uc))}${r.uc.endereco ? " · " + esc(r.uc.endereco) : ""}</small></td>${celulas(r)}</tr>`).join("")}</tbody>
 ${ucRows.length > 1 ? `<tfoot><tr><td>Total</td>${celulas({ consumo: T("consumo"), compensado: T("compensado"), sem: T("sem"), com: T("com"), arr: T("arr"), ger: T("ger"), custo: T("custo"), eco: T("eco") })}</tr></tfoot>` : ""}</table>` : `<p class="empty">Nenhuma fatura lançada neste período.</p>`}
 ${doAno.length ? `<div class="section"><h2>Extrato mensal ${ano}</h2>
 ${doAno.length > 1 ? `${combo(doAno)}<div class="legend"><i style="background:#9aae2e"></i>Economia do mês<i style="background:#53663a"></i>Acumulado ${ano}</div>` : ""}</div>
-<table style="margin-top:8px"><thead><tr>${cabec}</tr></thead>
+<table class="cli" style="margin-top:8px"><thead><tr>${cabec}</tr></thead>
 <tbody>${doAno.map(m => `<tr><td><b>${esc(motor.monthLabel(m.competencia))}</b>${m.parcial ? `<small class="neg">parcial*</small>` : ""}</td>${celulas(m)}</tr>`).join("")}</tbody>
 <tfoot><tr><td>Total ${ano}</td>${celulas({ consumo: A("consumo"), compensado: A("compensado"), sem: A("sem"), com: A("com"), arr: A("arr"), ger: A("ger"), custo: A("custo"), eco: A("eco") })}</tr></tfoot></table>` : ""}
 ${doAno.length > 1 ? `<div class="section"><h2>Evolução da conta <small>Copel sem usina × custo total com usina</small></h2>${grafico(doAno, [{ get: m => m.sem, cor: "#b4372f", nome: "Copel sem usina" }, { get: m => m.custo, cor: "#53663a", nome: "Custo total com usina" }], { justo: true, altura: 130 })}</div>` : ""}
