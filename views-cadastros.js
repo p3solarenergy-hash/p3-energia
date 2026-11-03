@@ -112,12 +112,40 @@
             <td>${P3.usinasDaUc(u.id).map(v => `${esc(nomeUsina(v.usina_id))}${v.percentual < 100 ? ` <span class="muted">${fmt.pctN(v.percentual)}</span>` : ""}`).join("<br>") || `<span class="neg">nenhuma</span>`}</td>
             <td class="n">${u.defasagem ? `+${u.defasagem}` : "—"}</td><td class="n">${D.faturas.filter(f => f.uc_id === u.id).length}</td><td>${u.ativa === 0 ? badge("Inativa") : badge("Ativa", "ok")}</td>
             <td class="right"><button class="btn ghost sm" data-educ="${esc(u.id)}">Editar</button></td></tr>`).join("")}</tbody></table></div>` : `<p class="muted" style="margin:0">Nenhuma UC.</p>`}</div>`;
-      }).join("") || `<div class="empty">Nenhum cliente. Eles também são criados automaticamente quando você sobe a fatura de uma UC nova.</div>`}`;
+      }).join("") || `<div class="empty">Nenhum cliente. Eles também são criados automaticamente quando você sobe a fatura de uma UC nova.</div>`}
+      ${acessoCopel(D)}`;
+    $$("[data-copiar]", main).forEach(b => b.onclick = async () => {
+      try { await navigator.clipboard.writeText(b.dataset.copiar); toast("Copiado.", "ok"); } catch (_) { toast("Não consegui copiar.", "err"); }
+    });
     $("#novoCli").onclick = () => editarCliente(null);
     $("#novaUc").onclick = () => editarUc(null);
     $$("[data-edcli]", main).forEach(b => b.onclick = () => editarCliente(db().by.clientes.get(b.dataset.edcli)));
     $$("[data-novauc]", main).forEach(b => b.onclick = () => editarUc(null, b.dataset.novauc));
     $$("[data-educ]", main).forEach(b => b.onclick = () => editarUc(db().by.ucs.get(b.dataset.educ)));
+  }
+
+  // Titular como saiu na fatura mais recente da UC (quando o cadastro ainda não tem).
+  function titularFatura(ucId) {
+    const fs = db().faturas.filter(f => f.uc_id === ucId && f.titular).sort((a, b) => String(b.referencia).localeCompare(String(a.referencia)));
+    return fs.length ? fs[0].titular : "";
+  }
+
+  // Tudo o que se procura para entrar na Copel, de todas as UCs (clientes e geradoras), num lugar só.
+  function acessoCopel(D) {
+    const copia = (txt, cls) => txt ? `<span class="${cls || ""}">${esc(txt)}</span> <button class="btn ghost sm" data-copiar="${esc(txt)}" title="Copiar">⧉</button>` : `<span class="muted">—</span>`;
+    const linhas = D.ucs.filter(u => u.ativa !== 0).map(u => {
+      const cli = u.cliente_id ? D.by.clientes.get(u.cliente_id) : null;
+      const usina = u.usina_geradora_id ? D.by.usinas.get(u.usina_geradora_id) : null;
+      return {
+        u, quem: cli ? cli.nome : usina ? `Geradora · ${usina.nome}` : "—",
+        titular: u.titular || titularFatura(u.id), doc: u.titular_documento || (cli && cli.documento) || ""
+      };
+    }).sort((a, b) => a.quem.localeCompare(b.quem));
+    return `<div class="card"><h2>Acesso à Copel</h2><p class="sub">Para entrar na conta de cada UC no site da Copel. Confira a cidade antes de baixar: UCs do mesmo titular aparecem juntas lá. Para preencher, clique em Editar na UC.</p>
+      <div class="table-wrap" style="box-shadow:none"><table><thead><tr><th>Cliente / usina</th><th>UC</th><th>Nº curto</th><th>Cidade / endereço</th><th>Titular</th><th>CPF/CNPJ</th><th>Login</th><th></th></tr></thead><tbody>
+      ${linhas.map(l => `<tr><td><b>${esc(l.quem)}</b><small>${esc(l.u.descricao || "")}</small></td><td>${copia(ucNum(l.u), "mono")}</td><td>${copia(l.u.numero_conces, "mono")}</td>
+        <td>${esc(l.u.cidade || "")}<small>${esc(l.u.endereco || "")}</small></td><td>${esc(l.titular || "—")}</td><td>${copia(l.doc, "mono")}</td><td>${copia(l.u.copel_login)}</td>
+        <td class="right"><button class="btn ghost sm" data-educ="${esc(l.u.id)}">Editar</button></td></tr>`).join("")}</tbody></table></div></div>`;
   }
 
   async function editarCliente(c) {
@@ -147,6 +175,12 @@
       <label class="f wide">Endereço<input name="endereco" value="${esc(v.endereco || "")}"></label>
       <label class="f">Defasagem (meses)<input name="defasagem" inputmode="numeric" value="${esc(v.defasagem ?? 0)}"><small>0 = a fatura entra no mês da referência; 1 = entra no mês seguinte</small></label>
       <label class="f">Situação<select name="ativa">${opts([["1", "Ativa"], ["0", "Inativa"]], String(v.ativa ?? 1))}</select></label></div>
+      <hr class="sep"><b style="font-size:13px">Acesso à Copel</b><p class="muted" style="font-size:12.5px;margin:2px 0 8px">Os dados que a Copel pede para entrar na conta desta UC. A senha não fica aqui: guarde no gerenciador de senhas do navegador.</p>
+      <div class="grid-form">
+      <label class="f">Titular na Copel<input name="titular" value="${esc(v.titular || "")}" placeholder="${esc(titularFatura(v.id) || "Como está na fatura")}"></label>
+      <label class="f">CPF/CNPJ do titular<input name="titular_documento" value="${esc(v.titular_documento || "")}"></label>
+      <label class="f">Login / e-mail na Copel<input name="copel_login" value="${esc(v.copel_login || "")}"></label>
+      <label class="f">Cidade<input name="cidade" value="${esc(v.cidade || "")}" placeholder="Ex.: Miraselva"></label></div>
       <hr class="sep"><b style="font-size:13px">Recebe créditos de</b><p class="muted" style="font-size:12.5px;margin:2px 0 8px">Se só uma usina atende a UC, 100%. Se são duas, divida conforme o rateio cadastrado na Copel (veja o demonstrativo).</p>
       <div id="vincs">${vincs.map(linhaV).join("") || (u ? "" : linhaV({ percentual: 100 }, 0))}</div><button class="btn sm" id="addV">+ usina</button>
       ${u ? `<hr class="sep"><button class="btn danger sm" id="exUc">Excluir UC</button>` : ""}`;
