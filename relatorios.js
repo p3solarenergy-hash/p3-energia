@@ -127,7 +127,7 @@ function cliente(db, q) {
 ${meses.some(m => m.parcial) ? `<div class="box" style="border-left-color:#b4372f;margin:0 0 12px"><h3>Atenção: período com mês parcial</h3><p>Em ${meses.filter(m => m.parcial).map(m => esc(motor.monthLabel(m.competencia))).join(", ")} ainda faltam faturas de outras UCs ligadas à mesma usina. O arrendamento do mês foi todo para as UCs já lançadas; ele será redistribuído quando as demais faturas entrarem. Confira antes de enviar ao cliente.</p></div>` : ""}
 <div class="kpis">
   <div class="kpi"><small>Copel sem a usina</small><b>${brl(T("sem"))}</b><span>quanto seria a conta</span></div>
-  <div class="kpi"><small>Você pagou</small><b>${brl(T("custo"))}</b><span>Copel ${brl(T("com"))} + arrend. ${brl(T("arr") + T("ger"))}</span></div>
+  <div class="kpi"><small>Você pagou</small><b>${brl(T("custo"))}</b><span>Copel ${brl(T("com"))}<br>Arrendamento ${brl(T("arr"))}${temGer ? `<br>UC geradora ${brl(T("ger"))}` : ""}</span></div>
   <div class="kpi lead"><small>Economia</small><b>${brl(T("eco"))}</b><span>${pct(ecoPct)} da conta sem usina</span></div>
   <div class="kpi"><small>Energia compensada</small><b>${kwh(T("compensado"))}</b><span>de ${kwh(T("consumo"))} consumidos</span></div>
 </div>
