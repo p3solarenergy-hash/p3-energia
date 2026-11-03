@@ -86,6 +86,30 @@ function barras(meses, getTotal, getParte) {
   <div class="bars-l">${meses.map(m => `<span>${esc(motor.monthLabel(m.competencia))}</span>`).join("")}</div>`;
 }
 
+const brlK = v => Math.abs(v) >= 1000 ? `R$ ${(v / 1000).toFixed(1).replace(".", ",")} mil` : brl(v);
+
+// Linhas mês a mês em SVG (sai igual na tela e no PDF). series: [{ get, cor, nome, area, rotuloFim }]
+function grafico(meses, series, opts) {
+  const o = opts || {}, W = 680, H = o.altura || 150, L = 58, R = 12, T = 14, B = 22;
+  const vals = meses.flatMap(m => series.map(sr => sr.get(m)));
+  const topo = Math.max(1, ...vals) * 1.08, base = Math.min(0, ...vals);
+  const x = i => meses.length === 1 ? (L + W - R) / 2 : L + i * (W - L - R) / (meses.length - 1);
+  const y = v => T + (H - T - B) * (1 - (v - base) / (topo - base));
+  const grade = [0, 0.5, 1].map(k => base + (topo / 1.08 - base) * k).map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="#e3e9e3"/><text x="${L - 6}" y="${y(v) + 3}" text-anchor="end" font-size="8" fill="#6b7a70">${esc(brlK(v))}</text>`).join("");
+  const passo = Math.ceil(meses.length / 12);
+  const rotulos = meses.map((m, i) => i % passo && i !== meses.length - 1 ? "" : `<text x="${x(i)}" y="${H - 6}" text-anchor="middle" font-size="8" fill="#6b7a70">${esc(motor.monthLabel(m.competencia))}</text>`).join("");
+  const linhas = series.map(sr => {
+    const pts = meses.map((m, i) => `${x(i).toFixed(1)},${y(sr.get(m)).toFixed(1)}`).join(" ");
+    const zero = y(Math.max(base, 0)), ult = meses.length - 1, vu = sr.get(meses[ult]);
+    return (sr.area ? `<polygon points="${x(0)},${zero} ${pts} ${x(ult)},${zero}" fill="${sr.cor}" opacity=".18"/>` : "")
+      + `<polyline points="${pts}" fill="none" stroke="${sr.cor}" stroke-width="2" stroke-linejoin="round"/>`
+      + meses.map((m, i) => `<circle cx="${x(i)}" cy="${y(sr.get(m))}" r="2.4" fill="${sr.cor}"/>`).join("")
+      + (sr.rotuloFim ? `<text x="${x(ult)}" y="${y(vu) - 7}" text-anchor="end" font-size="9" font-weight="700" fill="${sr.cor}">${esc(brl(vu))}</text>` : "");
+  }).join("");
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;margin:4px 0 2px" role="img">${grade}${linhas}${rotulos}</svg>
+  <div class="legend">${series.map(sr => `<i style="background:${sr.cor}"></i>${esc(sr.nome)}`).join("")}</div>`;
+}
+
 // ───────────── Cliente ─────────────
 function cliente(db, q) {
   const cli = (db.clientes || []).find(c => c.id === q.cliente_id);
@@ -106,6 +130,14 @@ function cliente(db, q) {
   const ucsCli = (db.ucs || []).filter(u => u.cliente_id === cli.id);
   const usinasCli = [...new Set(ucsCli.flatMap(u => (ix.vincPorUc.get(u.id) || []).map(v => v.usina_id)))].map(id => ix.usinas.get(id)).filter(Boolean);
   const ecoPct = T("sem") > 0 ? T("eco") / T("sem") : 0;
+  // Acumulado: da primeira fatura do cliente até o fim do período escolhido, com a mesma conta do extrato.
+  const ucIds = new Set(ucsCli.map(u => u.id));
+  const primeira = (db.faturas || []).filter(f => ucIds.has(f.uc_id) && f.competencia).map(f => f.competencia).sort()[0];
+  let acum = 0;
+  const hist = primeira && primeira <= q.ate ? motor.calcPeriodo(db, primeira, q.ate, { cliente_id: cli.id }).meses.map(m => ({
+    competencia: m.competencia, sem: sum(m.ucs, u => u.semUsina), eco: sum(m.ucs, u => u.economia), nFat: sum(m.ucs, u => u.faturas.length)
+  })).filter(m => m.nFat > 0).map(m => ({ ...m, acum: (acum += m.eco) })) : [];
+  const semHist = sum(hist, m => m.sem);
 
   const porUc = new Map();
   for (const m of meses) for (const u of m.ucs) {
@@ -131,8 +163,9 @@ ${meses.some(m => m.parcial) ? `<div class="box" style="border-left-color:#b4372
   <div class="kpi lead"><small>Economia</small><b>${brl(T("eco"))}</b><span>${pct(ecoPct)} da conta sem usina</span></div>
   <div class="kpi"><small>Energia compensada</small><b>${kwh(T("compensado"))}</b><span>de ${kwh(T("consumo"))} consumidos</span></div>
 </div>
-${meses.length > 1 ? `<h2>Mês a mês <small>conta sem usina × economia</small></h2>${barras(meses, m => m.sem, m => Math.max(0, m.eco))}
-<div class="legend"><i style="background:#c9d8cc"></i>Você pagou<i style="background:#2f8f57"></i>Economia</div>` : ""}
+${meses.length > 1 ? `<div class="section"><h2>Economia mês a mês <small>conta sem usina × o que você pagou</small></h2>${barras(meses, m => m.sem, m => Math.max(0, m.eco))}
+<div class="legend"><i style="background:#c9d8cc"></i>Você pagou<i style="background:#2f8f57"></i>Economia</div></div>
+<div class="section"><h2>Evolução <small>quanto seria a conta × quanto você pagou</small></h2>${grafico(meses, [{ get: m => m.sem, cor: "#b4372f", nome: "Copel sem a usina" }, { get: m => m.custo, cor: "#1d5c3a", nome: "Você pagou (Copel + arrendamento)" }])}</div>` : ""}
 <h2>Extrato por competência</h2>
 ${meses.length ? `<table><thead><tr><th>Mês</th><th class="n">Consumo</th><th class="n">Compensado</th><th class="n">Copel sem usina</th><th class="n">Copel com usina</th><th class="n">Arrendamento</th>${temGer ? `<th class="n">UC geradora</th>` : ""}<th class="n">Total pago</th><th class="n">Economia</th></tr></thead>
 <tbody>${meses.map(m => `<tr><td><b>${esc(motor.monthLabel(m.competencia))}</b>${m.parcial ? `<small class="neg">parcial*</small>` : ""}</td><td class="n">${kwh(m.consumo)}</td><td class="n">${kwh(m.compensado)}</td><td class="n">${brl(m.sem)}</td><td class="n">${brl(m.com)}</td><td class="n">${brl(m.arr)}</td>${temGer ? `<td class="n">${brl(m.ger)}</td>` : ""}<td class="n">${brl(m.custo)}</td><td class="n ${m.eco >= 0 ? "pos" : "neg"}"><b>${brl(m.eco)}</b><small>${pct(m.sem ? m.eco / m.sem : 0)}</small></td></tr>`).join("")}</tbody>
@@ -143,6 +176,13 @@ ${ucRows.length > 1 ? `<h2>Por unidade consumidora <small>${esc(periodo(q.de, q.
 ${faturasMes.length ? `<h2>Faturas Copel de ${esc(motor.monthLabel(ultimo.competencia))}</h2>
 <table><thead><tr><th>UC</th><th>Referência</th><th>Leitura</th><th>Vencimento</th><th class="n">Consumo</th><th class="n">Compensado</th><th class="n">Créditos da usina</th><th class="n">Total Copel</th></tr></thead>
 <tbody>${faturasMes.map(f => { const u = ix.ucs.get(f.uc_id) || {}; return `<tr><td>${esc(ucNum(u))}<small>${esc(u.descricao || "")}</small></td><td>${esc(motor.monthLabel(f.referencia))}</td><td>${dataBR(f.leitura_anterior)} a ${dataBR(f.leitura_atual)}</td><td>${dataBR(f.vencimento)}</td><td class="n">${kwh(f.consumo_kwh)}</td><td class="n">${kwh(f.compensado_kwh)}</td><td class="n pos">${brl(f.valor_creditos)}</td><td class="n">${brl(f.total)}</td></tr>`; }).join("")}</tbody></table>` : ""}
+${hist.length ? `<div class="section"><h2>Economia acumulada <small>desde ${esc(motor.monthLabel(hist[0].competencia))}</small></h2>
+<div class="kpis" style="grid-template-columns:repeat(3,1fr)">
+  <div class="kpi lead"><small>Economia acumulada</small><b>${brl(acum)}</b><span>${hist.length} mês(es) com a usina P3</span></div>
+  <div class="kpi"><small>Conta sem a usina</small><b>${brl(semHist)}</b><span>soma do mesmo período</span></div>
+  <div class="kpi"><small>Economia média</small><b>${brl(acum / hist.length)}</b><span>por mês · ${pct(semHist ? acum / semHist : 0)} da conta</span></div>
+</div>
+${hist.length > 1 ? grafico(hist, [{ get: m => m.acum, cor: "#2f8f57", nome: "Economia acumulada", area: true, rotuloFim: true }], { altura: 140 }) : ""}</div>` : ""}
 <div class="box"><h3>Como calculamos</h3><ul>
 <li><b>Copel sem a usina</b> = total da fatura + valor dos créditos de energia da usina que a própria Copel abateu na fatura (linhas "Energia injetada").</li>
 <li><b>Você pagou</b> = total da fatura da Copel + arrendamento da usina${temGer ? " + parte da fatura da UC geradora" : ""}. O arrendamento é dividido entre as UCs pelos kWh que cada uma recebeu da usina.</li>
