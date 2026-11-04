@@ -135,7 +135,7 @@
     const [name, ...params] = hash.split("/").map(decodeURIComponent);
     const route = name || "painel";
     state.route = route; state.params = params;
-    $$("#nav a").forEach(a => a.classList.toggle("on", a.dataset.r === route));
+    $$("#nav a, #tabs a").forEach(a => a.classList.toggle("on", a.dataset.r === route));
     $("#side").classList.remove("open");
     const view = state.views[route] || state.views.painel;
     const main = $("#main");
@@ -146,6 +146,7 @@
 
   async function start() {
     $("#menuBtn").onclick = () => $("#side").classList.toggle("open");
+    $("#fundoMenu").onclick = () => $("#side").classList.remove("open");
     window.addEventListener("hashchange", render);
     try { await load(); } catch (e) { $("#main").innerHTML = `<div class="note bad">Não consegui abrir a base (${esc(e.message)}). Confira a internet e recarregue a página.</div>`; return; }
     render();
