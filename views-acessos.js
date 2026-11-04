@@ -21,7 +21,8 @@
     $("#novo").onclick = () => novo(main);
     let logins, pubs;
     try { [logins, pubs] = await Promise.all([api("acessos", { method: "POST", body: { acao: "listar" } }), api("publicacoes")]); }
-    catch (e) { $("#corpoAcessos").innerHTML = `<div class="note bad">${esc(e.message)}</div>`; return; }
+    catch (e) { if ($("#corpoAcessos")) $("#corpoAcessos").innerHTML = `<div class="note bad">${esc(e.message)}</div>`; return; }
+    if (!$("#corpoAcessos")) return; // saiu da tela enquanto carregava
     const D = db();
     const nomeDe = x => x.dono_id ? (D.by.donos.get(x.dono_id) || {}).nome : (D.by.clientes.get(x.cliente_id) || {}).nome;
     $("#corpoAcessos").outerHTML = `
