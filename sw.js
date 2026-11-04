@@ -1,6 +1,6 @@
 // Deixa a P3 instalável como app. Sempre busca a versão nova na internet (sem esperar o cache de 10 min do GitHub);
 // a cópia guardada só abre a tela se a rede cair. Os dados (Supabase) nunca passam por aqui: só os arquivos do próprio site.
-const CACHE = "p3-site-v4";
+const CACHE = "p3-site-v5";
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", e => e.waitUntil(
   caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())

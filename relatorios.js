@@ -489,6 +489,27 @@ function nomeArquivo(db, tipo, q) {
   return `${t} - ${String(alvo || "").replace(/[\\/:*?"<>|]+/g, " ").trim()} - ${per}.pdf`;
 }
 
-window.P3_RELATORIOS = { render, nomeArquivo, projecao };
+// Números principais de um relatório, guardados junto da publicação para o portal mostrar sem recalcular.
+function resumo(db, tipo, q) {
+  const r2 = v => Math.round((Number(v) || 0) * 100) / 100;
+  if (tipo === "cliente") {
+    const linhas = ms => ms.flatMap(m => m.ucs);
+    const per = linhas(motor.calcPeriodo(db, q.de, q.ate, { cliente_id: q.cliente_id }).meses);
+    const ucIds = new Set((db.ucs || []).filter(u => u.cliente_id === q.cliente_id).map(u => u.id));
+    const ini = (db.faturas || []).filter(f => ucIds.has(f.uc_id) && f.competencia).map(f => f.competencia).sort()[0] || q.de;
+    const tudo = linhas(motor.calcPeriodo(db, ini, q.ate, { cliente_id: q.cliente_id }).meses);
+    const sem = r2(sum(per, u => u.semUsina)), eco = r2(sum(per, u => u.economia));
+    return { economia: eco, copel_sem: sem, custo: r2(sum(per, u => u.custoTotal)), pct: sem ? eco / sem : 0, kwh_creditos: Math.round(sum(per, u => u.compensadoKwh)), acumulado: r2(sum(tudo, u => u.economia)) };
+  }
+  if (tipo === "dono") {
+    const f = { dono_id: q.dono_id };
+    const per = motor.calcPeriodo(db, q.de, q.ate, f).meses.flatMap(m => m.usinas);
+    const tudo = motor.calcPeriodo(db, motor.primeiraCompetencia(db) || q.de, q.ate, f).meses.flatMap(m => m.usinas);
+    return { arrendamento: r2(sum(per, r => r.arrendamento)), liquido: r2(sum(per, r => r.liquidoDono)), acumulado: r2(sum(tudo, r => r.liquidoDono)) };
+  }
+  return null;
+}
+
+window.P3_RELATORIOS = { render, nomeArquivo, projecao, resumo };
 
 })();

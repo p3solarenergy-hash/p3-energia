@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://viqgsvfvbzmpbuhsqisa.supabase.co wss://viqgsvfvbzmpbuhsqisa.supabase.co; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta name="referrer" content="no-referrer">
+<link rel="manifest" href="manifest.webmanifest"><meta name="theme-color" content="#53663a">
+<link rel="icon" type="image/png" sizes="32x32" href="icones/favicon-32.png"><link rel="apple-touch-icon" href="icones/apple-touch-icon.png">
+<title>P3 Energy · Portal</title>
+<style>
+:root { --verde: #53663a; --verde2: #6f8547; --lima: #9aae2e; --fundo: #eef1ea; --tinta: #1d261c; --muted: #66735f; --linha: #dde4d6; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--fundo); color: var(--tinta); font: 15px/1.45 Inter, "Segoe UI", system-ui, Arial, sans-serif; }
+header { background: linear-gradient(90deg, #4f5f42, var(--verde2)); color: #fff; padding: 14px 16px; }
+header .in { max-width: 980px; margin: 0 auto; display: flex; align-items: center; gap: 14px; }
+header svg { height: 34px; width: auto; display: block; } header .lg-a { fill: #eef3e2; } header .lg-b { fill: #cfe07a; }
+header .quem { margin-left: auto; text-align: right; font-size: 13px; color: #e3ead8; } header .quem b { display: block; color: #fff; font-size: 14px; }
+header button { background: rgba(255,255,255,.14); color: #fff; border: 1px solid rgba(255,255,255,.3); border-radius: 8px; padding: 6px 10px; font: inherit; font-size: 13px; cursor: pointer; margin-left: 6px; }
+main { max-width: 980px; margin: 0 auto; padding: 16px; }
+h1 { font-size: 20px; margin: 4px 0 2px; } .sub { color: var(--muted); margin: 0 0 14px; font-size: 14px; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.kpi { background: #fff; border: 1px solid var(--linha); border-radius: 12px; padding: 12px 14px; }
+.kpi small { display: block; color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .4px; font-weight: 600; }
+.kpi b { display: block; font-size: 22px; margin-top: 2px; font-variant-numeric: tabular-nums; } .kpi span { color: var(--muted); font-size: 12.5px; }
+.kpi.dest { background: var(--verde); border-color: var(--verde); color: #fff; } .kpi.dest small, .kpi.dest span { color: #dfe7d2; } .kpi.dest b { color: #e3f08f; }
+.lista { background: #fff; border: 1px solid var(--linha); border-radius: 12px; overflow: hidden; }
+.lista button { display: flex; width: 100%; gap: 10px; align-items: center; text-align: left; background: none; border: 0; border-bottom: 1px solid var(--linha); padding: 12px 14px; font: inherit; color: inherit; cursor: pointer; }
+.lista button:last-child { border-bottom: 0; } .lista button:hover, .lista button.on { background: #f3f6ef; }
+.lista button b { font-weight: 600; } .lista button span { margin-left: auto; color: var(--muted); font-size: 13px; white-space: nowrap; }
+.vazio { background: #fff; border: 1px dashed var(--linha); border-radius: 12px; padding: 28px; text-align: center; color: var(--muted); }
+.ver { margin-top: 16px; } .ver .barra { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; } .ver .barra b { flex: 1; }
+.btn { background: var(--verde); color: #fff; border: 0; border-radius: 8px; padding: 9px 14px; font: inherit; font-weight: 600; cursor: pointer; } .btn.sec { background: #fff; color: var(--tinta); border: 1px solid var(--linha); }
+iframe { width: 100%; height: 78vh; border: 1px solid var(--linha); border-radius: 12px; background: #fff; }
+.modal { position: fixed; inset: 0; background: rgba(20,28,18,.5); display: grid; place-items: center; padding: 16px; }
+.modal form { background: #fff; border-radius: 14px; padding: 22px; width: min(380px, 100%); }
+.modal h2 { margin: 0 0 6px; font-size: 18px; } .modal p { margin: 0 0 14px; color: var(--muted); font-size: 14px; }
+.modal input { width: 100%; padding: 11px; border: 1px solid #cdd6cf; border-radius: 8px; font-size: 16px; margin-bottom: 10px; }
+.erro { color: #b3261e; font-size: 14px; min-height: 1em; }
+[hidden] { display: none !important; }
+@media (max-width: 600px) { header .quem span { display: none; } iframe { height: 70vh; } }
+</style></head>
+<body>
+<header><div class="in">
+  <svg viewBox="129 169 1743 757" role="img" aria-label="P3 Energy"><path class="lg-a" d="M129 169H993V623H320V461H817V313H287V926H129Z"/><path class="lg-b" d="M1052 169H1872V926H1052V771H1731V313H1052Z"/><rect class="lg-b" x="1061" y="461" width="636" height="162"/><text class="lg-a" x="330" y="923" font-size="206" textLength="690" lengthAdjust="spacingAndGlyphs" font-family="'Arial Narrow','Roboto Condensed',Arial,sans-serif">ENERGY</text></svg>
+  <div class="quem"><b id="nome">…</b><span id="papel"></span></div>
+  <button id="trocar" type="button">Senha</button><button id="sair" type="button">Sair</button>
+</div></header>
+<main>
+  <h1 id="titulo">Seus relatórios</h1><p class="sub" id="sub">Os relatórios aparecem aqui assim que a P3 publica o fechamento do mês.</p>
+  <div class="kpis" id="kpis"></div>
+  <div id="lista"></div>
+  <div class="ver" id="ver" hidden><div class="barra"><b id="verTitulo"></b><button class="btn" id="imprimir" type="button">Salvar PDF</button></div>
+    <!-- Sem scripts dentro do relatório: só o conteúdo, isolado da página. -->
+    <iframe id="quadro" sandbox="allow-same-origin allow-modals" title="Relatório"></iframe></div>
+</main>
+<div class="modal" id="mSenha" hidden><form id="fSenha">
+  <h2>Crie a sua senha</h2><p id="mSenhaTxt">Para sua segurança, troque a senha provisória por uma só sua.</p>
+  <input type="password" id="s1" placeholder="Nova senha (mínimo 10 caracteres)" autocomplete="new-password" minlength="10" required>
+  <input type="password" id="s2" placeholder="Repita a nova senha" autocomplete="new-password" minlength="10" required>
+  <div class="erro" id="sErro" role="alert"></div>
+  <button class="btn" style="width:100%;margin-top:6px">Salvar senha</button>
+  <button class="btn sec" style="width:100%;margin-top:8px" type="button" id="sFechar">Agora não</button>
+</form></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script src="portal.js"></script>
+<script>if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});</script>
+</body></html>

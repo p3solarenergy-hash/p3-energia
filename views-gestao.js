@@ -158,7 +158,7 @@
           <div class="inline"><button class="btn sm" data-per="mes">Só o mês</button><button class="btn sm" data-per="ano">No ano</button><button class="btn sm" data-per="12">12 meses</button></div>
           ${ui.relTipo === "dono" ? `<label class="inline" style="font-size:13px"><input type="checkbox" id="rAnon" ${ui.relAnon ? "checked" : ""}> Mostrar clientes só pelas iniciais</label>` : ""}
           <hr class="sep" style="margin:4px 0">
-          <button class="btn primary" id="gerar">Gerar PDF</button>
+          <button class="btn primary" id="gerar">Gerar PDF</button>${ui.relTipo !== "consolidado" ? `<button class="btn" id="publicar">Publicar no portal</button>` : ""}
           
           <div id="gerados"></div>
           <hr class="sep" style="margin:4px 0">
@@ -183,6 +183,11 @@
       const b = $("#gerar"); b.disabled = true; b.textContent = "Gerando…";
       try { const r = await api("relatorio/pdf", { method: "POST", body: { tipo: ui.relTipo, ...q() } }); mostrarGerado([r]); window.P3_IMPRIMIR(r.caminho); }
       catch (e) { toast(e.message, "bad"); } finally { b.disabled = false; b.textContent = "Gerar PDF"; }
+    };
+    if ($("#publicar")) $("#publicar").onclick = async () => {
+      if (!await confirmar("Publicar no portal", "Este relatório fica disponível no portal para a pessoa (se ela tiver login). Se já houver um do mesmo período, ele é substituído.", "Publicar")) return;
+      try { const r = await api("publicar", { method: "POST", body: { tipo: ui.relTipo, ...q() } }); toast("Publicado: " + r.titulo, "ok"); }
+      catch (e) { toast(e.message, "bad"); }
     };
     $("#lote").onclick = async () => {
       const mes = ui.relAte;

@@ -6,7 +6,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="P3 Usinas">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default"><title>P3 · Entrar</title>
+  <meta name="apple-mobile-web-app-status-bar-style" content="default"><meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; worker-src 'self' blob: https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://viqgsvfvbzmpbuhsqisa.supabase.co wss://viqgsvfvbzmpbuhsqisa.supabase.co https://cdnjs.cloudflare.com; frame-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'">
+  <meta name="referrer" content="no-referrer"><title>P3 · Entrar</title>
 <style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#eef1ea;font-family:system-ui,"Segoe UI",Arial,sans-serif;color:#1c2b22}
 form{background:#fff;padding:28px 24px;border-radius:14px;box-shadow:0 6px 24px rgba(0,0,0,.08);width:min(340px,calc(100vw - 32px));box-sizing:border-box}
 .lp{height:46px;width:auto;display:block}.lp .lg-a{fill:#7b934a}.lp .lg-b{fill:#9aae2e}
@@ -21,15 +22,17 @@ button{margin-top:2px;width:100%;padding:12px;border:0;border-radius:8px;backgro
 <script>
 const sb = supabase.createClient(P3_CONFIG.url, P3_CONFIG.chave);
 const erro = t => { document.getElementById("e").textContent = t; };
-sb.auth.getSession().then(({ data }) => { if (data.session) location.href = "index.html"; });
+// Cada perfil vai para a sua tela: P3 → gestão; dono e cliente → portal.
+const destino = async () => { const r = await sb.rpc("meu_perfil"); const p = r.data && r.data[0]; return p ? (p.papel === "admin" ? "index.html" : "portal.html") : null; };
+sb.auth.getSession().then(async ({ data }) => { if (data.session) { const d = await destino(); if (d) location.href = d; } });
 document.getElementById("f").onsubmit = async ev => {
   ev.preventDefault();
   const b = document.getElementById("b");
   b.disabled = true; erro("");
   const r = await sb.auth.signInWithPassword({ email: document.getElementById("email").value.trim(), password: document.getElementById("senha").value });
   if (r.error) { erro("E-mail ou senha incorretos."); b.disabled = false; return; }
-  const a = await sb.rpc("e_autorizado");
-  if (a.error || !a.data) { await sb.auth.signOut(); erro("Este usuário não tem acesso à P3."); b.disabled = false; return; }
-  location.href = "index.html";
+  const d = await destino();
+  if (!d) { await sb.auth.signOut(); erro("Este acesso está desativado. Fale com a P3."); b.disabled = false; return; }
+  location.href = d;
 };
 </script><script>if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});</script></body></html>

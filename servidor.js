@@ -16,6 +16,13 @@
   const hoje = () => new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
   const prontos = new Map(); // relatórios prontos para imprimir: nome → HTML
 
+  // A gestão é só da P3. Dono e cliente vão para o portal; sem perfil, volta ao login.
+  // (As regras do banco já bloqueiam os dados; isto só leva cada um para a tela certa.)
+  sb.rpc("meu_perfil").then(r => {
+    const p = (r.data && r.data[0]) || null;
+    if (!p) location.replace("login.html"); else if (p.papel !== "admin") location.replace("portal.html");
+  });
+
   async function garantirUcGeradora(u) {
     if (!u.uc_geradora && !u.uc_geradora_conces) return;
     const uc = await base.findUc(u.uc_geradora, u.uc_geradora_conces);
@@ -110,6 +117,30 @@
       prontos.set(nome, await htmlDe(tipo, d));
       await base.audit("relatorio", null, null, `PDF gerado: ${nome}`, null, { tipo, ...d });
       return { nome, caminho: nome };
+    }
+    // Publica o relatório no portal do cliente/dono (substitui o mesmo período, se já publicado).
+    if (m === "POST" && p[0] === "publicar") {
+      const { tipo, ...d } = corpo;
+      if (!["cliente", "dono"].includes(tipo)) throw new Error("Só extratos de cliente e de dono vão para o portal.");
+      const db = await base.snapshot();
+      const html = R.render(db, tipo, d);
+      const alvo = tipo === "cliente" ? (db.clientes.find(c => c.id === d.cliente_id) || {}).nome : (db.donos.find(x => x.id === d.dono_id) || {}).nome;
+      const titulo = `${tipo === "cliente" ? "Relatório de economia" : "Extrato do proprietário"} · ${d.de === d.ate ? window.P3_MOTOR.monthLong(d.de) : `${window.P3_MOTOR.monthLong(d.de)} a ${window.P3_MOTOR.monthLong(d.ate)}`}`;
+      const linha = { tipo, cliente_id: tipo === "cliente" ? d.cliente_id : null, dono_id: tipo === "dono" ? d.dono_id : null, de: d.de, ate: d.ate, titulo, html, resumo: R.resumo(db, tipo, d), publicado_em: new Date().toISOString() };
+      const r = await sb.from("publicacoes").upsert(linha, { onConflict: "tipo,cliente_id,dono_id,de,ate" }).select("id").single();
+      if (r.error) throw new Error(`Não consegui publicar: ${r.error.message}`);
+      await base.audit("publicar", "publicacoes", r.data.id, `Publicado no portal: ${titulo} · ${alvo || ""}`);
+      return { id: r.data.id, titulo };
+    }
+    if (p[0] === "publicacoes") {
+      if (m === "GET") { const r = await sb.from("publicacoes").select("id, tipo, cliente_id, dono_id, de, ate, titulo, publicado_em").order("publicado_em", { ascending: false }); if (r.error) throw r.error; return r.data; }
+      if (m === "DELETE" && p[1]) { const r = await sb.from("publicacoes").delete().eq("id", p[1]); if (r.error) throw r.error; await base.audit("excluir", "publicacoes", p[1], "Relatório retirado do portal"); return { ok: true }; }
+    }
+    // Logins de donos e clientes: tudo passa pela função "acessos", que confere se quem pede é admin.
+    if (m === "POST" && p[0] === "acessos") {
+      const r = await sb.functions.invoke("acessos", { body: corpo });
+      if (r.error) { let msg = r.error.message; try { msg = (await r.error.context.json()).erro || msg; } catch (_) { } throw new Error(msg); }
+      return r.data;
     }
     if (m === "POST" && p[0] === "abrir-pasta") throw new Error("Na versão online não há pasta para abrir: os PDFs e os backups ficam guardados na nuvem.");
     if (CRUD.has(p[0])) {
