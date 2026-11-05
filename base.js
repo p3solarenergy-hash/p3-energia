@@ -17,11 +17,11 @@
     usina_mes: { prefix: "um", required: ["usina_id", "competencia"], json: ["custos"], fields: ["usina_id", "competencia", "arrendamento", "gestao_modo", "gestao_pct", "gestao_valor", "custos", "status", "geracao_kwh", "obs"] },
     projecoes: { prefix: "pj", fields: ["nome", "cliente", "params", "contas", "resumo", "obs"], required: ["nome"], json: ["params", "contas", "resumo"] },
     obras: { prefix: "ob", required: ["nome"], json: ["itens", "lancamentos"], fields: ["nome", "contratante", "tipo", "cidade", "vendedor", "status", "data_inicio", "data_fim", "kwp", "carregadores_dc", "carregadores_ac", "potencia_kw", "modo", "venda", "custo", "custo_material", "custo_mao_obra", "custo_outros", "imposto_pct", "admin_pct", "gestao_pct", "desconto", "valor_contratado", "itens", "lancamentos", "origem", "obs"] },
-    nf_regras: { prefix: "nr", required: ["usina_id"], fields: ["usina_id", "descricao", "emitente", "tomador", "dia", "valor_padrao", "repasse", "ativo", "obs"] },
-    notas_fiscais: { prefix: "nf", required: ["usina_id", "competencia"], fields: ["regra_id", "usina_id", "competencia", "emitente", "tomador", "numero", "data_emissao", "valor", "repasse_valor", "repasse_status", "repasse_em", "arquivo", "status", "obs"] },
+    nf_regras: { prefix: "nr", required: ["usina_id"], fields: ["usina_id", "descricao", "emitente", "tomador", "dia", "valor_padrao", "custo_pct", "repasse", "ativo", "obs"] },
+    notas_fiscais: { prefix: "nf", required: ["usina_id", "competencia"], fields: ["regra_id", "usina_id", "competencia", "emitente", "tomador", "numero", "data_emissao", "valor", "custo_pct", "gestao_valor", "repasse_valor", "repasse_status", "repasse_em", "arquivo", "status", "obs"] },
     scee: { prefix: "sc", required: ["referencia"], fields: ["uc", "uc_conces", "papel", "geradora", "geradora_conces", "referencia", "saldo_anterior", "cred_recebido", "energia_injetada", "energia_ativa", "credito_utilizado", "percentual", "saldo_final", "documento_id", "emitido_em"] }
   };
-  const NUMERIC = new Set(["potencia_kwp", "valor_investido", "arrendamento_mensal", "gestao_pct", "gestao_valor", "defasagem", "ativa", "percentual", "dias", "total", "valor_creditos", "sem_usina", "consumo_kwh", "compensado_kwh", "iluminacao_publica", "encargos", "bandeira_valor", "saldo_creditos_kwh", "arrendamento", "geracao_kwh", "saldo_anterior", "cred_recebido", "energia_injetada", "energia_ativa", "credito_utilizado", "saldo_final", "valor", "dia_vencimento", "kwp", "carregadores_dc", "carregadores_ac", "potencia_kw", "venda", "custo", "custo_material", "custo_mao_obra", "custo_outros", "imposto_pct", "admin_pct", "gestao_pct", "desconto", "valor_contratado", "dia", "valor_padrao", "repasse", "repasse_valor"]);
+  const NUMERIC = new Set(["potencia_kwp", "valor_investido", "arrendamento_mensal", "gestao_pct", "gestao_valor", "defasagem", "ativa", "percentual", "dias", "total", "valor_creditos", "sem_usina", "consumo_kwh", "compensado_kwh", "iluminacao_publica", "encargos", "bandeira_valor", "saldo_creditos_kwh", "arrendamento", "geracao_kwh", "saldo_anterior", "cred_recebido", "energia_injetada", "energia_ativa", "credito_utilizado", "saldo_final", "valor", "dia_vencimento", "kwp", "carregadores_dc", "carregadores_ac", "potencia_kw", "venda", "custo", "custo_material", "custo_mao_obra", "custo_outros", "imposto_pct", "admin_pct", "gestao_pct", "desconto", "valor_contratado", "dia", "valor_padrao", "repasse", "repasse_valor", "custo_pct"]);
   const TODAS = ["config", "donos", "clientes", "usinas", "ucs", "vinculos", "documentos", "faturas", "usina_mes", "scee", "projecoes", "custos_fixos", "custos", "obras", "nf_regras", "notas_fiscais"];
 
   const now = () => new Date().toISOString();
@@ -201,7 +201,8 @@
         if (row.data_emissao && !/^\d{4}-\d{2}-\d{2}$/.test(String(row.data_emissao))) throw new Error("Data deve ser AAAA-MM-DD.");
         if (row.status && !["emitida", "cancelada"].includes(row.status)) throw new Error("Situação da NF inválida.");
         if (row.repasse_status && !["pendente", "pago"].includes(row.repasse_status)) throw new Error("Situação do repasse inválida.");
-        for (const f of ["valor", "valor_padrao", "repasse_valor"]) if (row[f] != null && row[f] < 0) throw new Error("Valores não podem ser negativos.");
+        if (row.custo_pct != null && !(row.custo_pct >= 0 && row.custo_pct < 100)) throw new Error("Custo da NF: de 0 a 99%.");
+        for (const f of ["valor", "valor_padrao", "repasse_valor", "gestao_valor"]) if (row[f] != null && row[f] < 0) throw new Error("Valores não podem ser negativos.");
       }
       if (table === "usina_mes") {
         if (!mes(row.competencia)) throw new Error("Competência deve ser AAAA-MM.");

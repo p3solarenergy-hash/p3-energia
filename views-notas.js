@@ -88,11 +88,11 @@
             <td class="right"><button class="btn sm primary" data-pend="${i}">${p.regra.emitente === "dono" ? "Guardar NF do dono" : "Lançar NF"}</button></td></tr>`).join("")}</tbody></table></div>` : `<div class="note ok">Nenhuma NF pendente.</div>`}</div>
       ${rep.length ? `<div class="section"><div class="section-head"><div><h2>Repasses ao dono</h2><p>NFs que a P3 emitiu e cujo valor do dono ainda não foi repassado.</p></div></div>
         <div class="table-wrap"><table><thead><tr><th>Usina</th><th>Dono</th><th>Mês</th><th>NF</th><th class="n">Valor da NF</th><th class="n">Repassar</th><th></th></tr></thead><tbody>
-        ${rep.map(x => `<tr><td><b>${esc(nomeUsina(x.usina_id))}</b></td><td>${esc(nomeDono((db().by.usinas.get(x.usina_id) || {}).dono_id))}</td><td>${esc(fmt.mes(x.competencia))}</td><td>${esc(x.numero || "s/ nº")}</td><td class="n">${fmt.brl(x.valor)}</td><td class="n"><b>${fmt.brl(x.repasse_valor)}</b></td>
+        ${rep.map(x => `<tr><td><b>${esc(nomeUsina(x.usina_id))}</b></td><td>${esc(nomeDono((db().by.usinas.get(x.usina_id) || {}).dono_id))}</td><td>${esc(fmt.mes(x.competencia))}</td><td>${esc(x.numero || "s/ nº")}</td><td class="n">${fmt.brl(x.valor)}</td><td class="n"><b>${fmt.brl(x.repasse_valor)}</b>${x.gestao_valor != null || x.custo_pct ? `<small>− ${fmt.brl(x.gestao_valor)} gestão − ${fmt.brl(n(x.valor) * n(x.custo_pct) / 100)} NF</small>` : ""}</td>
           <td class="right"><button class="btn sm" data-repassei="${esc(x.id)}">Marcar repassado</button></td></tr>`).join("")}</tbody></table></div></div>` : ""}
       <div class="section"><div class="section-head"><div><h2>Regras por usina</h2><p>Quem emite, o dia do mês e o valor de costume. Clique para editar.</p></div><button class="btn" id="nfRegraNova">+ Regra</button></div>
         <div class="table-wrap"><table><thead><tr><th>Usina</th><th>NF</th><th>Quem emite</th><th>Tomador</th><th class="n">Dia</th><th class="n">Valor de costume</th><th>Repasse</th></tr></thead><tbody>
-        ${dados.regras.map(r => `<tr class="clickable" data-regra="${esc(r.id)}"><td><b>${esc(nomeUsina(r.usina_id))}</b></td><td>${esc(r.descricao || "")}${r.ativo === 0 ? ` ${badge("Pausada", "")}` : ""}</td><td>${esc(EMITENTE[r.emitente] || r.emitente)}</td><td>${esc(r.tomador || "—")}</td><td class="n">${r.dia ? `dia ${r.dia}` : `<span class="neg">definir</span>`}</td><td class="n">${r.valor_padrao ? fmt.brl(r.valor_padrao) : "—"}</td><td>${r.repasse ? "Repassa ao dono" : "—"}</td></tr>`).join("") || `<tr><td colspan="7" class="empty">Nenhuma regra. Crie uma para cada NF que se repete todo mês.</td></tr>`}</tbody></table></div></div>
+        ${dados.regras.map(r => `<tr class="clickable" data-regra="${esc(r.id)}"><td><b>${esc(nomeUsina(r.usina_id))}</b></td><td>${esc(r.descricao || "")}${r.ativo === 0 ? ` ${badge("Pausada", "")}` : ""}</td><td>${esc(EMITENTE[r.emitente] || r.emitente)}</td><td>${esc(r.tomador || "—")}</td><td class="n">${r.dia ? `dia ${r.dia}` : `<span class="neg">definir</span>`}</td><td class="n">${r.valor_padrao ? fmt.brl(r.valor_padrao) : "—"}</td><td>${r.repasse ? `Repassa ao dono${r.custo_pct ? ` · desconta gestão e ${fmt.pctN(r.custo_pct)} da NF` : " · desconta gestão"}` : "—"}</td></tr>`).join("") || `<tr><td colspan="7" class="empty">Nenhuma regra. Crie uma para cada NF que se repete todo mês.</td></tr>`}</tbody></table></div></div>
       <div class="section"><div class="section-head"><div><h2>NFs lançadas</h2></div>
         <div class="actions"><select id="nfFUsina">${opts(db().usinas.map(u => [u.id, u.nome]), filtro.usina, "Todas as usinas")}</select><select id="nfFAno">${opts(anos.map(a => [a, a]), filtro.ano, "Todos os anos")}</select></div></div>
         <div class="table-wrap"><table><thead><tr><th>Mês</th><th>Usina</th><th>Quem emitiu</th><th>Nº</th><th>Emissão</th><th>Tomador</th><th class="n">Valor</th><th>Repasse</th><th></th></tr></thead><tbody>
@@ -116,18 +116,21 @@
   }
   async function recarregar(main) { dados.carregado = false; await carregar(); desenhar(main); }
 
-  // Parte do dono numa NF que a P3 emite por inteiro: o valor menos a gestão da P3 (o que estiver na usina).
-  function parteDono(usinaId, valor) {
+  // Repasse ao dono numa NF que a P3 emite por inteiro: valor recebido − gestão da P3 − custo da NF (% sobre o valor).
+  // Ex.: Prisma: 5.000 − 500 de gestão − 6% (300) = 4.200 ao dono.
+  const r2 = v => Math.round(v * 100) / 100;
+  function gestaoDa(usinaId, valor) {
     const u = db().by.usinas.get(usinaId) || {};
-    if (!valor) return null;
-    if (u.gestao_modo === "valor" && u.gestao_valor) return Math.max(0, valor - n(u.gestao_valor));
-    if (u.gestao_pct) return Math.round(valor * (1 - n(u.gestao_pct) / 100) * 100) / 100;
-    return valor;
+    if (u.gestao_modo === "valor" && u.gestao_valor != null) return n(u.gestao_valor);
+    if (u.gestao_pct) return r2(valor * n(u.gestao_pct) / 100);
+    return 0;
   }
+  const repasse = (valor, gestao, pct) => { const custo = r2(n(valor) * n(pct) / 100); return { custo, liquido: Math.max(0, r2(n(valor) - n(gestao) - custo)) }; };
   function novaDaRegra(r, comp) {
-    const valor = r.valor_padrao || null;
+    const valor = r.valor_padrao || null, gestao = r.repasse && valor ? gestaoDa(r.usina_id, valor) : null;
     return { regra_id: r.id, usina_id: r.usina_id, competencia: comp, emitente: r.emitente, tomador: r.tomador || "", valor, status: "emitida",
-      repasse_status: r.repasse ? "pendente" : "", repasse_valor: r.repasse ? parteDono(r.usina_id, valor) : null, data_emissao: hojeIso() };
+      custo_pct: r.custo_pct ?? null, gestao_valor: gestao,
+      repasse_status: r.repasse ? "pendente" : "", repasse_valor: r.repasse && valor ? repasse(valor, gestao, r.custo_pct).liquido : null, data_emissao: hojeIso() };
   }
 
   // Lê o PDF/foto da NF para sugerir número, valor e data.
@@ -156,7 +159,10 @@
         ${campo("valor", "Valor (R$)", 'inputmode="decimal"')}
         ${campo("tomador", "Tomador (cliente)")}
         <label class="f">Repasse ao dono<select name="repasse_status">${opts([["", "Não há"], ["pendente", "A repassar"], ["pago", "Repassado"]], x.repasse_status || "")}</select></label>
+        ${campo("gestao_valor", "Gestão P3 (R$)", 'inputmode="decimal"')}
+        ${campo("custo_pct", "Custo da NF (%)", 'inputmode="decimal" placeholder="Ex.: 6"')}
         ${campo("repasse_valor", "Valor a repassar (R$)", 'inputmode="decimal"')}
+        <p class="muted wide" id="nfConta" style="margin:0;font-size:12.5px"></p>
         ${campo("repasse_em", "Repassado em", 'type="date"')}
         <label class="f">Situação<select name="status">${opts([["emitida", "Emitida"], ["cancelada", "Cancelada"]], x.status)}</select></label>
         ${campo("obs", "Observações", "", "wide")}
@@ -168,8 +174,8 @@
       onSave: async el => {
         const f = formData(el);
         if (!f.usina_id) throw new Error("Escolha a usina.");
-        for (const k of ["valor", "repasse_valor"]) f[k] = f[k] === "" ? null : n(f[k]);
-        if (!f.repasse_status) { f.repasse_status = null; f.repasse_valor = null; f.repasse_em = null; }
+        for (const k of ["valor", "repasse_valor", "gestao_valor", "custo_pct"]) f[k] = f[k] === "" ? null : n(f[k]);
+        if (!f.repasse_status) { f.repasse_status = null; f.repasse_valor = null; f.repasse_em = null; f.gestao_valor = null; }
         if (f.repasse_status === "pago" && !f.repasse_em) f.repasse_em = hojeIso();
         if (!f.regra_id) f.regra_id = null;
         if (arquivo) {
@@ -183,15 +189,36 @@
     const bgs = document.querySelectorAll(".modal-bg"), bg = bgs[bgs.length - 1];
     const sel = nm => $(`[name="${nm}"]`, bg);
     sel("usina_id").onchange = () => { sel("regra_id").innerHTML = opts(regrasDa(sel("usina_id").value).map(r => [r.id, r.descricao || EMITENTE[r.emitente]]), "", "Avulsa (sem regra)"); };
-    const sugerirRepasse = () => { if (sel("repasse_status").value && !sel("repasse_valor").value) sel("repasse_valor").value = parteDono(sel("usina_id").value, n(sel("valor").value)) ?? ""; };
+    // Conta do repasse: refeita sempre que muda o valor, a gestão ou o custo da NF (o valor final pode ser ajustado à mão).
+    const fmtIn = v => v == null || v === "" ? "" : String(v).replace(".", ",");
+    const conta = () => {
+      const tem = !!sel("repasse_status").value;
+      ["gestao_valor", "custo_pct", "repasse_valor"].forEach(k => { sel(k).closest("label").style.display = tem ? "" : "none"; });
+      const el = $("#nfConta", bg);
+      if (!tem) { el.textContent = ""; return; }
+      const v = n(sel("valor").value), g = n(sel("gestao_valor").value), c = repasse(v, g, sel("custo_pct").value);
+      el.textContent = `${fmt.brl(v)} recebidos − ${fmt.brl(g)} de gestão − ${fmt.brl(c.custo)} de custo da NF (${fmt.pctN(n(sel("custo_pct").value))}) = ${fmt.brl(c.liquido)} ao dono`;
+    };
+    const recalcular = () => {
+      if (!sel("repasse_status").value) return conta();
+      const v = n(sel("valor").value);
+      if (sel("gestao_valor").value === "" && v) sel("gestao_valor").value = fmtIn(gestaoDa(sel("usina_id").value, v));
+      if (v) sel("repasse_valor").value = fmtIn(repasse(v, sel("gestao_valor").value, sel("custo_pct").value).liquido);
+      conta();
+    };
     sel("regra_id").onchange = () => {
       const r = dados.regras.find(y => y.id === sel("regra_id").value); if (!r) return;
       sel("emitente").value = r.emitente; if (r.tomador && !sel("tomador").value) sel("tomador").value = r.tomador;
-      if (r.valor_padrao && !sel("valor").value) sel("valor").value = r.valor_padrao;
+      if (r.valor_padrao && !sel("valor").value) sel("valor").value = fmtIn(r.valor_padrao);
+      if (r.custo_pct != null) sel("custo_pct").value = fmtIn(r.custo_pct);
       if (r.repasse && !sel("repasse_status").value) sel("repasse_status").value = "pendente";
-      sugerirRepasse();
+      recalcular();
     };
-    sel("repasse_status").onchange = sugerirRepasse;
+    sel("repasse_status").onchange = recalcular;
+    ["valor", "gestao_valor", "custo_pct"].forEach(k => { sel(k).oninput = recalcular; });
+    sel("repasse_valor").oninput = conta;
+    for (const k of ["valor", "gestao_valor", "custo_pct", "repasse_valor"]) sel(k).value = fmtIn(sel(k).value);
+    conta();
     const ver = $("#nfVer", bg); if (ver) ver.onclick = e => { e.preventDefault(); window.P3_COMPROVANTE.abrirAnexo(x.arquivo); };
     $("#nfArq", bg).onchange = async e => {
       arquivo = e.target.files[0]; if (!arquivo) return;
@@ -204,6 +231,7 @@
         if (lido.numero && !sel("numero").value) { sel("numero").value = lido.numero; preenchidos.push("número"); }
         if (lido.valor) { sel("valor").value = String(lido.valor).replace(".", ","); preenchidos.push("valor"); }
         if (lido.data_emissao) { sel("data_emissao").value = lido.data_emissao; preenchidos.push("data"); }
+        recalcular();
         msg.textContent = preenchidos.length ? `Lido: ${preenchidos.join(", ")}. Confira antes de salvar.` : "Não achei número/valor no arquivo: preencha à mão. O arquivo será guardado.";
       } catch (err) { msg.textContent = "Não consegui ler o arquivo, mas ele será guardado. Preencha à mão."; }
     };
@@ -225,6 +253,7 @@
         <label class="f">Quem emite<select name="emitente">${opts(Object.entries(EMITENTE), r.emitente)}</select></label>
         ${campo("dia", "Dia de emitir (1 a 31)", 'type="number" min="1" max="31"')}
         ${campo("valor_padrao", "Valor de costume (R$)", 'inputmode="decimal"')}
+        ${campo("custo_pct", "Custo da NF (%)", 'inputmode="decimal" placeholder="Ex.: 6"')}
         ${campo("tomador", "Tomador (cliente)")}
         <label class="f">Repasse ao dono<select name="repasse">${opts([["0", "Não"], ["1", "Sim: a P3 emite e repassa ao dono"]], String(r.repasse || 0))}</select></label>
         <label class="f">Situação<select name="ativo">${opts([["1", "Ativa"], ["0", "Pausada"]], String(r.ativo ?? 1))}</select></label>
@@ -237,6 +266,7 @@
         const f = formData(el);
         if (!f.usina_id) throw new Error("Escolha a usina.");
         f.valor_padrao = f.valor_padrao === "" ? null : n(f.valor_padrao);
+        f.custo_pct = f.custo_pct === "" ? null : n(f.custo_pct);
         f.dia = f.dia === "" ? null : Number(f.dia);
         f.repasse = Number(f.repasse); f.ativo = Number(f.ativo);
         return r.id ? api(`nf_regras/${encodeURIComponent(r.id)}`, { method: "PUT", body: f }) : api("nf_regras", { method: "POST", body: f });
