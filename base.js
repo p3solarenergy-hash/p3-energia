@@ -17,10 +17,12 @@
     usina_mes: { prefix: "um", required: ["usina_id", "competencia"], json: ["custos"], fields: ["usina_id", "competencia", "arrendamento", "gestao_modo", "gestao_pct", "gestao_valor", "custos", "status", "geracao_kwh", "obs"] },
     projecoes: { prefix: "pj", fields: ["nome", "cliente", "params", "contas", "resumo", "obs"], required: ["nome"], json: ["params", "contas", "resumo"] },
     obras: { prefix: "ob", required: ["nome"], json: ["itens", "lancamentos"], fields: ["nome", "contratante", "tipo", "cidade", "vendedor", "status", "data_inicio", "data_fim", "kwp", "carregadores_dc", "carregadores_ac", "potencia_kw", "modo", "venda", "custo", "custo_material", "custo_mao_obra", "custo_outros", "imposto_pct", "admin_pct", "gestao_pct", "desconto", "valor_contratado", "itens", "lancamentos", "origem", "obs"] },
+    nf_regras: { prefix: "nr", required: ["usina_id"], fields: ["usina_id", "descricao", "emitente", "tomador", "dia", "valor_padrao", "repasse", "ativo", "obs"] },
+    notas_fiscais: { prefix: "nf", required: ["usina_id", "competencia"], fields: ["regra_id", "usina_id", "competencia", "emitente", "tomador", "numero", "data_emissao", "valor", "repasse_valor", "repasse_status", "repasse_em", "arquivo", "status", "obs"] },
     scee: { prefix: "sc", required: ["referencia"], fields: ["uc", "uc_conces", "papel", "geradora", "geradora_conces", "referencia", "saldo_anterior", "cred_recebido", "energia_injetada", "energia_ativa", "credito_utilizado", "percentual", "saldo_final", "documento_id", "emitido_em"] }
   };
-  const NUMERIC = new Set(["potencia_kwp", "valor_investido", "arrendamento_mensal", "gestao_pct", "gestao_valor", "defasagem", "ativa", "percentual", "dias", "total", "valor_creditos", "sem_usina", "consumo_kwh", "compensado_kwh", "iluminacao_publica", "encargos", "bandeira_valor", "saldo_creditos_kwh", "arrendamento", "geracao_kwh", "saldo_anterior", "cred_recebido", "energia_injetada", "energia_ativa", "credito_utilizado", "saldo_final", "valor", "dia_vencimento", "kwp", "carregadores_dc", "carregadores_ac", "potencia_kw", "venda", "custo", "custo_material", "custo_mao_obra", "custo_outros", "imposto_pct", "admin_pct", "gestao_pct", "desconto", "valor_contratado"]);
-  const TODAS = ["config", "donos", "clientes", "usinas", "ucs", "vinculos", "documentos", "faturas", "usina_mes", "scee", "projecoes", "custos_fixos", "custos", "obras"];
+  const NUMERIC = new Set(["potencia_kwp", "valor_investido", "arrendamento_mensal", "gestao_pct", "gestao_valor", "defasagem", "ativa", "percentual", "dias", "total", "valor_creditos", "sem_usina", "consumo_kwh", "compensado_kwh", "iluminacao_publica", "encargos", "bandeira_valor", "saldo_creditos_kwh", "arrendamento", "geracao_kwh", "saldo_anterior", "cred_recebido", "energia_injetada", "energia_ativa", "credito_utilizado", "saldo_final", "valor", "dia_vencimento", "kwp", "carregadores_dc", "carregadores_ac", "potencia_kw", "venda", "custo", "custo_material", "custo_mao_obra", "custo_outros", "imposto_pct", "admin_pct", "gestao_pct", "desconto", "valor_contratado", "dia", "valor_padrao", "repasse", "repasse_valor"]);
+  const TODAS = ["config", "donos", "clientes", "usinas", "ucs", "vinculos", "documentos", "faturas", "usina_mes", "scee", "projecoes", "custos_fixos", "custos", "obras", "nf_regras", "notas_fiscais"];
 
   const now = () => new Date().toISOString();
   const newId = prefix => `${prefix}_${[...crypto.getRandomValues(new Uint8Array(5))].map(b => b.toString(16).padStart(2, "0")).join("")}`;
@@ -124,7 +126,7 @@
       if (!antes) throw new Error("Registro não encontrado.");
       const deps = {
         donos: [["usinas", "dono_id"]], clientes: [["ucs", "cliente_id"]],
-        usinas: [["vinculos", "usina_id"], ["usina_mes", "usina_id"], ["ucs", "usina_geradora_id"], ["custos", "usina_id"], ["custos_fixos", "usina_id"]],
+        usinas: [["vinculos", "usina_id"], ["usina_mes", "usina_id"], ["ucs", "usina_geradora_id"], ["custos", "usina_id"], ["custos_fixos", "usina_id"], ["nf_regras", "usina_id"], ["notas_fiscais", "usina_id"]],
         ucs: [["faturas", "uc_id"], ["vinculos", "uc_id"]]
       }[table] || [];
       for (const [t, c] of deps) {
@@ -191,6 +193,16 @@
         for (const f of ["data_inicio", "data_fim"]) if (row[f] && !/^\d{4}-\d{2}-\d{2}$/.test(String(row[f]).slice(0, 10))) throw new Error("Data deve ser AAAA-MM-DD.");
         for (const f of ["venda", "custo", "custo_material", "custo_mao_obra", "custo_outros"]) if (row[f] != null && row[f] < 0) throw new Error("Valores não podem ser negativos.");
       }
+      if (table === "nf_regras" || table === "notas_fiscais") {
+        if (!await this.existe("usinas", row.usina_id)) throw new Error("Usina não encontrada.");
+        if (row.emitente && !["p3", "dono"].includes(row.emitente)) throw new Error("Quem emite: P3 ou dono.");
+        if (row.dia != null && !(row.dia >= 1 && row.dia <= 31)) throw new Error("Dia de emitir: de 1 a 31.");
+        if (!mes(row.competencia)) throw new Error("Mês deve ser AAAA-MM.");
+        if (row.data_emissao && !/^\d{4}-\d{2}-\d{2}$/.test(String(row.data_emissao))) throw new Error("Data deve ser AAAA-MM-DD.");
+        if (row.status && !["emitida", "cancelada"].includes(row.status)) throw new Error("Situação da NF inválida.");
+        if (row.repasse_status && !["pendente", "pago"].includes(row.repasse_status)) throw new Error("Situação do repasse inválida.");
+        for (const f of ["valor", "valor_padrao", "repasse_valor"]) if (row[f] != null && row[f] < 0) throw new Error("Valores não podem ser negativos.");
+      }
       if (table === "usina_mes") {
         if (!mes(row.competencia)) throw new Error("Competência deve ser AAAA-MM.");
         if (row.status && !["aberto", "cobrado", "recebido", "repassado"].includes(row.status)) throw new Error("Situação inválida.");
@@ -207,6 +219,7 @@
       if (table === "usina_mes") { const u = await this.get("usinas", r.usina_id); return `Fechamento ${r.competencia} · ${u ? u.nome : r.usina_id}`; }
       if (table === "vinculos") return `Vínculo UC × usina (${r.percentual}%)`;
       if (table === "scee") return `Créditos SCEE ${r.referencia} · UC ${r.uc || r.uc_conces}`;
+      if (table === "notas_fiscais") { const u = await this.get("usinas", r.usina_id); return `NF ${r.numero || "s/ nº"} · ${r.competencia} · ${u ? u.nome : r.usina_id} · R$ ${Number(r.valor || 0).toFixed(2)}`; }
       if (table === "custos") return `Custo ${r.competencia} · ${r.descricao} · R$ ${Number(r.valor || 0).toFixed(2)}`;
       return r.nome || r.descricao || r.id;
     }

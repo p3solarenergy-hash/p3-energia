@@ -9,7 +9,7 @@
   const sb = window.supabase.createClient(window.P3_CONFIG.url, window.P3_CONFIG.chave);
   const base = new Base(sb), servico = new Servico(base);
   const R = window.P3_RELATORIOS, F = window.P3_FINANCEIRO, C = window.P3_CONFERENCIA;
-  const CRUD = new Set(["donos", "clientes", "usinas", "ucs", "vinculos", "faturas", "usina_mes", "projecoes", "custos", "custos_fixos", "obras"]);
+  const CRUD = new Set(["donos", "clientes", "usinas", "ucs", "vinculos", "faturas", "usina_mes", "projecoes", "custos", "custos_fixos", "obras", "nf_regras", "notas_fiscais"]);
   const COPIAS = "copias", BUCKET = "p3", MANTER_COPIAS = 30, SEIS_HORAS = 6 * 3600 * 1000;
   const r2 = window.P3_MOTOR.r2;
   const num = v => { const s = String(v).trim(); return Number(/,/.test(s) ? s.replace(/\./g, "").replace(",", ".") : s); };
@@ -146,16 +146,18 @@
     if (m === "POST" && p[0] === "anexo") {
       if (!blob || !blob.size) throw new Error("Arquivo vazio.");
       if (blob.size > 15 * 1024 * 1024) throw new Error("Arquivo grande demais (máximo de 15 MB).");
+      // NFs das usinas vão para notas/<usina>/; comprovantes das obras, para obras/<obra>/.
+      const usina = String(cab["X-Usina"] || "").replace(/[^\w-]/g, "");
       const obra = String(cab["X-Obra"] || "").replace(/[^\w-]/g, "");
-      if (!obra) throw new Error("Escolha a obra.");
+      if (!obra && !usina) throw new Error("Escolha a obra.");
       const nome = decodeURIComponent(cab["X-Nome"] || "comprovante").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^\w.-]+/g, "_").slice(-80);
-      const caminho = `obras/${obra}/${Date.now()}-${nome}`;
+      const caminho = usina ? `notas/${usina}/${Date.now()}-${nome}` : `obras/${obra}/${Date.now()}-${nome}`;
       const r = await sb.storage.from(BUCKET).upload(caminho, blob, { contentType: blob.type || "application/octet-stream" });
       if (r.error) throw new Error(`Não consegui guardar o arquivo: ${r.error.message}`);
       return { caminho };
     }
     if (m === "GET" && p[0] === "anexo") {
-      if (!String(q.caminho || "").startsWith("obras/")) throw new Error("Arquivo inválido.");
+      if (!/^(obras|notas)\//.test(String(q.caminho || ""))) throw new Error("Arquivo inválido.");
       const r = await sb.storage.from(BUCKET).createSignedUrl(q.caminho, 600);
       if (r.error) throw new Error("Arquivo não encontrado.");
       return { url: r.data.signedUrl };

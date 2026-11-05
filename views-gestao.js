@@ -26,7 +26,7 @@
     main.innerHTML = `
       <div class="head"><div><p class="kicker">Visão P3</p><h1>Painel</h1><p>Números de ${esc(fmt.mesLongo(comp))}, calculados das faturas da Copel lançadas.</p></div>
         <div class="actions"><label class="f">Competência${P3.mesSelect("selComp", comp)}</label></div></div>
-      ${conf.resumo.erro || faltam.length ? `<div class="note ${conf.resumo.erro ? "bad" : "warn"}" style="margin-bottom:14px">${faltam.length ? `Faltam <b>${faltam.length}</b> fatura(s) de clientes em ${esc(fmt.mes(comp))}. ` : ""}${conf.resumo.erro ? `A conferência encontrou <b>${conf.resumo.erro}</b> erro(s) que mudam números. ` : ""}<a href="#/auditoria">Ver na Auditoria →</a></div>` : ""}
+      ${conf.resumo.erro || faltam.length ? `<div class="note ${conf.resumo.erro ? "bad" : "warn"}" style="margin-bottom:14px">${faltam.length ? `Faltam <b>${faltam.length}</b> fatura(s) de clientes em ${esc(fmt.mes(comp))}. ` : ""}${conf.resumo.erro ? `A conferência encontrou <b>${conf.resumo.erro}</b> erro(s) que mudam números. ` : ""}<a href="#/auditoria">Ver na Auditoria →</a></div>` : ""}${window.P3_NF ? window.P3_NF.aviso() : ""}
       <div class="kpis">
         ${kpi("Economia dos clientes", fmt.brl(T.economia), `${fmt.pct(T.economiaPct)} da conta sem usina`, "lead")}
         ${kpi("Arrendamento do mês", fmt.brl(T.arrendamento), `${m.usinas.filter(u => u.arrendamento > 0).length} usina(s)`)}
