@@ -42,12 +42,63 @@
     ["Projetos", "Projeto arquitetônico", "un", 2000, true], ["Limpeza", "Caçamba", "un", 300, true]
   ].map(([categoria, item, unid, unit, imp]) => ({ categoria, item, unid, qtd: 0, unit, imp }));
 
+  // ───────── obras solares: planilha de custos de obra solar (modelo TONIN 30 kW) ─────────
+  // Custos por kWp conforme a instalação (telhado × solo), deslocamentos (R$ 1,75/km, ida e volta), hospedagem e
+  // alimentação (R$ 300 por pessoa/dia) e itens à mão. Preço = custos + margem por kWp (R$ 620). Imposto:
+  // tudo faturado pela P3 → 5,93% sobre o total; kit faturado direto ao cliente → 16,33% só sobre a NF de serviço da P3.
+  const ehSolar = o => /solar|usina|fotovolt/i.test(o.tipo || "");
+  const SOLAR_PADRAO = { instalacao: "telhado", km: 0, viagens_eng: 1, viagens_equipe: 1, pessoas: 4, dias: 5, margem_kwp: 620, faturamento: "p3", imp_total: 5.93, imp_servico: 16.33 };
+  const solarDe = o => ({ ...SOLAR_PADRAO, ...(o.solar && !Array.isArray(o.solar) ? o.solar : {}) });
+  // Itens do modelo solar. "auto" = quantidade e preço saem dos parâmetros; os demais são preenchidos à mão.
+  function modeloSolar(o) {
+    const s = solarDe(o), kwp = n(o.kwp), tel = s.instalacao !== "solo";
+    return [
+      { categoria: "Equipamentos", item: "Sistema fotovoltaico (kit)", unid: "un", qtd: 1, unit: 0, direto: true },
+      { categoria: "Equipamentos", item: "Estrutura", unid: "un", qtd: 1, unit: 0 },
+      { categoria: "Infra elétrica", item: "Transformador", unid: "un", qtd: 1, unit: 0 },
+      { categoria: "Infra elétrica", item: "Padrão de entrada", unid: "un", qtd: 1, unit: 0 },
+      { categoria: "Implantação", item: "Implantação (mão de obra)", unid: "kWp", qtd: kwp, unit: tel ? 220 : 300, auto: true },
+      { categoria: "Engenharia", item: "Projeto e homologação", unid: "kWp", qtd: kwp, unit: 80, auto: true },
+      { categoria: "Logística", item: "Deslocamento engenharia", unid: "km", qtd: n(s.km) * 2 * n(s.viagens_eng), unit: 1.75, auto: true },
+      { categoria: "Logística", item: "Deslocamento equipe", unid: "km", qtd: n(s.km) * 2 * n(s.viagens_equipe), unit: 1.75, auto: true },
+      { categoria: "Logística", item: "Hospedagem e alimentação", unid: "pessoa/dia", qtd: n(s.pessoas) * n(s.dias), unit: 300, auto: true },
+      { categoria: "Material", item: "Material elétrico", unid: "kWp", qtd: kwp, unit: tel ? 250 : 350, auto: true },
+      { categoria: "Obra civil", item: "Civil", unid: "kWp", qtd: kwp, unit: tel ? 20 : 100, auto: true },
+      { categoria: "Logística", item: "Descarregamento", unid: "un", qtd: 1, unit: 0 },
+      { categoria: "Infra elétrica", item: "Conexão (concessionária)", unid: "un", qtd: 1, unit: 0 },
+      { categoria: "Outros", item: "Comissão", unid: "un", qtd: 1, unit: 0 },
+      { categoria: "Outros", item: "Terrenista", unid: "un", qtd: 1, unit: 0 }
+    ].map(i => ({ ...i, imp: false }));
+  }
+  const NOMES_SOLAR = new Set(modeloSolar({}).map(i => i.item));
+  // Atualiza os itens automáticos pelos parâmetros e acrescenta os que faltam; o que foi digitado à mão fica.
+  function aplicarModeloSolar(o) {
+    for (const m of modeloSolar(o)) {
+      const it = o.itens.find(i => i.item === m.item);
+      if (!it) o.itens.push({ ...m });
+      else if (m.auto) { it.qtd = m.qtd; it.unit = m.unit; it.unid = m.unid; }
+      else if (m.direto) it.direto = true;
+    }
+  }
+
   // Mesmo cálculo da planilha: itens (+ imposto nos que levam), administração de obra (+ imposto sobre ela),
   // desenvolvimento/gestão sobre o subtotal e desconto. Se há valor contratado, ele é a venda.
   function calc(o) {
     const imp = n(o.imposto_pct) / 100;
     const pag = (o.lancamentos || []).filter(l => l.tipo !== "recebimento").reduce((s, l) => s + n(l.valor), 0);
     const rec = (o.lancamentos || []).filter(l => l.tipo === "recebimento").reduce((s, l) => s + n(l.valor), 0);
+    if (o.modo === "detalhado" && ehSolar(o)) {
+      const s = solarDe(o), kwp = n(o.kwp);
+      const linhas = (o.itens || []).map(i => { const sub = n(i.qtd) * n(i.unit); return { sub, im: 0, tot: sub }; });
+      const sub = linhas.reduce((t, l) => t + l.sub, 0);
+      const direto = (o.itens || []).reduce((t, i) => t + (i.direto ? n(i.qtd) * n(i.unit) : 0), 0);
+      const margemP3 = kwp * n(s.margem_kwp), sugerido = sub + margemP3;
+      const venda = n(o.valor_contratado) || sugerido;
+      const pelaP3 = s.faturamento === "direto" ? venda - direto : venda;
+      const imposto = pelaP3 * n(s.faturamento === "direto" ? s.imp_servico : s.imp_total) / 100;
+      const custo = sub + imposto;
+      return { solar: true, linhas, sub, direto, margemP3, sugerido, pelaP3, imposto, impPct: n(s.faturamento === "direto" ? s.imp_servico : s.imp_total), custo, venda, lucro: venda - custo, margem: venda ? (venda - custo) / venda : 0, porKwp: kwp ? venda / kwp : 0, pag, rec };
+    }
     if (o.modo === "detalhado") {
       const linhas = (o.itens || []).map(i => { const sub = n(i.qtd) * n(i.unit); const im = i.imp === false ? 0 : sub * imp; return { sub, im, tot: sub + im }; });
       const sub = linhas.reduce((s, l) => s + l.sub, 0), imps = linhas.reduce((s, l) => s + l.im, 0), itens = sub + imps;
@@ -228,7 +279,10 @@
         if (!String(o.nome || "").trim()) throw new Error("Dê um nome para a obra.");
         const c = calc(o);
         const corpo = { ...o, venda: c.venda, custo: c.custo,
-          itens: o.modo === "detalhado" ? o.itens.filter(i => n(i.qtd) || (i.item && !MODELO.some(m => m.item === i.item))) : [],
+          itens: o.modo !== "detalhado" ? [] : ehSolar(o)
+            ? o.itens.filter(i => n(i.qtd) * n(i.unit) || (i.item && !NOMES_SOLAR.has(i.item)))
+            : o.itens.filter(i => n(i.qtd) || (i.item && !MODELO.some(m => m.item === i.item))),
+          solar: o.modo === "detalhado" && ehSolar(o) ? Object.fromEntries(Object.entries(solarDe(o)).map(([k, v]) => [k, typeof SOLAR_PADRAO[k] === "number" ? n(v) : v])) : (o.solar && !Array.isArray(o.solar) ? o.solar : null),
           lancamentos: o.lancamentos.filter(l => n(l.valor) || l.descricao) };
         for (const k of NUMEROS) corpo[k] = corpo[k] === "" || corpo[k] == null ? null : n(corpo[k]);
         corpo.itens = corpo.itens.map(i => ({ ...i, qtd: n(i.qtd), unit: n(i.unit) }));
@@ -249,7 +303,16 @@
       if (o.modo !== "detalhado") return;
       c.linhas.forEach((l, i) => { const td = $(`[data-tot="${i}"]`, bg); if (td) td.textContent = brl(l.tot); });
       const r = $("#obCapex", bg);
-      if (r) r.innerHTML = `<tr><td>Itens</td><td class="right">${brl(c.sub)}</td></tr><tr><td>Impostos dos itens</td><td class="right">${brl(c.imps)}</td></tr>
+      if (r && c.solar) {
+        const s = solarDe(o);
+        r.innerHTML = `<tr><td>Custos dos itens</td><td class="right">${brl(c.sub)}</td></tr>
+          ${c.direto ? `<tr><td class="muted">dos quais kit faturado direto ao cliente</td><td class="right muted">${brl(c.direto)}</td></tr>` : ""}
+          <tr><td>(+) Margem P3 · ${dec(n(o.kwp))} kWp × ${brl(n(s.margem_kwp))}</td><td class="right">${brl(c.margemP3)}</td></tr>
+          <tr><td><b>Preço sugerido</b>${n(o.kwp) ? ` <span class="muted">(${brl(c.sugerido / n(o.kwp))}/kWp)</span>` : ""}</td><td class="right"><b>${brl(c.sugerido)}</b></td></tr>
+          ${n(o.valor_contratado) ? `<tr><td>Valor contratado</td><td class="right">${brl(c.venda)}</td></tr>` : ""}
+          <tr><td>(−) Imposto ${dec(c.impPct)}% sobre ${s.faturamento === "direto" ? "a NF de serviço da P3" : "o total"} (${brl(c.pelaP3)})</td><td class="right">${brl(-c.imposto)}</td></tr>
+          <tr><td><b>Lucro líquido</b></td><td class="right"><b>${brl(c.lucro)}</b> <span class="muted">${pct(c.margem)}</span></td></tr>`;
+      } else if (r) r.innerHTML = `<tr><td>Itens</td><td class="right">${brl(c.sub)}</td></tr><tr><td>Impostos dos itens</td><td class="right">${brl(c.imps)}</td></tr>
         <tr><td><b>Subtotal com impostos</b></td><td class="right"><b>${brl(c.itens)}</b></td></tr>
         ${c.admin ? `<tr><td>(+) Administração de obra</td><td class="right">${brl(c.admin)}</td></tr><tr><td class="muted">imposto sobre a administração (entra no custo)</td><td class="right muted">${brl(c.impAdmin)}</td></tr>` : ""}
         ${c.gestao ? `<tr><td>(+) Desenvolvimento e gestão</td><td class="right">${brl(c.gestao)}</td></tr>` : ""}
@@ -276,16 +339,35 @@
         });
         return resumo();
       }
-      box.innerHTML = `<div class="grid-form">
+      const solar = ehSolar(o), s = solarDe(o);
+      box.innerHTML = (solar ? `<p class="muted" style="margin:4px 0 8px;font-size:12.5px">Obra solar: custos pela planilha de obra solar (por kWp, telhado ou solo). Preencha os parâmetros e toque em <b>Calcular pela planilha</b>; os itens sem cálculo (kit, estrutura, padrão…) você digita.</p>
+        <div class="grid-form">
+          <label class="f">Potência (kWp)<input data-o="kwp" inputmode="decimal" value="${esc(o.kwp ?? "")}"></label>
+          <label class="f">Instalação<select data-s="instalacao">${opts([["telhado", "Telhado"], ["solo", "Solo"]], s.instalacao)}</select></label>
+          <label class="f">Distância até a obra (km, ida)<input data-s="km" inputmode="decimal" value="${esc(s.km)}"></label>
+          <label class="f">Viagens da engenharia<input data-s="viagens_eng" inputmode="decimal" value="${esc(s.viagens_eng)}"></label>
+          <label class="f">Viagens da equipe<input data-s="viagens_equipe" inputmode="decimal" value="${esc(s.viagens_equipe)}"></label>
+          <label class="f">Pessoas na equipe<input data-s="pessoas" inputmode="decimal" value="${esc(s.pessoas)}"></label>
+          <label class="f">Dias de obra (hospedagem)<input data-s="dias" inputmode="decimal" value="${esc(s.dias)}"></label>
+          <label class="f">Margem P3 (R$/kWp)<input data-s="margem_kwp" inputmode="decimal" value="${esc(s.margem_kwp)}"></label>
+          <label class="f">Faturamento<select data-s="faturamento">${opts([["p3", "Tudo pela P3 (NF de produto)"], ["direto", "Kit faturado direto ao cliente"]], s.faturamento)}</select></label>
+          <label class="f">% imposto · tudo pela P3<input data-s="imp_total" inputmode="decimal" value="${esc(s.imp_total)}"></label>
+          <label class="f">% imposto · NF de serviço<input data-s="imp_servico" inputmode="decimal" value="${esc(s.imp_servico)}"></label>
+          <label class="f">Valor contratado (R$)<input data-o="valor_contratado" inputmode="decimal" value="${esc(o.valor_contratado ?? "")}" placeholder="vazio = preço sugerido"></label></div>` : `<div class="grid-form">
           <label class="f">% impostos<input data-o="imposto_pct" inputmode="decimal" value="${esc(o.imposto_pct ?? 6)}"></label>
           <label class="f">% administração de obra<input data-o="admin_pct" inputmode="decimal" value="${esc(o.admin_pct ?? 0)}"></label>
           <label class="f">% desenvolvimento/gestão<input data-o="gestao_pct" inputmode="decimal" value="${esc(o.gestao_pct ?? 0)}"></label>
           <label class="f">Desconto / ajuste (R$)<input data-o="desconto" inputmode="decimal" value="${esc(o.desconto ?? "")}"></label>
-          <label class="f">Valor contratado (R$)<input data-o="valor_contratado" inputmode="decimal" value="${esc(o.valor_contratado ?? "")}" placeholder="vazio = CAPEX"><small>quando há valor fechado para a implantação</small></label></div>
+          <label class="f">Valor contratado (R$)<input data-o="valor_contratado" inputmode="decimal" value="${esc(o.valor_contratado ?? "")}" placeholder="vazio = CAPEX"><small>quando há valor fechado para a implantação</small></label></div>`) + `
         <div class="ob-itens-wrap"><table class="ob-itens"><thead><tr><th>Categoria</th><th>Item</th><th>Un.</th><th class="right">Qtd</th><th class="right">Custo unit.</th><th title="Leva imposto">Imp.</th><th>Fornecedor</th><th class="right">Total</th><th></th></tr></thead><tbody id="obItens"></tbody></table></div>
-        <p class="ob-acoes"><button type="button" class="btn sm" id="obAddItem">+ Item</button><button type="button" class="btn sm ghost" id="obModelo">Trazer itens do modelo</button><label class="muted"><input type="checkbox" id="obZerados"> mostrar itens zerados</label></p>
+        <p class="ob-acoes"><button type="button" class="btn sm" id="obAddItem">+ Item</button><button type="button" class="btn sm ${solar ? "primary" : "ghost"}" id="obModelo">${solar ? "Calcular pela planilha" : "Trazer itens do modelo"}</button><label class="muted"><input type="checkbox" id="obZerados"> mostrar itens zerados</label></p>
         <table class="ob-capex" id="obCapex"></table>`;
-      $$("[data-o]", box).forEach(i => i.oninput = () => { o[i.dataset.o] = i.value; resumo(); });
+      $$("[data-o]", box).forEach(i => i.oninput = () => {
+        o[i.dataset.o] = i.value;
+        if (i.dataset.o === "kwp") { const pot = $('#obPot [name="kwp"]', bg); if (pot) pot.value = i.value; }
+        resumo();
+      });
+      $$("[data-s]", box).forEach(i => { i[i.tagName === "SELECT" ? "onchange" : "oninput"] = () => { o.solar = { ...solarDe(o), [i.dataset.s]: i.value }; resumo(); }; });
       const zerados = $("#obZerados", box);
       zerados.checked = !o.id;
       const linhasItens = () => {
@@ -301,7 +383,10 @@
       };
       zerados.onchange = linhasItens;
       $("#obAddItem", box).onclick = () => { o.itens.push({ categoria: "Outros", item: "", unid: "un", qtd: 1, unit: 0, imp: true }); linhasItens(); $('[data-k="item"]', $$("#obItens tr", box).pop()).focus(); };
-      $("#obModelo", box).onclick = () => { const tem = new Set(o.itens.map(i => i.item)); MODELO.filter(m => !tem.has(m.item)).forEach(m => o.itens.push({ ...m })); zerados.checked = true; linhasItens(); };
+      $("#obModelo", box).onclick = () => {
+        if (solar) { if (!n(o.kwp)) return toast("Informe a potência (kWp) da obra.", "bad"); aplicarModeloSolar(o); zerados.checked = true; linhasItens(); return toast("Itens calculados pela planilha de obra solar.", "ok"); }
+        const tem = new Set(o.itens.map(i => i.item)); MODELO.filter(m => !tem.has(m.item)).forEach(m => o.itens.push({ ...m })); zerados.checked = true; linhasItens();
+      };
       linhasItens();
     };
 
@@ -340,9 +425,16 @@
 
     $$("[data-modo]", bg).forEach(b => b.onclick = () => {
       o.modo = b.dataset.modo;
-      if (o.modo === "detalhado" && !o.itens.length) { o.itens = MODELO.map(i => ({ ...i })); if (o.imposto_pct == null) o.imposto_pct = 6; }
+      o.tipo = $('#obDados [name="tipo"]', bg).value; o.kwp = $('#obPot [name="kwp"]', bg).value || o.kwp;
+      if (o.modo === "detalhado" && !o.itens.length) {
+        if (ehSolar(o)) { o.itens = []; aplicarModeloSolar(o); }
+        else { o.itens = MODELO.map(i => ({ ...i })); if (o.imposto_pct == null) o.imposto_pct = 6; }
+      }
       valores();
     });
+    // Mudar o tipo (carregador × solar) troca o modelo de custos do orçamento detalhado.
+    $('#obDados [name="tipo"]', bg).addEventListener("input", e => { const antes = ehSolar(o); o.tipo = e.target.value; if (o.modo === "detalhado" && antes !== ehSolar(o)) valores(); else resumo(); });
+    $('#obPot [name="kwp"]', bg).addEventListener("input", e => { o.kwp = e.target.value; const k = $('#obValores [data-o="kwp"]', bg); if (k) k.value = e.target.value; resumo(); });
     if ($("#obExcluir", bg)) $("#obExcluir", bg).onclick = async () => {
       if (!await confirmar("Excluir obra", `A obra <b>${esc(o.nome)}</b> e os lançamentos dela saem da base. Fica registrado na auditoria.`, "Excluir")) return;
       try { await api(`obras/${encodeURIComponent(o.id)}`, { method: "DELETE" }); $("[data-x]", bg).click(); toast("Obra excluída.", "ok"); render(main); } catch (e) { toast(e.message, "bad"); }
