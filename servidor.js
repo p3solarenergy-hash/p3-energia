@@ -142,6 +142,24 @@
       if (r.error) { let msg = r.error.message; try { msg = (await r.error.context.json()).erro || msg; } catch (_) { } throw new Error(msg); }
       return r.data;
     }
+    // Comprovantes das obras (PDF e fotos): ficam no Storage privado, em obras/<id da obra>/.
+    if (m === "POST" && p[0] === "anexo") {
+      if (!blob || !blob.size) throw new Error("Arquivo vazio.");
+      if (blob.size > 15 * 1024 * 1024) throw new Error("Arquivo grande demais (máximo de 15 MB).");
+      const obra = String(cab["X-Obra"] || "").replace(/[^\w-]/g, "");
+      if (!obra) throw new Error("Escolha a obra.");
+      const nome = decodeURIComponent(cab["X-Nome"] || "comprovante").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^\w.-]+/g, "_").slice(-80);
+      const caminho = `obras/${obra}/${Date.now()}-${nome}`;
+      const r = await sb.storage.from(BUCKET).upload(caminho, blob, { contentType: blob.type || "application/octet-stream" });
+      if (r.error) throw new Error(`Não consegui guardar o arquivo: ${r.error.message}`);
+      return { caminho };
+    }
+    if (m === "GET" && p[0] === "anexo") {
+      if (!String(q.caminho || "").startsWith("obras/")) throw new Error("Arquivo inválido.");
+      const r = await sb.storage.from(BUCKET).createSignedUrl(q.caminho, 600);
+      if (r.error) throw new Error("Arquivo não encontrado.");
+      return { url: r.data.signedUrl };
+    }
     if (m === "POST" && p[0] === "abrir-pasta") throw new Error("Na versão online não há pasta para abrir: os PDFs e os backups ficam guardados na nuvem.");
     if (CRUD.has(p[0])) {
       const t = p[0], id = p[1];

@@ -121,7 +121,7 @@
 
     main.innerHTML = `
       <div class="head"><div><p class="kicker">Execução</p><h1>Obras</h1><p>Obras que a P3 executa: Uby, terceiros e vendas próprias. Lance com valor fechado (venda e custo) ou pelo orçamento detalhado do modelo de carregadores.</p></div>
-        <div class="actions"><button class="btn" id="novaSimples">+ Valor fechado</button><button class="btn primary" id="novaDet">+ Orçamento detalhado</button></div></div>
+        <div class="actions"><a class="btn" href="#/comprovante">Lançar comprovante</a><button class="btn" id="novaSimples">+ Valor fechado</button><button class="btn primary" id="novaDet">+ Orçamento detalhado</button></div></div>
       <div class="ob-filtros">
         <div class="ob-chips">${chip("contratante", "todos", "Todas")}${chip("contratante", "uby", "Uby")}${chip("contratante", "terceiro", "Terceiros")}${chip("contratante", "p3", "P3")}</div>
         <select id="fAno" aria-label="Ano">${opts([["todos", "Todos os anos"], ...anos.map(a => [a, a])], F.ano)}</select>
@@ -276,9 +276,28 @@
         ${o.lancamentos.map((l, i) => `<tr data-i="${i}"><td><input type="date" data-k="data" value="${esc(l.data || "")}"></td>
           <td><select data-k="tipo">${opts([["pagamento", "Pagamento"], ["recebimento", "Recebimento"]], l.tipo || "pagamento")}</select></td>
           <td><input data-k="descricao" value="${esc(l.descricao || "")}" style="min-width:160px"></td><td><input data-k="parte" value="${esc(l.parte || "")}" style="width:130px"></td>
-          <td><input data-k="valor" inputmode="decimal" class="right" value="${esc(l.valor ?? "")}" style="width:100px"></td><td><button type="button" class="btn ghost sm" data-del="${i}" aria-label="Tirar lançamento">✕</button></td></tr>`).join("")}
+          <td><input data-k="valor" inputmode="decimal" class="right" value="${esc(l.valor ?? "")}" style="width:100px"></td><td style="white-space:nowrap">${l.anexo && l.anexo.caminho ? `<button type="button" class="btn ghost sm" data-anexo="${i}" title="${esc(l.anexo.nome || "comprovante")}" aria-label="Abrir comprovante">📎</button>` : ""}<button type="button" class="btn ghost sm" data-del="${i}" aria-label="Tirar lançamento">✕</button></td></tr>`).join("")}
         </tbody></table></div>` : ""}
-        <p class="ob-acoes"><button type="button" class="btn sm" data-novo="pagamento">+ Pagamento</button><button type="button" class="btn sm" data-novo="recebimento">+ Recebimento</button></p>`;
+        <p class="ob-acoes"><button type="button" class="btn sm" data-novo="pagamento">+ Pagamento</button><button type="button" class="btn sm" data-novo="recebimento">+ Recebimento</button>
+          <label class="btn sm" for="obComp">+ Comprovante (PDF ou foto)</label><input type="file" id="obComp" accept="image/*,application/pdf,.pdf" multiple hidden><span class="muted" id="obCompAviso"></span></p>`;
+      $$("[data-anexo]", box).forEach(b => b.onclick = () => window.P3_COMPROVANTE.abrirAnexo(o.lancamentos[b.dataset.anexo].anexo.caminho));
+      $("#obComp", box).onchange = async e => {
+        const arquivos = [...e.target.files]; e.target.value = "";
+        if (!o.id) return toast("Salve a obra primeiro; depois anexe os comprovantes.", "bad");
+        const C = window.P3_COMPROVANTE, av = $("#obCompAviso", box);
+        for (const f of arquivos) {
+          try {
+            av.textContent = `Lendo ${f.name}…`;
+            let campos = { tipo: "pagamento", data: "", valor: "", parte: "", descricao: f.name };
+            try { campos = C.interpretar(await C.ler(f, a => { av.textContent = a; }), f.name); } catch (_) { }
+            av.textContent = "Guardando o arquivo…";
+            const anexo = await C.anexar(o.id, f);
+            o.lancamentos.push({ data: campos.data || new Date().toISOString().slice(0, 10), tipo: campos.tipo, descricao: campos.descricao, parte: campos.parte, valor: campos.valor || "", anexo });
+          } catch (err) { toast(err.message, "bad"); }
+        }
+        lanc(); resumo();
+        const av2 = $("#obCompAviso", bg); if (av2) av2.textContent = arquivos.length ? "Confira o que foi lido e salve a obra." : "";
+      };
       $$("[data-k]", box).forEach(inp => { inp[inp.tagName === "SELECT" ? "onchange" : "oninput"] = () => { o.lancamentos[inp.closest("tr").dataset.i][inp.dataset.k] = inp.value; resumo(); }; });
       $$("[data-del]", box).forEach(b => b.onclick = () => { o.lancamentos.splice(Number(b.dataset.del), 1); lanc(); resumo(); });
       $$("[data-novo]", box).forEach(b => b.onclick = () => { o.lancamentos.push({ data: new Date().toISOString().slice(0, 10), tipo: b.dataset.novo, descricao: "", parte: "", valor: "" }); lanc(); $$('[data-k="descricao"]', box).pop().focus(); });
