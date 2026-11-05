@@ -20,8 +20,12 @@
   const diasAte = iso => Math.round((new Date(iso + "T12:00:00") - new Date(hojeIso() + "T12:00:00")) / 864e5);
   const fmtIn = v => v == null || v === "" ? "" : String(v).replace(".", ",");
   const ehBoleto = x => x && x.tipo === "boleto";
-  // Para quem é: na NF, a usina (e o cliente); no boleto, o cliente.
-  const alvo = x => ehBoleto(x) ? nomeCliente(x.cliente_id) : `${nomeUsina(x.usina_id)}${x.cliente_id ? ` · ${nomeCliente(x.cliente_id)}` : ""}`;
+  // Usinas de uma regra/NF: a lista (várias usinas num documento só, ex.: Own the Sun 2 e 4) ou a usina antiga.
+  const usinasDe = x => (Array.isArray(x.usina_ids) && x.usina_ids.length ? x.usina_ids : x.usina_id ? [x.usina_id] : []);
+  const nomesUsinas = x => usinasDe(x).map(nomeUsina).join(" + ");
+  // Para quem é: o cliente e as usinas.
+  const alvo = x => [x.cliente_id ? nomeCliente(x.cliente_id) : "", nomesUsinas(x)].filter(Boolean).join(" · ") || "—";
+  const incluiUc = x => x.incluir_uc == null ? ehBoleto(x) : !!Number(x.incluir_uc);
 
   async function carregar() {
     if (!dados.carregando) dados.carregando = Promise.all([api("nf_regras"), api("notas_fiscais")]).then(([r, nf]) => {
@@ -77,22 +81,27 @@
   // NF que a P3 emite por inteiro: valor − gestão − custo da NF (% sobre o valor). Ex.: 5.000 − 500 − 6% (300) = 4.200.
   const repasseNf = (valor, gestao, pct) => { const custo = r2(n(valor) * n(pct) / 100); return { custo, liquido: Math.max(0, r2(n(valor) - n(gestao) - custo)) }; };
 
-  // Boleto do cliente no mês de referência, pelo mesmo cálculo do fechamento: a parte do cliente no arrendamento de cada
-  // usina + a parte dele nas faturas das UCs geradoras. Repasse = cobrado − geradoras (a P3 paga) − gestão − custos do dono,
-  // na proporção do arrendamento que coube ao cliente em cada usina.
-  function calcBoleto(clienteId, ref) {
-    const m = P3.calcMes(ref);
+  // Valor projetado pelo fechamento do mês de referência, para as usinas escolhidas (vazio = todas as do cliente):
+  //  • arrendamento: a parte do cliente (ou o arrendamento inteiro da usina, se não há cliente);
+  //  • custos da UC: a parte nas faturas das UCs geradoras — entram no boleto por padrão e na NF só se marcar.
+  // Repasse ao dono = cobrado − custos da UC cobrados (a P3 paga a Copel) − gestão − custos do dono, na proporção
+  // do arrendamento que coube ao cliente em cada usina.
+  function calcCobranca(x, ref) {
+    const m = P3.calcMes(ref), escolhidas = usinasDe(x), comUc = incluiUc(x);
     const porUsina = new Map();
-    for (const row of m.ucs.filter(r => r.cliente_id === clienteId)) {
-      for (const p of row.partes) {
-        const g = porUsina.get(p.usina_id) || { arr: 0, ger: 0 };
-        g.arr = r2(g.arr + p.arrendamento); g.ger = r2(g.ger + p.geradora); porUsina.set(p.usina_id, g);
+    if (x.cliente_id) {
+      for (const row of m.ucs.filter(r => r.cliente_id === x.cliente_id)) {
+        for (const p of row.partes) {
+          if (escolhidas.length && !escolhidas.includes(p.usina_id)) continue;
+          const g = porUsina.get(p.usina_id) || { arr: 0, ger: 0 };
+          g.arr = r2(g.arr + p.arrendamento); g.ger = r2(g.ger + p.geradora); porUsina.set(p.usina_id, g);
+        }
       }
-    }
+    } else for (const uid of escolhidas) { const u = m.usinas.find(y => y.usina_id === uid); if (u) porUsina.set(uid, { arr: u.arrendamento, ger: u.geradoraPagaPor === "cliente" ? u.valorGeradora : 0 }); }
     let arr = 0, ger = 0, gest = 0, custos = 0, parcial = false;
     const usinas = [], avisos = [];
     for (const [uid, g] of porUsina) {
-      const u = m.usinas.find(x => x.usina_id === uid); if (!u) continue;
+      const u = m.usinas.find(y => y.usina_id === uid); if (!u) continue;
       const parte = u.arrendamento ? g.arr / u.arrendamento : 0;
       arr = r2(arr + g.arr); ger = r2(ger + g.ger);
       gest = r2(gest + u.gestao * parte);
@@ -100,19 +109,21 @@
       if (u.faltam || u.avisos.length) { parcial = true; avisos.push(...u.avisos.map(a => `${u.usina.nome}: ${a}`)); }
       usinas.push({ id: uid, nome: u.usina.nome, dono_id: u.dono_id, arr: g.arr, ger: g.ger });
     }
-    const cobrar = r2(arr + ger);
-    return { ref, arr, ger, gest, custos, cobrar, repasse: Math.max(0, r2(cobrar - ger - gest - custos)), usinas, parcial, avisos };
+    const uc = comUc ? ger : 0, cobrar = r2(arr + uc);
+    return { ref, arr, ger, uc, comUc, gest, custos, cobrar, repasse: Math.max(0, r2(cobrar - uc - gest - custos)), usinas, parcial, avisos };
   }
 
+  // O que a regra gera no mês: valor projetado pelo fechamento do mês anterior (ou o valor fixo da regra, se houver) e o repasse.
   function novaDaRegra(r, comp) {
-    const base = { regra_id: r.id, tipo: r.tipo || "nf", usina_id: r.usina_id || null, cliente_id: r.cliente_id || null, competencia: comp, emitente: ehBoleto(r) ? "p3" : r.emitente,
-      tomador: r.tomador || (r.cliente_id ? nomeCliente(r.cliente_id) : ""), status: "emitida", data_emissao: hojeIso(), repasse_status: r.repasse ? "pendente" : "" };
-    if (ehBoleto(r)) {
-      const ref = M.addMonths(comp, -1), c = calcBoleto(r.cliente_id, ref);
-      return { ...base, referencia: ref, valor: c.cobrar || null, geradora_valor: c.ger, gestao_valor: c.gest, custos_valor: c.custos, repasse_valor: r.repasse ? c.repasse : null };
-    }
-    const valor = r.valor_padrao || null, gestao = r.repasse && valor ? gestaoDa(r.usina_id, valor) : null;
-    return { ...base, valor, custo_pct: r.custo_pct ?? null, gestao_valor: gestao, repasse_valor: r.repasse && valor ? repasseNf(valor, gestao, r.custo_pct).liquido : null };
+    const ids = usinasDe(r), ref = M.addMonths(comp, -1), comUc = incluiUc(r);
+    const base = { regra_id: r.id, tipo: r.tipo || "nf", usina_ids: ids, usina_id: ids[0] || null, cliente_id: r.cliente_id || null, incluir_uc: comUc ? 1 : 0, competencia: comp, referencia: ref,
+      emitente: ehBoleto(r) ? "p3" : r.emitente, tomador: r.tomador || (r.cliente_id ? nomeCliente(r.cliente_id) : ""), status: "emitida", data_emissao: hojeIso(), repasse_status: r.repasse ? "pendente" : "" };
+    const c = calcCobranca(base, ref);
+    if (ehBoleto(r)) return { ...base, valor: c.cobrar || null, geradora_valor: c.uc, gestao_valor: c.gest, custos_valor: c.custos, repasse_valor: r.repasse ? c.repasse : null };
+    const valor = r.valor_padrao || c.cobrar || null;
+    const gestao = r.repasse && valor ? (c.gest || ids.reduce((s, u) => s + gestaoDa(u, valor / ids.length), 0)) : null;
+    const uc = comUc ? c.uc : 0;
+    return { ...base, valor, custo_pct: r.custo_pct ?? null, gestao_valor: gestao, geradora_valor: comUc ? uc : null, repasse_valor: r.repasse && valor ? Math.max(0, r2(repasseNf(valor, gestao, r.custo_pct).liquido - uc)) : null };
   }
 
   // ───────── textos prontos ─────────
@@ -122,20 +133,20 @@
     const tomador = cli.nome || x.tomador || "(cliente)";
     const mes = fmt.mesLongo(ehBoleto(x) ? (x.referencia || x.competencia) : x.competencia);
     if (ehBoleto(x)) {
-      const linhas = [`Boleto ${tomador}${cli.documento ? ` (${cli.documento})` : ""}`, `Valor: ${fmt.brl(x.valor)}`, `Referente a ${mes}: arrendamento ${fmt.brl(n(x.valor) - n(x.geradora_valor))} + faturas das UCs geradoras ${fmt.brl(x.geradora_valor)}`];
+      const linhas = [`Boleto ${tomador}${cli.documento ? ` (${cli.documento})` : ""}${usinasDe(x).length ? ` · ${nomesUsinas(x)}` : ""}`, `Valor: ${fmt.brl(x.valor)}`,
+        n(x.geradora_valor) ? `Referente a ${mes}: arrendamento ${fmt.brl(n(x.valor) - n(x.geradora_valor))} + custos das UCs geradoras ${fmt.brl(x.geradora_valor)}` : `Referente a ${mes}: arrendamento`];
       if (x.data_emissao) linhas.push(`Vencimento: ${fmt.data(x.data_emissao)}`);
       if (x.repasse_valor != null) {
-        const donos = [...new Set(calcBoleto(x.cliente_id, x.referencia || M.addMonths(x.competencia, -1)).usinas.map(u => u.dono_id))].map(id => db().by.donos.get(id)).filter(Boolean);
-        linhas.push("", `Repasse ao dono: ${fmt.brl(x.repasse_valor)} (cobrado − geradoras ${fmt.brl(x.geradora_valor)} − gestão ${fmt.brl(x.gestao_valor)}${n(x.custos_valor) ? ` − custos ${fmt.brl(x.custos_valor)}` : ""})`);
-        donos.forEach(d => linhas.push(`${d.nome}${d.pix ? ` · Pix: ${d.pix}` : ""}`));
+        linhas.push("", `Repasse ao dono: ${fmt.brl(x.repasse_valor)} (cobrado${n(x.geradora_valor) ? ` − custos da UC ${fmt.brl(x.geradora_valor)}` : ""} − gestão ${fmt.brl(x.gestao_valor)}${n(x.custos_valor) ? ` − custos ${fmt.brl(x.custos_valor)}` : ""})`);
+        donosDe(x).forEach(d => linhas.push(`${d.nome}${d.pix ? ` · Pix: ${d.pix}` : ""}`));
       }
       return linhas.join("\n");
     }
     return [`Olá! Por favor, emitir a NF de serviço deste mês:`, ``,
       `• Tomador: ${tomador}${cli.documento ? ` — CNPJ/CPF ${cli.documento}` : ""}`,
-      `• Valor: ${fmt.brl(x.valor)}`,
+      `• Valor: ${fmt.brl(x.valor)}${n(x.geradora_valor) ? ` (arrendamento ${fmt.brl(n(x.valor) - n(x.geradora_valor))} + custos da UC ${fmt.brl(x.geradora_valor)})` : ""}`,
       `• Serviço: ${r.servico || SERVICO_PADRAO}`,
-      `• Referência: ${mes}${x.usina_id ? ` · ${nomeUsina(x.usina_id)}` : ""}`,
+      `• Referência: ${mes}${usinasDe(x).length ? ` · ${nomesUsinas(x)}` : ""}`,
       cli.email ? `• Enviar para: ${cli.email}` : null, ``, `Obrigado!`].filter(l => l !== null).join("\n");
   }
   function mostrarTexto(x) {
@@ -165,13 +176,13 @@
   function desenhar(main) {
     const pend = pendencias().map(p => ({ ...p, prev: novaDaRegra(p.regra, p.comp) })), rep = repassesAbertos();
     const anos = [...new Set(dados.notas.map(x => x.competencia.slice(0, 4)))].sort().reverse();
-    const lista = dados.notas.filter(x => (!filtro.alvo || x.usina_id === filtro.alvo || x.cliente_id === filtro.alvo) && (!filtro.ano || x.competencia.startsWith(filtro.ano)))
+    const lista = dados.notas.filter(x => (!filtro.alvo || usinasDe(x).includes(filtro.alvo) || x.cliente_id === filtro.alvo) && (!filtro.ano || x.competencia.startsWith(filtro.ano)))
       .sort((a, b) => (b.competencia + (b.data_emissao || "")).localeCompare(a.competencia + (a.data_emissao || "")));
     const ano = hojeIso().slice(0, 4), doAno = dados.notas.filter(x => x.competencia.startsWith(ano) && x.status !== "cancelada" && x.emitente === "p3");
     const atrasadas = pend.filter(p => p.dias != null && p.dias < 0).length;
     // Usinas cobertas: as das regras de NF e as que atendem os clientes com boleto.
-    const cobertas = new Set(dados.regras.map(r => r.usina_id).filter(Boolean));
-    const clientesBoleto = new Set(dados.regras.filter(ehBoleto).map(r => r.cliente_id));
+    const cobertas = new Set(dados.regras.flatMap(usinasDe));
+    const clientesBoleto = new Set(dados.regras.filter(r => ehBoleto(r) && !usinasDe(r).length).map(r => r.cliente_id));
     db().vinculos.forEach(v => { const uc = db().by.ucs.get(v.uc_id); if (uc && clientesBoleto.has(uc.cliente_id)) cobertas.add(v.usina_id); });
     const semRegra = db().usinas.filter(u => !cobertas.has(u.id));
     main.innerHTML = `
@@ -184,7 +195,7 @@
       </div>
       <div class="section"><div class="section-head"><div><h2>Para emitir</h2><p>Lance cada uma (com o arquivo) para tirar daqui. O boleto já vem com o valor a cobrar e o repasse calculados do mês anterior.</p></div></div>
         ${pend.length ? `<div class="table-wrap"><table><thead><tr><th>Para</th><th>O quê</th><th>Mês</th><th>Quando</th><th class="n">Valor</th><th class="n">Repasse</th><th></th></tr></thead><tbody>
-          ${pend.map((p, i) => `<tr><td><b>${esc(alvo(p.regra))}</b></td><td>${esc(p.regra.descricao || acao(p.regra))}<small>${ehBoleto(p.regra) ? `boleto · ref. ${esc(fmt.mes(p.prev.referencia))}` : `${esc(EMITENTE[p.regra.emitente] || "")} emite`}${p.regra.repasse ? " · repassa ao dono" : ""}</small></td><td>${esc(fmt.mes(p.comp))}</td><td>${quando(p)}</td>
+          ${pend.map((p, i) => `<tr><td><b>${esc(alvo(p.regra))}</b></td><td>${esc(p.regra.descricao || acao(p.regra))}<small>${ehBoleto(p.regra) ? "boleto" : `${esc(EMITENTE[p.regra.emitente] || "")} emite`} · ref. ${esc(fmt.mes(p.prev.referencia))} · ${incluiUc(p.regra) ? "arrendamento + custos da UC" : "só arrendamento"}${p.regra.repasse ? " · repassa ao dono" : ""}</small></td><td>${esc(fmt.mes(p.comp))}</td><td>${quando(p)}</td>
             <td class="n">${p.prev.valor ? fmt.brl(p.prev.valor) : "—"}</td><td class="n">${p.prev.repasse_valor != null ? fmt.brl(p.prev.repasse_valor) : "—"}</td>
             <td class="right" style="white-space:nowrap">${p.regra.emitente !== "dono" ? `<button class="btn sm ghost" data-texto="${i}">${ehBoleto(p.regra) ? "Resumo" : "Texto p/ contador"}</button> ` : ""}<button class="btn sm primary" data-pend="${i}">${ehBoleto(p.regra) ? "Lançar boleto" : p.regra.emitente === "dono" ? "Guardar NF do dono" : "Lançar NF"}</button></td></tr>`).join("")}</tbody></table></div>` : `<div class="note ok">Nada pendente.</div>`}</div>
       ${rep.length ? `<div class="section"><div class="section-head"><div><h2>Repasses ao dono</h2><p>Recebido pela P3 e ainda não repassado.</p></div></div>
@@ -195,7 +206,7 @@
       <div class="section"><div class="section-head"><div><h2>Regras</h2><p>O que se emite todo mês, para quem e em que dia. Clique para editar.</p></div><button class="btn" id="nfRegraNova">+ Regra</button></div>
         <div class="table-wrap"><table><thead><tr><th>Para</th><th>O quê</th><th>Quem emite</th><th class="n">Dia</th><th class="n">Valor</th><th>Repasse</th></tr></thead><tbody>
         ${dados.regras.map(r => `<tr class="clickable" data-regra="${esc(r.id)}"><td><b>${esc(alvo(r))}</b></td><td>${esc(TIPO[r.tipo || "nf"])}<small>${esc(r.descricao || "")}</small>${r.ativo === 0 ? ` ${badge("Pausada", "")}` : ""}</td><td>${esc(EMITENTE[r.emitente] || r.emitente)}</td><td class="n">${r.dia ? `dia ${r.dia}` : `<span class="neg">definir</span>`}</td>
-          <td class="n">${ehBoleto(r) ? "calculado" : r.valor_padrao ? fmt.brl(r.valor_padrao) : "—"}</td><td>${r.repasse ? `Sim${ehBoleto(r) ? " · desconta geradoras e gestão" : ` · desconta gestão${r.custo_pct ? ` e ${fmt.pctN(r.custo_pct)} da NF` : ""}`}` : "—"}</td></tr>`).join("") || `<tr><td colspan="6" class="empty">Nenhuma regra. Crie uma para cada NF ou boleto que se repete todo mês.</td></tr>`}</tbody></table></div></div>
+          <td class="n">${r.valor_padrao ? `${fmt.brl(r.valor_padrao)} fixo` : "projetado"}<small>${incluiUc(r) ? "arrendamento + custos da UC" : "só arrendamento"}</small></td><td>${r.repasse ? `Sim · desconta ${[incluiUc(r) ? "custos da UC" : "", "gestão", r.custo_pct ? `${fmt.pctN(r.custo_pct)} da NF` : ""].filter(Boolean).join(", ")}` : "—"}</td></tr>`).join("") || `<tr><td colspan="6" class="empty">Nenhuma regra. Crie uma para cada NF ou boleto que se repete todo mês.</td></tr>`}</tbody></table></div></div>
       <div class="section"><div class="section-head"><div><h2>Lançadas</h2></div>
         <div class="actions"><select id="nfFAlvo"><option value="">Todas</option><optgroup label="Usinas">${opts(db().usinas.map(u => [u.id, u.nome]), filtro.alvo)}</optgroup><optgroup label="Clientes">${opts(db().clientes.map(c => [c.id, c.nome]), filtro.alvo)}</optgroup></select><select id="nfFAno">${opts(anos.map(a => [a, a]), filtro.ano, "Todos os anos")}</select></div></div>
         <div class="table-wrap"><table><thead><tr><th>Mês</th><th>Para</th><th>Tipo</th><th>Nº</th><th>Data</th><th class="n">Valor</th><th>Repasse</th><th></th></tr></thead><tbody>
@@ -220,8 +231,8 @@
   }
   async function recarregar(main) { dados.carregado = false; await carregar(); desenhar(main); }
   function donosDe(x) {
-    const ids = x.usina_id ? [(db().by.usinas.get(x.usina_id) || {}).dono_id]
-      : calcBoleto(x.cliente_id, x.referencia || M.addMonths(x.competencia, -1)).usinas.map(u => u.dono_id);
+    const ids = usinasDe(x).length ? usinasDe(x).map(u => (db().by.usinas.get(u) || {}).dono_id)
+      : calcCobranca(x, x.referencia || M.addMonths(x.competencia, -1)).usinas.map(u => u.dono_id);
     return [...new Set(ids)].map(id => db().by.donos.get(id)).filter(Boolean);
   }
 
@@ -235,27 +246,33 @@
     return { numero, valor: v ? n(v) : base.valor || null, data_emissao: d[3] ? `${d[3]}-${d[2]}-${d[1]}` : base.data || "" };
   }
 
+  // Caixas de seleção das usinas (uma NF ou um boleto pode juntar várias, ex.: Own the Sun 2 e 4).
+  const caixasUsinas = sel => `<div class="f wide"><span style="font-size:12px;font-weight:600;color:var(--ink-2)">Usinas</span><div style="display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:4px">${db().usinas.map(u => `<label style="display:flex;gap:6px;align-items:center;font-size:13px"><input type="checkbox" data-us="${esc(u.id)}" ${sel.includes(u.id) ? "checked" : ""}>${esc(u.nome)}</label>`).join("")}</div></div>`;
+  const marcadas = bg => $$("[data-us]", bg).filter(i => i.checked).map(i => i.dataset.us);
+
   async function editarNf(main, orig) {
     const x = { tipo: "nf", status: "emitida", emitente: "p3", competencia: hojeIso().slice(0, 7), ...orig };
+    if (x.incluir_uc == null) x.incluir_uc = ehBoleto(x) ? 1 : 0;
+    if (!x.referencia) x.referencia = M.addMonths(x.competencia, -1);
     let arquivo = null;
-    const regrasPara = (tipo, usina, cliente) => dados.regras.filter(r => (r.tipo || "nf") === tipo && (tipo === "boleto" ? r.cliente_id === cliente : r.usina_id === usina));
     const campo = (nome, rot, extra = "", cls = "") => `<label class="f ${cls}">${rot}<input name="${nome}" value="${esc(x[nome] ?? "")}" ${extra}></label>`;
     const so = (t, html) => html.replace(/^<label class="f/, `<label data-t="${t}" class="f`);
     const html = `
       <div class="grid-form" id="nfForm">
         <label class="f">Tipo<select name="tipo">${opts(Object.entries(TIPO), x.tipo)}</select></label>
-        ${so("nf", `<label class="f">Usina<select name="usina_id">${opts(db().usinas.map(u => [u.id, u.nome]), x.usina_id, "Escolha…")}</select></label>`)}
         <label class="f">Cliente<select name="cliente_id">${opts(db().clientes.map(c => [c.id, c.nome]), x.cliente_id, "—")}</select></label>
-        <label class="f">Regra<select name="regra_id"></select></label>
+        <label class="f">Regra<select name="regra_id">${opts(dados.regras.map(r => [r.id, `${TIPO[r.tipo || "nf"]} · ${alvo(r)}`]), x.regra_id, "Avulsa (sem regra)")}</select></label>
+        ${caixasUsinas(usinasDe(x))}
         ${campo("competencia", "Mês de emissão", 'type="month"')}
-        ${so("boleto", campo("referencia", "Referente a (mês das faturas)", 'type="month"'))}
+        ${campo("referencia", "Referente a (mês do fechamento)", 'type="month"')}
+        <label class="f pr-check"><span style="display:flex;gap:8px;align-items:center;font-weight:500;font-size:13px"><input type="checkbox" name="incluir_uc" ${Number(x.incluir_uc) ? "checked" : ""}> Incluir custos da UC (faturas das geradoras)</span></label>
         ${so("nf", `<label class="f">Quem emitiu<select name="emitente">${opts(Object.entries(EMITENTE), x.emitente)}</select></label>`)}
         ${campo("numero", "Número", 'autocomplete="off"')}
         <label class="f"><span data-rot-data>Data de emissão</span><input name="data_emissao" type="date" value="${esc(x.data_emissao || "")}"></label>
         ${campo("valor", "Valor (R$)", 'inputmode="decimal"')}
         ${so("nf", campo("tomador", "Tomador (como sai na NF)"))}
         <label class="f">Repasse ao dono<select name="repasse_status">${opts([["", "Não há"], ["pendente", "A repassar"], ["pago", "Repassado"]], x.repasse_status || "")}</select></label>
-        ${so("boleto", campo("geradora_valor", "Geradoras pagas pela P3 (R$)", 'inputmode="decimal" data-rep'))}
+        ${campo("geradora_valor", "Custos da UC pagos pela P3 (R$)", 'inputmode="decimal" data-rep data-uc')}
         ${campo("gestao_valor", "Gestão P3 (R$)", 'inputmode="decimal" data-rep')}
         ${so("nf", campo("custo_pct", "Custo da NF (%)", 'inputmode="decimal" placeholder="Ex.: 6" data-rep'))}
         ${so("boleto", campo("custos_valor", "Custos do dono (R$)", 'inputmode="decimal" data-rep'))}
@@ -266,13 +283,13 @@
         ${campo("obs", "Observações", "", "wide")}
         <label class="f wide">Arquivo (PDF ou foto)<input type="file" id="nfArq" accept="application/pdf,image/*"><small id="nfArqMsg">${x.arquivo ? `Já tem arquivo. <a href="#" id="nfVer">Abrir</a> · escolher outro substitui.` : "O número, o valor e a data são lidos do arquivo."}</small></label>
       </div>
-      <p style="margin:12px 0 0;display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn sm" id="nfTextoBtn"></button>${x.id ? `<button type="button" class="btn ghost sm danger" id="nfExcluir">Excluir</button>` : ""}</p>`;
+      <p style="margin:12px 0 0;display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn sm" id="nfPuxar">Projetar pelo fechamento</button><button type="button" class="btn sm" id="nfTextoBtn"></button>${x.id ? `<button type="button" class="btn ghost sm danger" id="nfExcluir">Excluir</button>` : ""}</p>`;
     const salvo = modal(x.id ? `${ehBoleto(x) ? "Boleto" : "NF"} ${x.numero || ""} · ${alvo(x)}` : "Lançar NF / boleto", html, {
       wide: true,
       onSave: async el => {
         const f = lerForm(el);
-        if (f.tipo === "nf" && !f.usina_id) throw new Error("Escolha a usina.");
-        if (f.tipo === "boleto" && !f.cliente_id) throw new Error("Escolha o cliente.");
+        if (f.tipo === "nf" && !f.usina_ids.length) throw new Error("Marque a usina (ou as usinas) da NF.");
+        if (f.tipo === "boleto" && !f.cliente_id) throw new Error("Escolha o cliente do boleto.");
         if (arquivo) {
           $("[data-msg]", el).textContent = "Enviando o arquivo…";
           const r = await api("anexo", { method: "POST", raw: true, body: arquivo, headers: { "X-Nome": encodeURIComponent(arquivo.name || "documento"), "X-Usina": f.usina_id || f.cliente_id } });
@@ -283,85 +300,94 @@
     });
     const bgs = document.querySelectorAll(".modal-bg"), bg = bgs[bgs.length - 1];
     const sel = nm => $(`[name="${nm}"]`, bg);
+    const tipo = () => sel("tipo").value;
+    const comUc = () => sel("incluir_uc").checked;
+    // O que está escolhido agora (para o cálculo pelo fechamento).
+    const atual = () => ({ tipo: tipo(), cliente_id: sel("cliente_id").value || null, usina_ids: marcadas(bg), incluir_uc: comUc() ? 1 : 0 });
     // Lê o formulário já no formato da base.
     const lerForm = el => {
       const f = formData(el);
       for (const k of ["valor", "repasse_valor", "gestao_valor", "custo_pct", "geradora_valor", "custos_valor"]) f[k] = f[k] === "" ? null : n(f[k]);
-      if (f.tipo === "boleto") { f.usina_id = null; f.emitente = "p3"; f.custo_pct = null; f.tomador = nomeCliente(f.cliente_id); }
-      else { f.referencia = null; f.geradora_valor = null; f.custos_valor = null; }
+      f.usina_ids = marcadas(el); f.usina_id = f.usina_ids[0] || null;
+      if (f.tipo === "boleto") { f.emitente = "p3"; f.custo_pct = null; f.tomador = f.cliente_id ? nomeCliente(f.cliente_id) : null; }
+      else f.custos_valor = null;
+      if (!f.incluir_uc) f.geradora_valor = null;
       if (!f.cliente_id) f.cliente_id = null;
-      if (!f.repasse_status) { f.repasse_status = null; f.repasse_valor = null; f.repasse_em = null; f.gestao_valor = null; f.geradora_valor = f.tipo === "boleto" ? f.geradora_valor : null; }
+      if (!f.repasse_status) { f.repasse_status = null; f.repasse_valor = null; f.repasse_em = null; f.gestao_valor = null; f.custos_valor = null; }
       if (f.repasse_status === "pago" && !f.repasse_em) f.repasse_em = hojeIso();
       if (!f.regra_id) f.regra_id = null;
       if (!f.referencia) f.referencia = null;
       return f;
     };
-    const tipo = () => sel("tipo").value;
-    const preencherRegras = () => {
-      const lista = regrasPara(tipo(), sel("usina_id").value, sel("cliente_id").value);
-      const atual = sel("regra_id").value || x.regra_id || "";
-      sel("regra_id").innerHTML = opts(lista.map(r => [r.id, r.descricao || TIPO[r.tipo || "nf"]]), atual, "Avulsa (sem regra)");
-    };
     const mostrarCampos = () => {
       const t = tipo(), rep = !!sel("repasse_status").value;
-      $$("label.f", bg).forEach(l => { l.style.display = (!l.dataset.t || l.dataset.t === t) && (!$("[data-rep]", l) || rep) ? "" : "none"; });
+      $$("label.f", bg).forEach(l => { l.style.display = (!l.dataset.t || l.dataset.t === t) && (!$("[data-rep]", l) || rep) && (!$("[data-uc]", l) || comUc()) ? "" : "none"; });
       sel("repasse_em").closest("label").style.display = sel("repasse_status").value === "pago" ? "" : "none";
       $("[data-rot-data]", bg).textContent = t === "boleto" ? "Vencimento do boleto" : "Data de emissão";
       $("#nfTextoBtn", bg).textContent = t === "boleto" ? "Resumo do boleto e do repasse" : "Texto para o contador";
       $("#nfTextoBtn", bg).style.display = t === "nf" && sel("emitente").value === "dono" ? "none" : "";
     };
-    // Conta do repasse, refeita quando muda valor, gestão, custos ou geradoras (o valor final pode ser ajustado à mão).
+    // Explica a conta: o que o fechamento dá e como sai o repasse.
     const conta = () => {
       mostrarCampos();
-      const el = $("#nfConta", bg), t = tipo(), v = n(sel("valor").value);
-      if (t === "boleto") {
-        const c = calcBoleto(sel("cliente_id").value, sel("referencia").value || M.addMonths(sel("competencia").value, -1));
-        const linhas = sel("cliente_id").value ? [`Pelo fechamento de ${fmt.mesLongo(c.ref)}: arrendamento ${fmt.brl(c.arr)} + geradoras ${fmt.brl(c.ger)} = ${fmt.brl(c.cobrar)} a cobrar${c.usinas.length ? ` (${c.usinas.map(u => u.nome).join(", ")})` : ""}.`] : [];
+      const el = $("#nfConta", bg), v = n(sel("valor").value), uc = comUc() ? n(sel("geradora_valor").value) : 0;
+      const linhas = [];
+      const a = atual();
+      if (a.cliente_id || a.usina_ids.length) {
+        const c = calcCobranca(a, sel("referencia").value || M.addMonths(sel("competencia").value, -1));
+        linhas.push(`Fechamento de ${fmt.mesLongo(c.ref)}: arrendamento ${fmt.brl(c.arr)}${c.comUc ? ` + custos da UC ${fmt.brl(c.uc)}` : c.ger ? ` (custos da UC de ${fmt.brl(c.ger)} ficam fora)` : ""} = ${fmt.brl(c.cobrar)}${c.usinas.length ? ` · ${c.usinas.map(u => u.nome).join(" + ")}` : ""}.`);
         if (c.parcial) linhas.push(`Atenção: ${c.avisos.join(" ")}`);
-        if (sel("repasse_status").value) linhas.push(`Repasse: ${fmt.brl(v)} − ${fmt.brl(n(sel("geradora_valor").value))} geradoras − ${fmt.brl(n(sel("gestao_valor").value))} gestão${n(sel("custos_valor").value) ? ` − ${fmt.brl(n(sel("custos_valor").value))} custos` : ""} = ${fmt.brl(n(sel("repasse_valor").value))} ao dono`);
-        el.textContent = linhas.join("\n");
-      } else if (sel("repasse_status").value) {
-        const c = repasseNf(v, sel("gestao_valor").value, sel("custo_pct").value);
-        el.textContent = `${fmt.brl(v)} recebidos − ${fmt.brl(n(sel("gestao_valor").value))} de gestão − ${fmt.brl(c.custo)} de custo da NF (${fmt.pctN(n(sel("custo_pct").value))}) = ${fmt.brl(c.liquido)} ao dono`;
-      } else el.textContent = "";
+      }
+      if (sel("repasse_status").value) {
+        if (tipo() === "boleto") linhas.push(`Repasse: ${fmt.brl(v)}${uc ? ` − ${fmt.brl(uc)} custos da UC` : ""} − ${fmt.brl(n(sel("gestao_valor").value))} gestão${n(sel("custos_valor").value) ? ` − ${fmt.brl(n(sel("custos_valor").value))} custos do dono` : ""} = ${fmt.brl(n(sel("repasse_valor").value))} ao dono`);
+        else { const c = repasseNf(v, sel("gestao_valor").value, sel("custo_pct").value); linhas.push(`Repasse: ${fmt.brl(v)}${uc ? ` − ${fmt.brl(uc)} custos da UC` : ""} − ${fmt.brl(n(sel("gestao_valor").value))} gestão − ${fmt.brl(c.custo)} custo da NF (${fmt.pctN(n(sel("custo_pct").value))}) = ${fmt.brl(n(sel("repasse_valor").value))} ao dono`); }
+      }
+      el.textContent = linhas.join("\n");
     };
     const recalcularRepasse = () => {
-      if (!sel("repasse_status").value) return conta();
-      const v = n(sel("valor").value);
-      if (tipo() === "boleto") sel("repasse_valor").value = fmtIn(Math.max(0, r2(v - n(sel("geradora_valor").value) - n(sel("gestao_valor").value) - n(sel("custos_valor").value))));
-      else {
-        if (sel("gestao_valor").value === "" && v) sel("gestao_valor").value = fmtIn(gestaoDa(sel("usina_id").value, v));
-        if (v) sel("repasse_valor").value = fmtIn(repasseNf(v, sel("gestao_valor").value, sel("custo_pct").value).liquido);
+      if (sel("repasse_status").value) {
+        const v = n(sel("valor").value), uc = comUc() ? n(sel("geradora_valor").value) : 0;
+        if (tipo() === "boleto") sel("repasse_valor").value = fmtIn(Math.max(0, r2(v - uc - n(sel("gestao_valor").value) - n(sel("custos_valor").value))));
+        else {
+          if (sel("gestao_valor").value === "" && v) sel("gestao_valor").value = fmtIn(marcadas(bg).reduce((s, u, _, l) => s + gestaoDa(u, v / l.length), 0));
+          if (v) sel("repasse_valor").value = fmtIn(Math.max(0, r2(repasseNf(v, sel("gestao_valor").value, sel("custo_pct").value).liquido - uc)));
+        }
       }
       conta();
     };
-    // Boleto: puxa do fechamento o valor a cobrar, as geradoras, a gestão e os custos do mês de referência.
-    const puxarBoleto = () => {
-      if (tipo() !== "boleto" || !sel("cliente_id").value) return conta();
+    // Projeta pelo fechamento: valor (arrendamento + custos da UC, se marcado), custos da UC, gestão e custos do dono.
+    // Na NF com valor fixo na regra, o valor fixo é mantido.
+    const puxar = () => {
+      const a = atual(); if (!a.cliente_id && !a.usina_ids.length) return conta();
       if (!sel("referencia").value) sel("referencia").value = M.addMonths(sel("competencia").value, -1);
-      const c = calcBoleto(sel("cliente_id").value, sel("referencia").value);
-      sel("valor").value = fmtIn(c.cobrar || ""); sel("geradora_valor").value = fmtIn(c.ger); sel("gestao_valor").value = fmtIn(c.gest); sel("custos_valor").value = fmtIn(c.custos);
+      const c = calcCobranca(a, sel("referencia").value);
+      const regra = dados.regras.find(y => y.id === sel("regra_id").value);
+      const fixo = tipo() === "nf" && regra && regra.valor_padrao;
+      sel("valor").value = fmtIn(fixo ? regra.valor_padrao : c.cobrar || "");
+      sel("geradora_valor").value = fmtIn(c.uc); sel("gestao_valor").value = fmtIn(c.gest || ""); sel("custos_valor").value = fmtIn(c.custos);
       recalcularRepasse();
     };
-    sel("tipo").onchange = () => { preencherRegras(); puxarBoleto(); };
-    sel("usina_id").onchange = preencherRegras;
-    sel("cliente_id").onchange = () => { preencherRegras(); puxarBoleto(); };
-    sel("referencia").onchange = puxarBoleto;
+    sel("tipo").onchange = () => { if (tipo() === "boleto" && !x.id) sel("incluir_uc").checked = true; puxar(); };
+    sel("cliente_id").onchange = puxar;
+    $$("[data-us]", bg).forEach(i => { i.onchange = puxar; });
+    sel("referencia").onchange = puxar;
+    sel("competencia").onchange = () => { sel("referencia").value = M.addMonths(sel("competencia").value, -1); puxar(); };
+    sel("incluir_uc").onchange = puxar;
     sel("emitente").onchange = conta;
     sel("regra_id").onchange = () => {
       const r = dados.regras.find(y => y.id === sel("regra_id").value); if (!r) return;
       const prev = novaDaRegra(r, sel("competencia").value);
-      for (const k of ["emitente", "tomador", "valor", "custo_pct", "gestao_valor", "repasse_status", "repasse_valor", "referencia", "geradora_valor", "custos_valor"]) {
-        if (sel(k) && prev[k] != null && prev[k] !== "" && (sel(k).value === "" || k === "repasse_status" || k === "emitente")) sel(k).value = /valor|pct/.test(k) ? fmtIn(prev[k]) : prev[k];
-      }
-      if (r.cliente_id) sel("cliente_id").value = r.cliente_id;
-      recalcularRepasse();
+      sel("tipo").value = prev.tipo; sel("cliente_id").value = prev.cliente_id || ""; sel("incluir_uc").checked = !!prev.incluir_uc;
+      $$("[data-us]", bg).forEach(i => { i.checked = prev.usina_ids.includes(i.dataset.us); });
+      for (const k of ["emitente", "tomador", "custo_pct", "repasse_status", "referencia"]) if (sel(k) && prev[k] != null) sel(k).value = /pct/.test(k) ? fmtIn(prev[k]) : prev[k];
+      puxar();
     };
-    sel("repasse_status").onchange = () => tipo() === "boleto" ? puxarBoleto() : recalcularRepasse();
+    $("#nfPuxar", bg).onclick = puxar;
+    sel("repasse_status").onchange = () => { if (sel("gestao_valor").value === "") puxar(); else recalcularRepasse(); };
     ["valor", "gestao_valor", "custo_pct", "geradora_valor", "custos_valor"].forEach(k => { sel(k).oninput = recalcularRepasse; });
     sel("repasse_valor").oninput = conta;
     for (const k of ["valor", "gestao_valor", "custo_pct", "repasse_valor", "geradora_valor", "custos_valor"]) sel(k).value = fmtIn(sel(k).value);
-    preencherRegras(); conta();
+    conta();
     $("#nfTextoBtn", bg).onclick = () => mostrarTexto({ ...x, ...lerForm(bg) });
     const ver = $("#nfVer", bg); if (ver) ver.onclick = e => { e.preventDefault(); window.P3_COMPROVANTE.abrirAnexo(x.arquivo); };
     $("#nfArq", bg).onchange = async e => {
@@ -390,18 +416,20 @@
 
   async function editarRegra(main, orig) {
     const r = { tipo: "nf", ...orig };
-    const campo = (nome, rot, extra = "", cls = "") => `<label class="f ${cls}">${rot}<input name="${nome}" value="${esc(r[nome] ?? "")}" ${extra}></label>`;
+    if (r.incluir_uc == null) r.incluir_uc = ehBoleto(r) ? 1 : 0;
+    const campo = (nome, rot, extra = "", cls = "", t = "") => `<label class="f ${cls}" ${t ? `data-t="${t}"` : ""}>${rot}<input name="${nome}" value="${esc(r[nome] ?? "")}" ${extra}></label>`;
     const html = `<div class="grid-form">
         <label class="f">Tipo<select name="tipo">${opts(Object.entries(TIPO), r.tipo)}</select></label>
-        <label class="f" data-t="nf">Usina<select name="usina_id">${opts(db().usinas.map(u => [u.id, u.nome]), r.usina_id, "Escolha…")}</select></label>
         <label class="f">Cliente<select name="cliente_id">${opts(db().clientes.map(c => [c.id, c.nome]), r.cliente_id, "—")}</select></label>
         ${campo("descricao", "Descrição", 'placeholder="Ex.: NF da P3 ao cliente"')}
+        ${caixasUsinas(usinasDe(r))}
+        <label class="f pr-check"><span style="display:flex;gap:8px;align-items:center;font-weight:500;font-size:13px"><input type="checkbox" name="incluir_uc" ${Number(r.incluir_uc) ? "checked" : ""}> Incluir custos da UC (faturas das geradoras)</span></label>
         <label class="f" data-t="nf">Quem emite<select name="emitente">${opts(Object.entries(EMITENTE), r.emitente)}</select></label>
         ${campo("dia", "Dia de emitir (1 a 31)", 'type="number" min="1" max="31"')}
-        ${campo("valor_padrao", "Valor de costume (R$)", 'inputmode="decimal"').replace('<label class="f', '<label data-t="nf" class="f')}
-        ${campo("custo_pct", "Custo da NF (%)", 'inputmode="decimal" placeholder="Ex.: 6"').replace('<label class="f', '<label data-t="nf" class="f')}
-        ${campo("tomador", "Tomador (como sai na NF)").replace('<label class="f', '<label data-t="nf" class="f')}
-        ${campo("servico", "Descrição do serviço na NF", `placeholder="${SERVICO_PADRAO}"`, "wide").replace('<label class="f', '<label data-t="nf" class="f')}
+        ${campo("valor_padrao", "Valor fixo (R$) — vazio = projetar pelo fechamento", 'inputmode="decimal"')}
+        ${campo("custo_pct", "Custo da NF (%)", 'inputmode="decimal" placeholder="Ex.: 6"', "", "nf")}
+        ${campo("tomador", "Tomador (como sai na NF)", "", "", "nf")}
+        ${campo("servico", "Descrição do serviço na NF", `placeholder="${SERVICO_PADRAO}"`, "wide", "nf")}
         <label class="f">Repasse ao dono<select name="repasse">${opts([["0", "Não"], ["1", "Sim: a P3 recebe e repassa ao dono"]], String(r.repasse || 0))}</select></label>
         <label class="f">Situação<select name="ativo">${opts([["1", "Ativa"], ["0", "Pausada"]], String(r.ativo ?? 1))}</select></label>
         ${campo("obs", "Observações", "", "wide")}
@@ -411,10 +439,12 @@
     const salvo = modal(r.id ? "Regra" : "Nova regra", html, {
       onSave: async el => {
         const f = formData(el);
-        if (f.tipo === "nf" && !f.usina_id) throw new Error("Escolha a usina.");
-        if (f.tipo === "boleto" && !f.cliente_id) throw new Error("Escolha o cliente.");
-        if (f.tipo === "boleto") { f.usina_id = null; f.emitente = "p3"; f.valor_padrao = null; f.custo_pct = null; f.servico = null; f.tomador = nomeCliente(f.cliente_id); }
-        else { f.valor_padrao = f.valor_padrao === "" ? null : n(f.valor_padrao); f.custo_pct = f.custo_pct === "" ? null : n(f.custo_pct); }
+        f.usina_ids = marcadas(el); f.usina_id = f.usina_ids[0] || null;
+        if (f.tipo === "nf" && !f.usina_ids.length) throw new Error("Marque a usina (ou as usinas) da NF.");
+        if (f.tipo === "boleto" && !f.cliente_id) throw new Error("Escolha o cliente do boleto.");
+        if (f.tipo === "boleto") { f.emitente = "p3"; f.custo_pct = null; f.servico = null; f.tomador = nomeCliente(f.cliente_id); }
+        else f.custo_pct = f.custo_pct === "" ? null : n(f.custo_pct);
+        f.valor_padrao = f.valor_padrao === "" ? null : n(f.valor_padrao);
         if (!f.cliente_id) f.cliente_id = null;
         f.dia = f.dia === "" ? null : Number(f.dia);
         f.repasse = Number(f.repasse); f.ativo = Number(f.ativo);
@@ -426,10 +456,11 @@
       const t = $("[name=tipo]", bg).value;
       $$("[data-t]", bg).forEach(l => { l.style.display = l.dataset.t === t ? "" : "none"; });
       $("#nrAjuda", bg).textContent = t === "boleto"
-        ? "Boleto sem NF: o valor a cobrar é a parte do cliente no arrendamento + nas faturas das UCs geradoras do mês anterior (pelo fechamento). O repasse ao dono tira as geradoras, a gestão da P3 e os custos do dono."
-        : "Quando o dono emite a NF, a regra serve para lembrar de pegar a cópia com ele e guardar aqui.";
+        ? "Boleto sem NF: o valor sai do fechamento do mês anterior — a parte do cliente no arrendamento das usinas marcadas, mais os custos da UC (faturas das geradoras) se marcado. O repasse ao dono tira os custos da UC, a gestão da P3 e os custos do dono."
+        : "NF: por padrão só o arrendamento das usinas marcadas (projetado pelo fechamento), ou o valor fixo. Marque \"incluir custos da UC\" para somar as faturas das geradoras. Quando o dono emite, a regra serve para lembrar de pegar a cópia.";
     };
-    $("[name=tipo]", bg).onchange = ajustar; ajustar();
+    $("[name=tipo]", bg).onchange = () => { if (!r.id) $("[name=incluir_uc]", bg).checked = $("[name=tipo]", bg).value === "boleto"; ajustar(); };
+    ajustar();
     const exc = $("#nrExcluir", bg);
     if (exc) exc.onclick = async () => {
       if (!await confirmar("Excluir regra", "O que já foi lançado continua guardado; só para de lembrar. Continuar?", "Excluir")) return;
@@ -439,6 +470,6 @@
     if (await salvo) { await recarregar(main); toast("Regra salva.", "ok"); }
   }
 
-  window.P3_NF = { aviso, pendencias, carregar, lerNf, calcBoleto, textoPronto };
+  window.P3_NF = { aviso, pendencias, carregar, lerNf, calcCobranca, novaDaRegra, textoPronto };
   window.P3.register("notas", { render });
 })();
