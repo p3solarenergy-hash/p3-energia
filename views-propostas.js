@@ -15,7 +15,7 @@
   const dataLonga = iso => { const [a, m, d] = String(iso || hoje()).split("-").map(Number); return `${d} de ${MESES[m - 1]} de ${a}`; };
   const mesAno = iso => { const [a, m] = String(iso || hoje()).split("-").map(Number); return `${MESES[m - 1]} ${a}`; };
 
-  const TIPOS = { solar: "Energia solar", bateria: "Solar com bateria", ev: "Carregador EV" };
+  const TIPOS = { solar: "Energia solar", bateria: "Solar com bateria", ev: "Carregador EV", manutencao: "Manutenção" };
   const STATUS = { rascunho: ["Rascunho", ""], enviada: ["Enviada", "info"], aceita: ["Aceita", "ok"], recusada: ["Recusada", "bad"] };
   const VENDEDORES = {
     eduardo: { nome: "Eduardo Berger Prochet", tel: "(43) 98861-7800", email: "eduardo@p3energy.com.br" },
@@ -51,6 +51,15 @@
       resp_p3: "Fornecimento e instalação dos carregadores\nQuadro dedicado, proteção e botoeiras de emergência\nInfraestrutura elétrica a partir do ponto de espera\nConfiguração, testes e comissionamento\nManutenção preventiva P3",
       resp_cliente: "Disponibilizar o ponto de espera para conexão\nLiberar a área para execução da instalação\nFornecimento de internet"
     }
+  };
+  // Manutenção (O&M) pela planilha "CONTROLE O & M": preventiva, monitoramento, limpeza e visita técnica avulsas.
+  PADRAO.manutencao = {
+    kwp: 5, modulos: "", estrutura: "telhado", km: 0, beneficiarias: 0, endereco: "",
+    srv_preventiva: true, srv_monitoramento: false, srv_limpeza: false, srv_visita: false,
+    pag_3x: true, pag_12x: false, pag_avista: false, garantia_meses: 3,
+    fiscal_pct: 6, markup_3x: 60, markup_anual: 50, markup_avulso: 50, arredondar: true, tarifa_kwh: 0.82,
+    inclusos: "Visita técnica com check-list completo\nReaperto dos grampos de fixação dos módulos\nRevisão da força mecânica nas estruturas do sistema\nLimpeza e reaperto dos terminais elétricos\nLimpeza da carcaça e dos exaustores do inversor\nLimpeza dos módulos (1 vez ao ano)",
+    exclusos: "Substituição de componentes\nHospedagem e alimentação\nLimpeza dos módulos mais de 1 vez ao ano\nDeslocamento mais de 1 vez ao ano"
   };
   PADRAO.bateria = { ...PADRAO.solar, bat_qtd: 1, bat_kwh: 10, bat_modelo: "Bateria de lítio LiFePO4", inv_hibrido: "Inversor híbrido", carga_critica_kw: 2, valor_bateria: 0, bat_garantia: "10 anos ou 6.000 ciclos" };
   const novaDados = tipo => ({ ...COMUM, ...JSON.parse(JSON.stringify(PADRAO[tipo])), data: hoje() });
@@ -108,7 +117,37 @@
     const software = r2(qtd * n(d.software_mensal)), manut = r2(qtd * n(d.manutencao_mensal));
     return { qtd, investimento, software, manut, fixoCom: r2(software + manut), fixoSem: software };
   }
-  const calc = p => p.tipo === "ev" ? calcEv(dadosDe(p)) : calcSolar(dadosDe(p), p.tipo);
+  // Manutenção, igual à planilha CONTROLE O & M:
+  //  custo preventiva = limpeza (R$ 10/8/6 por módulo até 50/200/acima) + visita (km × 2 + R$ 100) + preventiva por faixa de módulos;
+  //  preço 3× = custo + 6% fiscal, + 60%, em 3 parcelas (arredondadas a R$ 5); plano à vista = custo + 50%;
+  //  monitoramento = kWp × 10 + beneficiárias × 2,50 + 3,38 por ano → venda mensal arredondada a múltiplos de R$ 15;
+  //  visita técnica avulsa = (R$ 100 ou R$ 5 por kW de inversor acima de 75 kW) + km + R$ 100; limpeza avulsa = R$ 15/módulo + 2 deslocamentos; ambos + 50%.
+  function calcManut(d) {
+    const kwp = n(d.kwp), mod = n(d.modulos) || kwp * 1000 / 550, km = n(d.km);
+    const arr = v => d.arredondar ? Math.ceil(v / 5 - 1e-9) * 5 : r2(v);
+    const limpeza = r2((mod <= 50 ? 10 : mod <= 200 ? 8 : 6) * mod);
+    const visita = km > 0 ? km * 2 + 100 : 0;
+    const prev = mod <= 20 ? 350 : mod <= 50 ? 500 : mod <= 100 ? 650 : mod <= 200 ? 800 : mod <= 300 ? 1000 : mod <= 500 ? 2000 : 2500;
+    const custo = r2(limpeza + visita + prev), fiscal = r2(custo * (1 + n(d.fiscal_pct) / 100));
+    const parcela3 = arr(fiscal * (1 + n(d.markup_3x) / 100) / 3), parcela12 = arr(fiscal * (1 + n(d.markup_3x) / 100) / 12);
+    const avista = arr(custo * (1 + n(d.markup_anual) / 100));
+    const plano = d.pag_3x ? parcela3 * 3 : d.pag_12x ? parcela12 * 12 : avista;
+    const monitAnual = kwp * 10 + n(d.beneficiarias) * 2.5 + 3.38, monitCusto = r2(monitAnual / 12), monitVenda = Math.ceil(monitCusto / 10 - 1e-9) * 15;
+    const inv = kwp / 1.4, desl = km > 0 ? km + 100 : 0;
+    const visitaCusto = r2((inv <= 75 ? 100 : inv * 5) + desl), visitaPreco = arr(visitaCusto * (1 + n(d.markup_avulso) / 100));
+    const limpezaCusto = r2(mod * 15 + desl * 2), limpezaPreco = arr(limpezaCusto * (1 + n(d.markup_avulso) / 100));
+    const fis = 1 + n(d.fiscal_pct) / 100;
+    const linhas = [];
+    if (d.srv_preventiva) linhas.push({ k: "preventiva", nome: "Manutenção preventiva anual", preco: plano, custo: fiscal });
+    if (d.srv_limpeza) linhas.push({ k: "limpeza", nome: "Limpeza dos módulos (avulsa)", preco: limpezaPreco, custo: r2(limpezaCusto * fis) });
+    if (d.srv_visita) linhas.push({ k: "visita", nome: "Visita técnica / laudo (avulsa)", preco: visitaPreco, custo: r2(visitaCusto * fis) });
+    if (d.srv_monitoramento) linhas.push({ k: "monitoramento", nome: "Monitoramento (12 meses)", preco: monitVenda * 12, custo: r2(monitCusto * 12) });
+    const investimento = r2(linhas.reduce((s, l) => s + l.preco, 0)), custoTotal = r2(linhas.reduce((s, l) => s + l.custo, 0));
+    const economiaAnual = r2((d.estrutura === "solo" ? 1550 : 1250) * kwp * n(d.tarifa_kwh));
+    return { kwp, mod, km, limpeza, visita, prev, custo, fiscal, parcela3, parcela12, avista, plano, monitAnual, monitCusto, monitVenda, visitaCusto, visitaPreco, limpezaCusto, limpezaPreco,
+      linhas, investimento, custoTotal, lucro: r2(investimento - custoTotal), economiaAnual, pctEconomia: economiaAnual ? plano / economiaAnual : 0 };
+  }
+  const calc = p => p.tipo === "ev" ? calcEv(dadosDe(p)) : p.tipo === "manutencao" ? calcManut(dadosDe(p)) : calcSolar(dadosDe(p), p.tipo);
 
   // ───────── a proposta (HTML das páginas) ─────────
   const LOGO = (cor1, cor2) => `<svg class="logo" viewBox="129 169 1743 757" role="img" aria-label="P3 Energy"><path fill="${cor1}" d="M129 169H993V623H320V461H817V313H287V926H129Z"/><path fill="${cor2}" d="M1052 169H1872V926H1052V771H1731V313H1052Z"/><rect fill="${cor2}" x="1061" y="461" width="636" height="162"/><text fill="${cor1}" x="330" y="923" font-size="206" textLength="690" lengthAdjust="spacingAndGlyphs" font-family="'Arial Narrow','Roboto Condensed',Arial,sans-serif">ENERGY</text></svg>`;
@@ -132,7 +171,7 @@
     .card.lim{background:var(--lim);border-color:var(--lim);color:var(--esc)} .card.lim small{color:var(--esc)}
     .card.esc{background:var(--esc);border-color:var(--esc);color:#fff} .card.esc small{color:var(--lim)}
     .lista{list-style:none;padding:0;margin:0} .lista li{font-size:19px;line-height:1.4;padding:10px 0 10px 32px;border-bottom:1px solid var(--lin);position:relative}
-    .dark .lista li{border-color:rgba(255,255,255,.12)} .lista li:before{content:"";position:absolute;left:4px;top:18px;width:13px;height:13px;border-radius:50%;background:var(--lim)}
+    .dark .lista li{border-color:rgba(255,255,255,.12)} .lista.x li:before{background:#c0533f} .lista li:before{content:"";position:absolute;left:4px;top:18px;width:13px;height:13px;border-radius:50%;background:var(--lim)}
     table{border-collapse:collapse;width:100%;font-size:19px} td,th{padding:13px 16px;text-align:left;border-bottom:1px solid var(--lin)} th{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--mut)}
     td.n,th.n{text-align:right;white-space:nowrap} tr.tot td{font-weight:800;font-size:23px;border-bottom:0;background:var(--esc);color:#fff}
     td small{display:block;font-size:15px;color:var(--mut);margin-top:4px}
@@ -147,7 +186,7 @@
 
   function montar(p) {
     const d = dadosDe(p), c = calc(p), v = VENDEDORES[d.vendedor] || VENDEDORES.eduardo;
-    const paginas = p.tipo === "ev" ? paginasEv(p, d, c, v) : paginasSolar(p, d, c, v);
+    const paginas = p.tipo === "ev" ? paginasEv(p, d, c, v) : p.tipo === "manutencao" ? paginasManut(p, d, c, v) : paginasSolar(p, d, c, v);
     const total = String(paginas.length).padStart(2, "0");
     const corpo = paginas.map((pg, i) => pg.replace("{{PG}}", `${String(i + 1).padStart(2, "0")} / ${total}`)).join("");
     return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Proposta ${esc(p.numero || "")} ${esc(d.cliente || "")}</title><style>${CSS}</style></head><body>${corpo}</body></html>`;
@@ -309,6 +348,55 @@
     return pgs;
   }
 
+  function paginasManut(p, d, c, v) {
+    const g = n(d.garantia_meses) || 3, pgs = [];
+    pgs.push(capa(p, d, "Manutenção<br>preventiva", `Manutenção inteligente da sua energia solar${d.cidade ? ` · ${d.cidade}` : ""}`,
+      [[`${numx(c.kwp)} kWp`, "Potência instalada"], [`${Math.round(c.mod)}`, "Módulos"], [`${g} meses`, "de garantia nos serviços"]]));
+    pgs.push(empresa(d));
+    pgs.push(`<section class="slide">${topo("Por que fazer", "Tenha o melhor desempenho do seu sistema")}
+      <div class="grid g2" style="gap:56px">
+        <div><p>A <b>manutenção preventiva</b> é essencial para manter a eficiência e a durabilidade do sistema de energia solar. Inspeções e ajustes regulares evitam falhas maiores e garantem a segurança e o desempenho da usina.</p>
+          <p class="mut">Fazemos a manutenção completa, com inspeção técnica e limpeza programada, protegendo o seu investimento e prolongando a vida útil do sistema.</p>
+          ${c.economiaAnual ? `<div class="card lim" style="margin-top:18px"><small>Seu sistema economiza cerca de</small><b class="big">${brl(c.economiaAnual)}/ano</b>${d.srv_preventiva && c.pctEconomia ? `<span>A manutenção preventiva representa ${num(c.pctEconomia * 100, 1)}% disso.</span>` : ""}</div>` : ""}</div>
+        <div class="grid" style="gap:16px;align-content:start">
+          <div class="card"><small>Eficiência</small>Preserva a eficiência do sistema e a geração de energia.</div>
+          <div class="card"><small>Segurança</small>Evita falhas, paradas e custos inesperados.</div>
+          <div class="card esc"><small>Durabilidade</small>Prolonga a vida útil dos módulos, do inversor e da estrutura.</div>
+        </div>
+      </div>${pe(d)}</section>`);
+    pgs.push(`<section class="slide dark">${topo("O que fazemos", "Manutenção completa, com check-list", true)}
+      <div class="grid g3">
+        <div class="card"><small>Visita técnica</small><p style="font-size:19px;margin:0">Visita com check-list completo e garantia de ${g} meses sobre os serviços.</p></div>
+        <div class="card"><small>Inversor e terminais</small><p style="font-size:19px;margin:0">Limpeza da carcaça e dos exaustores do inversor e limpeza e reaperto dos terminais elétricos.</p></div>
+        <div class="card lim"><small>Estrutura</small><p style="font-size:19px;margin:0">Revisão da força mecânica das estruturas, fixadores, grampos e terminais.</p></div>
+      </div>
+      ${d.srv_monitoramento ? `<div class="card" style="margin-top:20px"><small>Monitoramento</small><p style="font-size:19px;margin:0">Acompanhamento da geração todos os meses, com alerta quando o sistema produz menos do que deveria.</p></div>` : ""}
+      ${pe(d)}</section>`);
+    pgs.push(`<section class="slide">${topo("Escopo", "Serviços e itens exclusos")}
+      <div class="grid g2" style="gap:44px">
+        <div class="card"><h3 style="color:var(--ver)">Serviços</h3><ul class="lista">${linhas(d.inclusos).map(l => `<li>${esc(l)}</li>`).join("")}<li>Garantia de ${g} meses na execução dos serviços</li></ul></div>
+        <div class="card"><h3 style="color:#a23b2a">Itens exclusos</h3><ul class="lista x">${linhas(d.exclusos).map(l => `<li>${esc(l)}</li>`).join("")}</ul></div>
+      </div>${pe(d)}</section>`);
+    const formas = [d.pag_3x && `3× ${brl(c.parcela3)}`, d.pag_12x && `12× ${brl(c.parcela12)}`, d.pag_avista && `à vista ${brl(c.avista)}`].filter(Boolean);
+    pgs.push(`<section class="slide">${topo("Investimento", "Sua manutenção")}
+      <div class="grid" style="grid-template-columns:1fr 1.3fr;gap:40px">
+        <div class="grid" style="gap:16px;align-content:start">
+          <div class="card"><small>Cliente</small><b style="font-size:22px">${esc(d.cliente || "—")}</b>${d.endereco || d.cidade ? `<div class="mut">${esc([d.endereco, d.cidade].filter(Boolean).join(" · "))}</div>` : ""}</div>
+          <div class="card esc"><small>Potência instalada</small><b class="big">${numx(c.kwp)} kWp</b><span>${Math.round(c.mod)} módulos · ${d.estrutura === "solo" ? "solo" : "telhado"}</span></div>
+          <div class="card"><small>Consultor</small>${esc(v.nome)} · ${esc(v.tel)}</div>
+        </div>
+        <div><table><thead><tr><th>Serviço</th><th class="n">Investimento</th></tr></thead><tbody>
+          ${d.srv_preventiva ? `<tr><td><b>Manutenção preventiva</b><small>visita anual com check-list, limpeza dos módulos, inversor e estrutura</small></td><td class="n"><b style="font-size:24px">${esc(formas[0] || brl(c.plano))}</b>${formas.length > 1 ? `<small>ou ${esc(formas.slice(1).join(" ou "))}</small>` : ""}</td></tr>` : ""}
+          ${d.srv_monitoramento ? `<tr><td><b>Monitoramento da geração</b><small>acompanhamento mensal com alertas</small></td><td class="n"><b style="font-size:24px">${brl(c.monitVenda)}/mês</b></td></tr>` : ""}
+          ${d.srv_limpeza ? `<tr><td><b>Limpeza dos módulos</b><small>avulsa, ${Math.round(c.mod)} módulos</small></td><td class="n"><b style="font-size:24px">${brl(c.limpezaPreco)}</b></td></tr>` : ""}
+          ${d.srv_visita ? `<tr><td><b>Visita técnica / laudo</b><small>avulsa, com relatório</small></td><td class="n"><b style="font-size:24px">${brl(c.visitaPreco)}</b></td></tr>` : ""}
+        </tbody></table>
+        <p class="nota">Valores para uma visita por ano. Deslocamentos e limpezas adicionais são orçados à parte.</p></div>
+      </div>${pe(d)}</section>`);
+    pgs.push(contato(d, v, ["Aprovação da proposta", "Agendamento da visita técnica", "Execução da manutenção com check-list", "Relatório do sistema e próxima visita"], "Seu sistema protegido e gerando o máximo, todos os anos."));
+    return pgs;
+  }
+
   // ───────── imprimir (PDF) ─────────
   function imprimir(p) {
     const f = document.createElement("iframe");
@@ -413,6 +501,20 @@
         ${campo("avista", "À vista (R$) — vazio = valor total", "num")}${campo("parcelas", "Parcelas (ex.: 3, 6, 12)")}${campo("juros_parcela", "Acréscimo no parcelado (%)", "num")}
         ${campo("prazo", "Tempo de execução")}${campo("pagamento_obs", "Observação das condições", "area", 2)}
         ${campo("reajuste", "Reajuste da tarifa ao ano (%)", "num")}${campo("degradacao", "Perda dos módulos ao ano (%)", "num")}${campo("anos", "Anos da projeção", "num")}`);
+    const manut = () => bloco("Sistema do cliente", `
+        ${campo("kwp", "Potência (kWp)", "num")}${campo("modulos", "Módulos — vazio = kWp ÷ 550 W", "num")}
+        ${escolha("estrutura", "Estrutura", [["telhado", "Telhado"], ["solo", "Solo"]])}${campo("km", "Distância até o cliente (km, ida)", "num")}
+        ${campo("beneficiarias", "UCs beneficiárias (monitoramento)", "num")}${campo("endereco", "Endereço")}`)
+      + bloco("Serviços e pagamento", `
+        ${campo("srv_preventiva", "Manutenção preventiva anual", "check")}${campo("srv_monitoramento", "Monitoramento mensal", "check")}
+        ${campo("srv_limpeza", "Limpeza dos módulos (avulsa)", "check")}${campo("srv_visita", "Visita técnica / laudo (avulsa)", "check")}
+        ${campo("pag_3x", "Preventiva em 3×", "check")}${campo("pag_12x", "Preventiva em 12×", "check")}${campo("pag_avista", "Preventiva à vista (plano anual)", "check")}
+        ${campo("garantia_meses", "Garantia dos serviços (meses)", "num")}`)
+      + bloco("Calculadora (planilha de O&M · não sai no PDF)", `
+        ${campo("fiscal_pct", "Custo fiscal (%)", "num")}${campo("markup_3x", "Margem no parcelado (%)", "num")}${campo("markup_anual", "Margem à vista / plano anual (%)", "num")}
+        ${campo("markup_avulso", "Margem dos avulsos (%)", "num")}${campo("tarifa_kwh", "Tarifa para a economia (R$/kWh)", "num")}${campo("arredondar", "Arredondar preços para R$ 5", "check")}
+        <p class="muted wide" id="prManut" style="margin:4px 0 0;font-size:12.5px;white-space:pre-line"></p>`)
+      + bloco("Textos", `${campo("inclusos", "Serviços inclusos (um por linha)", "area", 6)}${campo("exclusos", "Itens exclusos (um por linha)", "area", 4)}`, false);
     const ev = () => bloco("Carregadores", `
         ${campo("qtd", "Quantidade", "num")}${escolha("corrente", "Tipo", [["AC", "AC"], ["DC", "DC"]])}${campo("potencia_kw", "Potência (kW)", "num")}${campo("modelo", "Modelo")}
         ${campo("clamper", "Mobi Smart Clamper (um por carregador)", "check")}${campo("quadro", "Quadro dedicado", "check")}${campo("desligamento", "Desligamento rápido (um por carregador)", "check")}${campo("operacao", "Incluir operação e cobrança pelo app", "check")}
@@ -429,7 +531,7 @@
         <div class="actions"><select id="prStatus" aria-label="Situação">${opts(Object.entries(STATUS).map(([k, [l]]) => [k, l]), p.status)}</select>
           <button class="btn" id="prPdf">Gerar PDF</button><button class="btn primary" id="prSalvar">Salvar</button></div></div>
       <div class="pr-ed">
-        <div class="pr-form">${comum}${p.tipo === "ev" ? ev() : solar()}
+        <div class="pr-form">${comum}${p.tipo === "ev" ? ev() : p.tipo === "manutencao" ? manut() : solar()}
           <div class="pr-acoes">${p.id && p.status === "aceita" && !p.obra_id ? `<button class="btn" id="prObra">Virar obra</button>` : ""}${p.obra_id ? `<a class="btn ghost" href="#/obras">Ver em Obras</a>` : ""}${p.id ? `<button class="btn ghost" id="prCopia">Duplicar</button><button class="btn ghost danger" id="prExcluir">Excluir</button>` : ""}</div></div>
         <div class="pr-prev"><iframe id="prFrame" title="Prévia da proposta"></iframe></div>
       </div>`;
@@ -444,11 +546,20 @@
         frame.onload = () => { ajustarZoom(); frame.contentWindow.scrollTo(0, y); };
         frame.srcdoc = montar(p);
         const c = calc(p);
-        $("#prResumo", main).textContent = p.tipo === "ev"
+        const cm = $("#prManut", main);
+        if (cm && p.tipo === "manutencao") cm.textContent = [
+          `Preventiva — custo: limpeza ${brl(c.limpeza)} (${num(c.mod, 1)} módulos) + visita ${brl(c.visita)} + preventiva ${brl(c.prev)} = ${brl(c.custo)}; com fiscal ${brl(c.fiscal)}.`,
+          `Preço: 3× ${brl(c.parcela3)} (${brl(c.parcela3 * 3)}) · 12× ${brl(c.parcela12)} · à vista ${brl(c.avista)}.`,
+          `Monitoramento: custo ${brl(c.monitCusto)}/mês → venda ${brl(c.monitVenda)}/mês. Limpeza avulsa: custo ${brl(c.limpezaCusto)} → ${brl(c.limpezaPreco)}. Visita avulsa: custo ${brl(c.visitaCusto)} → ${brl(c.visitaPreco)}.`,
+          `Proposta: ${brl(c.investimento)} · custo com fiscal ${brl(c.custoTotal)} · lucro ${brl(c.lucro)}${c.investimento ? ` (${num(c.lucro / c.investimento * 100, 1)}%)` : ""}.`
+        ].join("\n");
+        $("#prResumo", main).textContent = p.tipo === "manutencao"
+          ? `${d.cliente || "Cliente"} · ${numx(c.kwp)} kWp · ${Math.round(c.mod)} módulos · ${c.linhas.map(l => l.nome.split(" (")[0]).join(" + ") || "nenhum serviço"} · ${brl(c.investimento)} · lucro ${brl(c.lucro)}`
+          : p.tipo === "ev"
           ? `${d.cliente || "Cliente"} · ${c.qtd} carregador(es) · investimento ${brl(c.investimento)}${d.operacao ? ` · fixo mensal ${brl(n(d.manutencao_mensal) ? c.fixoCom : c.fixoSem)}` : ""}`
           : `${d.cliente || "Cliente"} · ${num(c.kwp, 2)} kWp · ${num(c.geracao)} kWh/mês · economia ${brl(c.mensal)}/mês (${Math.round(c.pct * 100)}%) · ${brl(c.investimento)} · payback ${c.payback != null ? num(c.payback, 1) + " anos" : "—"}`;
         // Custo e lucro da obra (só na tela): o preço que está na proposta contra a planilha de obra solar.
-        const lucro = $("#prLucro", main), os = p.tipo !== "ev" && obraSolar(d, p.tipo);
+        const lucro = $("#prLucro", main), os = (p.tipo === "solar" || p.tipo === "bateria") && obraSolar(d, p.tipo);
         if (lucro && os) {
           const k = os.c, kwp = n(os.obra.kwp);
           lucro.textContent = `Custos da obra ${brl(k.sub)} + margem ${brl(k.margemP3)} = preço sugerido ${brl(os.sugerido)}${kwp ? ` (${brl(os.sugerido / kwp)}/kWp)` : ""}.`
@@ -458,8 +569,9 @@
       }, 250);
     };
     const NUMS = new Set(["validade_dias", "consumo_kwh", "conta_atual", "fio_b_pct", "qtd_modulos", "modulo_w", "fator_kwh_kwp", "valor_equip", "valor_impl", "juros_parcela", "reajuste", "degradacao", "anos", "bat_qtd", "bat_kwh", "carga_critica_kw", "valor_bateria", "qtd", "potencia_kw", "software_mensal", "manutencao_mensal",
-      "c_km", "c_viagens_eng", "c_viagens_equipe", "c_pessoas", "c_dias", "c_margem_kwp", "c_imp_total", "c_imp_servico", "c_kit", "c_bateria", "c_estrutura", "c_transformador", "c_padrao", "c_descarregamento", "c_conexao", "c_comissao", "c_terrenista"]);
-    const OPCIONAL = new Set(["avista", "custo_com_solar"]);
+      "c_km", "c_viagens_eng", "c_viagens_equipe", "c_pessoas", "c_dias", "c_margem_kwp", "c_imp_total", "c_imp_servico", "c_kit", "c_bateria", "c_estrutura", "c_transformador", "c_padrao", "c_descarregamento", "c_conexao", "c_comissao", "c_terrenista",
+      "kwp", "km", "beneficiarias", "garantia_meses", "fiscal_pct", "markup_3x", "markup_anual", "markup_avulso", "tarifa_kwh"]);
+    const OPCIONAL = new Set(["avista", "custo_com_solar", "modulos"]);
     $$("[data-k]", main).forEach(el => {
       el.oninput = el.onchange = () => {
         const k = el.dataset.k;
@@ -538,12 +650,12 @@
     const obra = $("#prObra", main);
     if (obra) obra.onclick = async () => {
       const c = calc(p);
-      const tipoObra = p.tipo === "ev" ? (d.corrente === "DC" ? "Eletroposto DC" : "Carregador EV comercial") : c.kwp >= 75 ? "Usina solar" : "Sistema solar residencial";
+      const tipoObra = p.tipo === "manutencao" ? "Manutenção" : p.tipo === "ev" ? (d.corrente === "DC" ? "Eletroposto DC" : "Carregador EV comercial") : c.kwp >= 75 ? "Usina solar" : "Sistema solar residencial";
       if (!await confirmar("Virar obra", `Cria a obra "${esc(d.cliente || p.numero)}" (${esc(tipoObra)}) com venda de ${brl(c.investimento)} na tela Obras. Continuar?`, "Criar obra")) return;
       try {
-        const corpo = { nome: d.cliente || p.numero, contratante: p.tipo === "ev" ? "terceiro" : "p3", tipo: tipoObra, cidade: d.cidade, vendedor: (VENDEDORES[d.vendedor] || {}).nome, status: "andamento", modo: "simples", venda: c.investimento, kwp: p.tipo === "ev" ? null : c.kwp, carregadores_dc: p.tipo === "ev" && d.corrente === "DC" ? c.qtd : null, carregadores_ac: p.tipo === "ev" && d.corrente === "AC" ? c.qtd : null, potencia_kw: p.tipo === "ev" ? n(d.potencia_kw) * c.qtd : null, data_inicio: hoje(), origem: "proposta", obs: `Gerada da proposta ${p.numero}.` };
+        const corpo = { nome: d.cliente || p.numero, contratante: p.tipo === "ev" ? "terceiro" : "p3", tipo: tipoObra, cidade: d.cidade, vendedor: (VENDEDORES[d.vendedor] || {}).nome, status: "andamento", modo: "simples", venda: c.investimento, kwp: p.tipo === "ev" ? null : c.kwp, custo: p.tipo === "manutencao" ? c.custoTotal : null, carregadores_dc: p.tipo === "ev" && d.corrente === "DC" ? c.qtd : null, carregadores_ac: p.tipo === "ev" && d.corrente === "AC" ? c.qtd : null, potencia_kw: p.tipo === "ev" ? n(d.potencia_kw) * c.qtd : null, data_inicio: hoje(), origem: "proposta", obs: `Gerada da proposta ${p.numero}.` };
         // Solar: a obra já nasce com o orçamento detalhado da planilha de obra solar e o valor da proposta como contratado.
-        const os = p.tipo !== "ev" && obraSolar(d, p.tipo);
+        const os = (p.tipo === "solar" || p.tipo === "bateria") && obraSolar(d, p.tipo);
         if (os) Object.assign(corpo, { modo: "detalhado", itens: os.obra.itens.filter(i => n(i.qtd) * n(i.unit)), solar: os.obra.solar, valor_contratado: c.investimento, custo: os.c.custo });
         const o = await api("obras", { method: "POST", body: corpo });
         await api(`propostas/${encodeURIComponent(p.id)}`, { method: "PUT", body: { obra_id: o.id } });

@@ -212,7 +212,7 @@
         for (const f of ["valor", "valor_padrao", "repasse_valor", "gestao_valor", "geradora_valor", "custos_valor"]) if (row[f] != null && row[f] < 0) throw new Error("Valores não podem ser negativos.");
       }
       if (table === "propostas") {
-        if (!["ev", "solar", "bateria"].includes(row.tipo)) throw new Error("Tipo de proposta: carregador EV, solar ou solar com bateria.");
+        if (!["ev", "solar", "bateria", "manutencao"].includes(row.tipo)) throw new Error("Tipo de proposta: carregador EV, solar, solar com bateria ou manutenção.");
         if (row.status && !["rascunho", "enviada", "aceita", "recusada"].includes(row.status)) throw new Error("Situação da proposta inválida.");
       }
       if (table === "usina_mes") {
