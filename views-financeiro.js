@@ -171,11 +171,11 @@
     const texto = s => s > 0 ? `<span class="pos">P3 repassa ao dono</span>` : s < 0 ? `<span class="neg">Dono paga à P3</span>` : "Sem saldo";
     el.innerHTML = `
       <div class="inline" style="margin-bottom:12px"><label class="f">Mês${P3.mesSelect("finComp", ui.comp, meses)}</label></div>
-      <div class="note" style="margin-bottom:14px"><b>Saldo</b> = arrendamento recebido pela P3 − gestão P3 − reembolsos pendentes. Os custos entram depois que a P3 os paga.</div>
+      <div class="note" style="margin-bottom:14px"><b>Saldo</b> = arrendamento recebido pela P3 − gestão P3 − imposto da NF da P3 − reembolsos pendentes. Os custos entram depois que a P3 os paga.</div>
       ${A.donos.map(d => `<div class="card"><div class="usina-card"><div><h2>${esc(nomeDono(d.dono_id))}</h2><p class="sub">${esc(fmt.mesLongo(ui.comp))}</p></div>
           <div class="right"><b style="font-size:20px">${fmt.brl(Math.abs(d.saldo))}</b><small style="display:block">${texto(d.saldo)}</small></div></div>
         <div class="table-wrap" style="box-shadow:none"><table><thead><tr><th>Usina</th><th>Quem recebe</th><th class="n">Arrendamento</th><th class="n">Recebido pela P3</th><th class="n">Gestão P3</th><th class="n">Reembolsos</th><th class="n">Saldo</th></tr></thead><tbody>
-        ${d.usinas.map(u => `<tr><td><b>${esc(u.nome)}</b>${u.custosFechamento ? `<small>custos no Fechamento: ${fmt.brl(u.custosFechamento)} (fora do saldo)</small>` : ""}${u.aindaNaoPago ? `<small>${fmt.brl(u.aindaNaoPago)} a pagar, ainda fora do saldo</small>` : ""}</td>
+        ${d.usinas.map(u => `<tr><td><b>${esc(u.nome)}</b>${u.custosFechamento ? `<small>custos no Fechamento: ${fmt.brl(u.custosFechamento)} (fora do saldo)</small>` : ""}${u.aindaNaoPago ? `<small>${fmt.brl(u.aindaNaoPago)} a pagar, ainda fora do saldo</small>` : ""}${u.impostoNf ? `<small>imposto da NF: ${fmt.brl(u.impostoNf)} (já no saldo)</small>` : ""}</td>
           <td><select data-recebe="${esc(u.usina_id)}" aria-label="Quem recebe o arrendamento">${opts([["dono", "Dono"], ["p3", "P3"]], u.recebe)}</select></td>
           <td class="n">${fmt.brl(u.arrendamento)}</td><td class="n">${fmt.brl(u.recebidoP3)}</td><td class="n">${fmt.brl(u.gestao)}</td><td class="n">${fmt.brl(u.reembolsos)}</td><td class="n"><b>${fmt.brl(Math.abs(u.saldo))}</b><small>${texto(u.saldo)}</small></td></tr>`).join("")}
         </tbody></table></div></div>`).join("") || `<div class="empty">Sem movimento em ${esc(fmt.mesLongo(ui.comp))}.</div>`}`;

@@ -123,11 +123,13 @@
       const recebe = us.arrendamento_recebe === "p3" ? "p3" : "dono";
       const arrendamento = u ? u.arrendamento : 0, gestao = u ? u.gestao : 0;
       const recebidoP3 = recebe === "p3" ? arrendamento : 0;
+      // Imposto da NF que a P3 emitiu: a P3 recolhe e desconta antes de repassar.
+      const impostoNf = recebe === "p3" && u ? n(u.custoNf) : 0;
       const reembolsos = soma(doDono.filter(reembolsoPendente), c => c.valor);
       return {
         usina_id: us.id, nome: us.nome, dono_id: us.dono_id, recebe, arrendamento, gestao, recebidoP3, reembolsos,
         aindaNaoPago: soma(doDono.filter(c => c.status !== "pago"), c => c.valor), custosFechamento: u ? u.custosProprios : 0,
-        saldo: r2(recebidoP3 - gestao - reembolsos), status: u ? u.status : "aberto"
+        impostoNf, saldo: r2(recebidoP3 - gestao - impostoNf - reembolsos), status: u ? u.status : "aberto"
       };
     });
     const donos = new Map();

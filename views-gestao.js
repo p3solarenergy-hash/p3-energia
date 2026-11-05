@@ -119,7 +119,7 @@
         <label class="f">Situação<select name="status">${opts(Object.entries(P3.STATUS).map(([k, [l]]) => [k, l]), um.status || "aberto")}</select></label>
       </div>
       <hr class="sep"><b style="font-size:13px">Custos do dono neste mês</b><p class="muted" style="font-size:12.5px;margin:2px 0 8px">Saem do líquido do dono (manutenção, terreno, seguro…).</p>
-      ${doFin.length ? `<div class="note" style="margin-bottom:8px"><b>Já vêm do Financeiro</b> (não precisa escrever aqui):${doFin.map(c => `<div class="linha-cat"><span>${esc(c.descricao)}${c.origem === "previsto" ? " · previsto pelo custo fixo" : ""}</span><b>${fmt.brl(c.valor)}</b></div>`).join("")}</div>` : ""}
+      ${doFin.length ? `<div class="note" style="margin-bottom:8px"><b>Já entram sozinhos</b> (não precisa escrever aqui):${doFin.map(c => `<div class="linha-cat"><span>${esc(c.descricao)}${{ previsto: " · previsto pelo custo fixo", financeiro: " · do Financeiro", nf: " · da NF lançada", "nf-previsto": " · projetado pela regra da NF" }[c.origem] || ""}</span><b>${fmt.brl(c.valor)}</b></div>`).join("")}</div>` : ""}
       <div id="custos">${custos.map(linhaCusto).join("")}</div><button class="btn sm" id="addCusto">+ outro custo</button>
       <hr class="sep"><label class="f">Observação<textarea name="obs">${esc(um.obs || "")}</textarea></label>`;
     const p = modal("Fechamento do mês", html, {

@@ -262,10 +262,11 @@
     }
 
     async snapshot() {
-      const [donos, clientes, usinas, ucs, vinculos, faturas, usinaMes, scee, custos, custosFixos, documentos, config] = await Promise.all(["donos", "clientes", "usinas", "ucs", "vinculos", "faturas", "usina_mes", "scee", "custos", "custos_fixos", "documentos", "config"].map(t => this.all(t)));
+      const [donos, clientes, usinas, ucs, vinculos, faturas, usinaMes, scee, custos, custosFixos, documentos, config, nfRegras, notasFiscais] = await Promise.all(["donos", "clientes", "usinas", "ucs", "vinculos", "faturas", "usina_mes", "scee", "custos", "custos_fixos", "documentos", "config", "nf_regras", "notas_fiscais"].map(t => this.all(t)));
       const cfg = Object.fromEntries(config.map(r => [r.chave, r.valor]));
       if (cfg.usuario) this.usuario = cfg.usuario;
-      return { donos, clientes, usinas, ucs, vinculos, faturas, usinaMes, scee, custos, custosFixos, documentos: documentos.map(({ caminho, ...d }) => d), config: cfg };
+      // NFs entram no Fechamento: o custo da NF que a P3 emite e repassa sai do líquido do dono.
+      return { donos, clientes, usinas, ucs, vinculos, faturas, usinaMes, scee, custos, custosFixos, nfRegras, notasFiscais: notasFiscais.map(({ arquivo, ...x }) => x), documentos: documentos.map(({ caminho, ...d }) => d), config: cfg };
     }
 
     async auditoria(limit) {
