@@ -397,6 +397,56 @@
     return pgs;
   }
 
+  // ───────── texto para mandar junto com o PDF no WhatsApp ─────────
+  // Um texto curto por tipo, com os números da proposta, a validade e quem está mandando.
+  function textoWhats(p) {
+    const d = dadosDe(p), c = calc(p), v = VENDEDORES[d.vendedor] || VENDEDORES.eduardo;
+    const eu = v.nome.split(" ")[0];
+    const validade = (() => { const x = new Date((d.data || hoje()) + "T12:00:00"); x.setDate(x.getDate() + (n(d.validade_dias) || 15)); return x.toLocaleDateString("pt-BR"); })();
+    const para = d.cliente ? ` para ${d.cliente}` : "", nr = p.numero ? ` ${p.numero}` : "";
+    const msg = [`Olá! Tudo bem? Aqui é o ${eu}, da P3 Energy.`, ""];
+    if (p.tipo === "solar" || p.tipo === "bateria") {
+      const bat = p.tipo === "bateria", capKwh = n(d.bat_kwh) * (n(d.bat_qtd) || 1);
+      const parc = c.parcelas.length ? c.parcelas[c.parcelas.length - 1] : null;
+      msg.push(`Segue em anexo a proposta${nr} do sistema de energia solar${bat ? " com baterias" : ""}${para} ☀️`, "",
+        `• Sistema de ${num(c.kwp, 2)} kWp, gerando cerca de ${num(c.geracao)} kWh por mês`,
+        `• Economia estimada de ${brl(c.mensal)} por mês (cerca de ${Math.round(c.pct * 100)}% da conta de luz)`);
+      if (bat) msg.push(`• ${numx(capKwh)} kWh em baterias: mantêm as cargas essenciais por cerca de ${num(c.autonomia, 1)} h quando falta energia`);
+      msg.push(`• Investimento de ${brl(c.investimento)}${c.avista < c.investimento ? ` (à vista ${brl(c.avista)})` : ""}${parc ? `, ou em até ${parc.q}× de ${brl(parc.valor)}` : ""}`);
+      if (c.payback != null) msg.push(`• O investimento se paga em cerca de ${num(c.payback, 1)} anos, e em ${c.anos} anos a economia passa de ${brl(c.total)}`);
+    } else if (p.tipo === "ev") {
+      msg.push(`Segue em anexo a proposta${nr} de implantação de recarga para veículos elétricos${para} ⚡`, "",
+        `• ${c.qtd} ${c.qtd > 1 ? "pontos" : "ponto"} de recarga ${d.corrente} de ${num(d.potencia_kw)} kW${d.modelo ? ` (${d.modelo})` : ""}, com infraestrutura elétrica dedicada`,
+        `• Investimento de ${brl(c.investimento)}`);
+      if (d.operacao) msg.push(`• Operação e cobrança pelo aplicativo (cartão e Pix), com custo fixo de ${brl(n(d.manutencao_mensal) ? c.fixoCom : c.fixoSem)} por mês${n(d.manutencao_mensal) && d.manutencao_opcional ? ", já com a manutenção preventiva (opcional)" : ""}`);
+      if (linhas(d.pagamento).length) msg.push(`• Pagamento: ${linhas(d.pagamento).join("; ")}`);
+    } else if (p.tipo === "manutencao") {
+      const formas = [d.pag_3x && `3× de ${brl(c.parcela3)}`, d.pag_12x && `12× de ${brl(c.parcela12)}`, d.pag_avista && `${brl(c.avista)} à vista`].filter(Boolean);
+      msg.push(`Segue em anexo a proposta${nr} de manutenção${para}, para o sistema de ${numx(c.kwp)} kWp 🔧`, "");
+      if (d.srv_preventiva) msg.push(`• Manutenção preventiva anual: visita técnica com check-list, limpeza dos módulos e do inversor e revisão da estrutura e dos terminais`, `• Investimento: ${formas.join(" ou ") || brl(c.plano)}`);
+      if (d.srv_monitoramento) msg.push(`• Monitoramento da geração: ${brl(c.monitVenda)} por mês`);
+      if (d.srv_limpeza) msg.push(`• Limpeza dos módulos (avulsa): ${brl(c.limpezaPreco)}`);
+      if (d.srv_visita) msg.push(`• Visita técnica / laudo (avulsa): ${brl(c.visitaPreco)}`);
+      msg.push(`• Garantia de ${n(d.garantia_meses) || 3} meses nos serviços`);
+      if (d.srv_preventiva && c.economiaAnual) msg.push("", `O sistema economiza cerca de ${brl(c.economiaAnual)} por ano. A manutenção mantém essa economia e evita paradas e custos inesperados.`);
+    }
+    msg.push("", `A proposta vale até ${validade}. Qualquer dúvida, é só me chamar por aqui. Posso te ligar para explicar os detalhes?`, "", `${v.nome} · P3 Energy`, v.tel);
+    return msg.join("\n");
+  }
+  function mostrarWhats(p) {
+    window.P3.modal("Texto para o WhatsApp", `<p class="muted" style="margin:0 0 8px;font-size:12.5px">Mande junto com o PDF. Dá para ajustar o texto antes de copiar.</p>
+      <textarea id="prWhats" rows="16" style="width:100%;font:inherit;font-size:14px">${esc(textoWhats(p))}</textarea>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="btn primary" id="prWhatsCopiar">Copiar</button><a class="btn" id="prWhatsZap" target="_blank" rel="noopener">Abrir no WhatsApp</a></div>`);
+    const bgs = document.querySelectorAll(".modal-bg"), bg = bgs[bgs.length - 1];
+    const ta = $("#prWhats", bg), zap = $("#prWhatsZap", bg);
+    const atual = () => { zap.href = `https://wa.me/?text=${encodeURIComponent(ta.value)}`; };
+    ta.oninput = atual; atual();
+    $("#prWhatsCopiar", bg).onclick = async () => {
+      try { await navigator.clipboard.writeText(ta.value); } catch (_) { ta.select(); document.execCommand("copy"); }
+      toast("Texto copiado.", "ok");
+    };
+  }
+
   // ───────── imprimir (PDF) ─────────
   function imprimir(p) {
     const f = document.createElement("iframe");
@@ -529,7 +579,7 @@
     main.innerHTML = `
       <div class="head"><div><p class="kicker"><a href="#/propostas">Propostas</a> · ${esc(TIPOS[p.tipo])}</p><h1>${esc(p.numero || "Nova proposta")}</h1><p id="prResumo"></p></div>
         <div class="actions"><select id="prStatus" aria-label="Situação">${opts(Object.entries(STATUS).map(([k, [l]]) => [k, l]), p.status)}</select>
-          <button class="btn" id="prPdf">Gerar PDF</button><button class="btn primary" id="prSalvar">Salvar</button></div></div>
+          <button class="btn" id="prWhatsBtn">Texto p/ WhatsApp</button><button class="btn" id="prPdf">Gerar PDF</button><button class="btn primary" id="prSalvar">Salvar</button></div></div>
       <div class="pr-ed">
         <div class="pr-form">${comum}${p.tipo === "ev" ? ev() : p.tipo === "manutencao" ? manut() : solar()}
           <div class="pr-acoes">${p.id && p.status === "aceita" && !p.obra_id ? `<button class="btn" id="prObra">Virar obra</button>` : ""}${p.obra_id ? `<a class="btn ghost" href="#/obras">Ver em Obras</a>` : ""}${p.id ? `<button class="btn ghost" id="prCopia">Duplicar</button><button class="btn ghost danger" id="prExcluir">Excluir</button>` : ""}</div></div>
@@ -638,6 +688,7 @@
       catch (err) { toast(err.message, "bad"); } finally { b.disabled = false; }
     };
     $("#prStatus", main).onchange = () => { sujo = true; };
+    $("#prWhatsBtn", main).onclick = () => mostrarWhats(p);
     $("#prPdf", main).onclick = async () => {
       try {
         if (sujo || !p.id) {
@@ -684,6 +735,6 @@
     atualizar();
   }
 
-  window.P3_PROPOSTA = { montar, calcSolar, calcEv, calc, dadosDe };
+  window.P3_PROPOSTA = { montar, calcSolar, calcEv, calc, dadosDe, textoWhats };
   window.P3.register("propostas", { render });
 })();
