@@ -188,7 +188,7 @@
         if (row.contratante && !["uby", "terceiro", "p3"].includes(row.contratante)) throw new Error("Contratante: Uby, terceiro ou P3.");
         if (row.status && !["orcamento", "andamento", "concluida", "cancelada"].includes(row.status)) throw new Error("Situação da obra inválida.");
         if (row.modo && !["simples", "detalhado"].includes(row.modo)) throw new Error("Modo do custo inválido.");
-        for (const f of ["data_inicio", "data_fim"]) if (row[f] && !/^d{4}-d{2}-d{2}$/.test(row[f])) throw new Error("Data deve ser AAAA-MM-DD.");
+        for (const f of ["data_inicio", "data_fim"]) if (row[f] && !/^\d{4}-\d{2}-\d{2}$/.test(String(row[f]).slice(0, 10))) throw new Error("Data deve ser AAAA-MM-DD.");
         for (const f of ["venda", "custo", "custo_material", "custo_mao_obra", "custo_outros"]) if (row[f] != null && row[f] < 0) throw new Error("Valores não podem ser negativos.");
       }
       if (table === "usina_mes") {
