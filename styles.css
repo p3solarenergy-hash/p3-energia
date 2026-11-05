@@ -207,3 +207,36 @@ hr.sep { border: 0; border-top: 1px solid var(--line-2); margin: 14px 0; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 @media print { .side, .mobile-top, .tabs, .fundo-menu, .actions, #toasts { display: none !important; } .app { display: block; } main { padding: 0; } }
+
+/* Obras */
+.ob-filtros { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 14px; }
+.ob-filtros select, .ob-filtros input { width: auto; min-width: 150px; }
+.ob-filtros input[type=search] { flex: 1; min-width: 180px; }
+.ob-chips { display: flex; gap: 4px; flex-wrap: wrap; }
+.ob-svg { width: 100%; height: auto; display: block; }
+.ob-svg .ob-v { font-size: 11px; fill: var(--ink-2); font-weight: 600; }
+.ob-svg .ob-l { font-size: 12px; fill: var(--muted); }
+.ob-h { display: flex; flex-direction: column; gap: 9px; }
+.ob-hl { display: grid; grid-template-columns: minmax(90px, 150px) 1fr auto; gap: 2px 10px; align-items: center; font-size: 13px; }
+.ob-hl > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); }
+.ob-hl > div { height: 10px; background: var(--line-2); border-radius: 5px; overflow: hidden; }
+.ob-hl > div i { display: block; height: 100%; background: var(--brand); border-radius: 5px; }
+.ob-hl > b { font-variant-numeric: tabular-nums; font-size: 12.5px; }
+.ob-hl > small { grid-column: 2 / 4; color: var(--muted); font-size: 11.5px; margin-top: -2px; }
+.ob-mais { margin: 12px 0 0; }
+.ob-mais summary { cursor: pointer; font-size: 13px; color: var(--brand-2); font-weight: 600; margin-bottom: 8px; }
+.ob-modo { display: flex; gap: 6px; margin: 16px 0 10px; padding-top: 14px; border-top: 1px solid var(--line-2); }
+.ob-h3 { margin: 18px 0 2px; font-size: 15px; padding-top: 14px; border-top: 1px solid var(--line-2); }
+.ob-itens-wrap { overflow-x: auto; margin-top: 12px; border: 1px solid var(--line-2); border-radius: 8px; }
+.ob-itens { font-size: 12.5px; }
+.ob-itens th, .ob-itens td { padding: 4px 6px; vertical-align: middle; }
+.ob-itens input, .ob-itens select { padding: 4px 6px; font-size: 12.5px; }
+.ob-itens td[data-tot] { white-space: nowrap; font-weight: 600; }
+.ob-acoes { margin: 8px 0 0; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.ob-acoes label { font-size: 12.5px; display: flex; gap: 5px; align-items: center; }
+.ob-capex { max-width: 460px; margin: 12px 0 0 auto; font-size: 13px; }
+.ob-capex td { padding: 4px 8px; }
+.ob-resumo { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-top: 16px; padding: 12px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; }
+.ob-resumo small { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); font-weight: 600; }
+.ob-resumo b { font-size: 17px; font-variant-numeric: tabular-nums; }
+.ob-resumo span { display: block; font-size: 12px; color: var(--muted); }

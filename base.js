@@ -16,10 +16,11 @@
     faturas: { prefix: "fa", required: ["uc_id", "referencia"], json: ["itens", "avisos"], fields: ["uc_id", "referencia", "competencia", "leitura_anterior", "leitura_atual", "dias", "vencimento", "emissao", "total", "valor_creditos", "sem_usina", "consumo_kwh", "compensado_kwh", "iluminacao_publica", "encargos", "bandeira_valor", "saldo_creditos_kwh", "geradora_conces", "nota_fiscal", "titular", "itens", "avisos", "origem", "documento_id", "obs"] },
     usina_mes: { prefix: "um", required: ["usina_id", "competencia"], json: ["custos"], fields: ["usina_id", "competencia", "arrendamento", "gestao_modo", "gestao_pct", "gestao_valor", "custos", "status", "geracao_kwh", "obs"] },
     projecoes: { prefix: "pj", fields: ["nome", "cliente", "params", "contas", "resumo", "obs"], required: ["nome"], json: ["params", "contas", "resumo"] },
+    obras: { prefix: "ob", required: ["nome"], json: ["itens", "lancamentos"], fields: ["nome", "contratante", "tipo", "cidade", "vendedor", "status", "data_inicio", "data_fim", "kwp", "carregadores_dc", "carregadores_ac", "potencia_kw", "modo", "venda", "custo", "custo_material", "custo_mao_obra", "custo_outros", "imposto_pct", "admin_pct", "gestao_pct", "desconto", "valor_contratado", "itens", "lancamentos", "origem", "obs"] },
     scee: { prefix: "sc", required: ["referencia"], fields: ["uc", "uc_conces", "papel", "geradora", "geradora_conces", "referencia", "saldo_anterior", "cred_recebido", "energia_injetada", "energia_ativa", "credito_utilizado", "percentual", "saldo_final", "documento_id", "emitido_em"] }
   };
-  const NUMERIC = new Set(["potencia_kwp", "valor_investido", "arrendamento_mensal", "gestao_pct", "gestao_valor", "defasagem", "ativa", "percentual", "dias", "total", "valor_creditos", "sem_usina", "consumo_kwh", "compensado_kwh", "iluminacao_publica", "encargos", "bandeira_valor", "saldo_creditos_kwh", "arrendamento", "geracao_kwh", "saldo_anterior", "cred_recebido", "energia_injetada", "energia_ativa", "credito_utilizado", "saldo_final", "valor", "dia_vencimento"]);
-  const TODAS = ["config", "donos", "clientes", "usinas", "ucs", "vinculos", "documentos", "faturas", "usina_mes", "scee", "projecoes", "custos_fixos", "custos"];
+  const NUMERIC = new Set(["potencia_kwp", "valor_investido", "arrendamento_mensal", "gestao_pct", "gestao_valor", "defasagem", "ativa", "percentual", "dias", "total", "valor_creditos", "sem_usina", "consumo_kwh", "compensado_kwh", "iluminacao_publica", "encargos", "bandeira_valor", "saldo_creditos_kwh", "arrendamento", "geracao_kwh", "saldo_anterior", "cred_recebido", "energia_injetada", "energia_ativa", "credito_utilizado", "saldo_final", "valor", "dia_vencimento", "kwp", "carregadores_dc", "carregadores_ac", "potencia_kw", "venda", "custo", "custo_material", "custo_mao_obra", "custo_outros", "imposto_pct", "admin_pct", "gestao_pct", "desconto", "valor_contratado"]);
+  const TODAS = ["config", "donos", "clientes", "usinas", "ucs", "vinculos", "documentos", "faturas", "usina_mes", "scee", "projecoes", "custos_fixos", "custos", "obras"];
 
   const now = () => new Date().toISOString();
   const newId = prefix => `${prefix}_${[...crypto.getRandomValues(new Uint8Array(5))].map(b => b.toString(16).padStart(2, "0")).join("")}`;
@@ -182,6 +183,13 @@
         if (!await this.existe("ucs", row.uc_id)) throw new Error("UC não encontrada.");
         const dup = res(await this.sb.from("faturas").select("id").eq("uc_id", row.uc_id).eq("referencia", row.referencia).neq("id", row.id || ""));
         if (dup.length) throw new Error(`Já existe fatura desta UC com referência ${row.referencia}.`);
+      }
+      if (table === "obras") {
+        if (row.contratante && !["uby", "terceiro", "p3"].includes(row.contratante)) throw new Error("Contratante: Uby, terceiro ou P3.");
+        if (row.status && !["orcamento", "andamento", "concluida", "cancelada"].includes(row.status)) throw new Error("Situação da obra inválida.");
+        if (row.modo && !["simples", "detalhado"].includes(row.modo)) throw new Error("Modo do custo inválido.");
+        for (const f of ["data_inicio", "data_fim"]) if (row[f] && !/^d{4}-d{2}-d{2}$/.test(row[f])) throw new Error("Data deve ser AAAA-MM-DD.");
+        for (const f of ["venda", "custo", "custo_material", "custo_mao_obra", "custo_outros"]) if (row[f] != null && row[f] < 0) throw new Error("Valores não podem ser negativos.");
       }
       if (table === "usina_mes") {
         if (!mes(row.competencia)) throw new Error("Competência deve ser AAAA-MM.");
