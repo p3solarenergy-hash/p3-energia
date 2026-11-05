@@ -252,3 +252,14 @@ hr.sep { border: 0; border-top: 1px solid var(--line-2); margin: 14px 0; }
 .cp-texto summary { cursor: pointer; color: var(--brand-2); font-weight: 600; }
 .cp-texto pre { white-space: pre-wrap; max-height: 220px; overflow: auto; background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 8px; padding: 8px; font-size: 11.5px; }
 @media (max-width: 600px) { .cp-card { grid-template-columns: 1fr; } .cp-prev { flex-direction: row; } .cp-prev img, .cp-pdf { width: 70px; height: 90px; } }
+
+/* Obras · ponte com a Uby */
+td small.ob-uby { color: var(--brand-2); font-weight: 600; }
+.ob-fases { display: flex; flex-direction: column; gap: 6px; }
+.ob-fase { display: grid; grid-template-columns: minmax(120px, 200px) 1fr 42px; gap: 10px; align-items: center; font-size: 12.5px; }
+.ob-fase > span { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ob-fase > div { height: 9px; background: var(--line-2); border-radius: 5px; overflow: hidden; display: flex; }
+.ob-fase > div i { display: block; height: 100%; background: var(--brand); }
+.ob-fase > div i.fz { background: var(--lime); }
+.ob-fase > b { text-align: right; font-variant-numeric: tabular-nums; font-size: 12px; }
+.ob-prox { margin: 0; padding-left: 18px; font-size: 12.5px; display: flex; flex-direction: column; gap: 3px; }

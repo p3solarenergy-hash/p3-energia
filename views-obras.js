@@ -99,6 +99,37 @@
     if (window.P3.state.route !== "obras") return; // saiu da tela enquanto carregava
     obras.forEach(o => { o._c = calc(o); });
     desenhar(main, obras);
+    // Ponte com a Uby: busca sozinha ao abrir (no máximo a cada 10 minutos) ou pelo botão.
+    let ultima = 0; try { ultima = Number(localStorage.getItem("p3-ponte-uby") || 0); } catch (_) { }
+    if (Date.now() - ultima > 10 * 60 * 1000) sincronizarUby(main, false);
+  }
+
+  const ponte = { msg: "", rodando: false };
+  async function sincronizarUby(main, manual) {
+    if (ponte.rodando) return;
+    ponte.rodando = true; ponte.msg = "Buscando as obras da Uby…"; mostrarPonte();
+    let recarregar = false;
+    try {
+      const r = await api("ponte-uby", { method: "POST", body: {} });
+      try { localStorage.setItem("p3-ponte-uby", String(Date.now())); } catch (_) { }
+      if (!r.ativa) { ponte.msg = r.erro || "Ponte com a Uby desligada."; return; }
+      const partes = [r.novas.length && `${r.novas.length} obra(s) nova(s) da Uby: ${r.novas.join(", ")}`, r.concluidas.length && `concluída(s) na Uby: ${r.concluidas.join(", ")}`].filter(Boolean);
+      ponte.msg = `Uby lida agora · ${r.atualizadas + r.novas.length} obra(s) ligadas${partes.length ? " · " + partes.join(" · ") : ""}`;
+      if (partes.length) toast(partes.join(" · "), "ok");
+      recarregar = partes.length > 0 || manual;
+    } catch (e) { ponte.msg = `Não consegui falar com a Uby: ${e.message}`; }
+    finally { ponte.rodando = false; mostrarPonte(); }
+    if (recarregar && window.P3.state.route === "obras") render(main);
+  }
+  const mostrarPonte = () => { const el = $("#obPonte"); if (el) el.textContent = ponte.msg; const b = $("#obUby"); if (b) b.disabled = ponte.rodando; };
+  const STATUS_UBY = { "Projeto": "info", "Em obra": "warn", "Concluida": "ok" };
+  function painelUby(u, quando) {
+    const fases = (u.fases || []).filter(f => f.total);
+    return `<h3 class="ob-h3">Na plataforma da Uby</h3>
+      <p class="muted" style="margin:0 0 8px;font-size:12.5px">${badge(u.status || "—", STATUS_UBY[u.status] || "")} ${u.progresso != null ? `progresso ${dec(u.progresso, 0)}%` : ""}${u.entrega ? ` · entrega prevista ${esc(fmt.data(u.entrega))}` : ""}${quando ? ` · lido em ${esc(fmt.dataHora(quando))}` : ""}${u.cliente ? ` · cliente ${esc(u.cliente)}` : ""}</p>
+      ${fases.length ? `<div class="ob-fases">${fases.map(f => `<div class="ob-fase"><span>${esc(f.fase)}</span><div><i style="width:${Math.round(f.feitas / f.total * 100)}%"></i>${f.fazendo ? `<i class="fz" style="width:${Math.round(f.fazendo / f.total * 100)}%"></i>` : ""}</div><b>${f.feitas}/${f.total}</b></div>`).join("")}</div>` : `<p class="muted" style="font-size:12.5px">A Uby ainda não abriu as tarefas desta obra.</p>`}
+      ${(u.proximas || []).length ? `<p style="margin:10px 0 4px;font-size:12.5px"><b>Próximas tarefas</b></p><ul class="ob-prox">${u.proximas.map(t => `<li>${t.status === "doing" ? "<b>em andamento</b> · " : ""}${esc(t.titulo)} <span class="muted">(${esc(t.fase)}${t.data_prevista ? " · " + esc(fmt.data(t.data_prevista)) : ""}${t.responsavel ? " · " + esc(t.responsavel) : ""})</span></li>`).join("")}</ul>` : ""}
+      <p class="muted" style="font-size:12px;margin:6px 0 0">Essas etapas são controladas na plataforma da Uby e aparecem aqui só para leitura.</p>`;
   }
 
   function desenhar(main, obras) {
@@ -121,7 +152,8 @@
 
     main.innerHTML = `
       <div class="head"><div><p class="kicker">Execução</p><h1>Obras</h1><p>Obras que a P3 executa: Uby, terceiros e vendas próprias. Lance com valor fechado (venda e custo) ou pelo orçamento detalhado do modelo de carregadores.</p></div>
-        <div class="actions"><a class="btn" href="#/comprovante">Lançar comprovante</a><button class="btn" id="novaSimples">+ Valor fechado</button><button class="btn primary" id="novaDet">+ Orçamento detalhado</button></div></div>
+        <div class="actions"><button class="btn" id="obUby" title="Traz da plataforma da Uby as obras em Projeto / Em obra e o andamento das etapas">↻ Uby</button><a class="btn" href="#/comprovante">Lançar comprovante</a><button class="btn" id="novaSimples">+ Valor fechado</button><button class="btn primary" id="novaDet">+ Orçamento detalhado</button></div></div>
+      <p class="muted" id="obPonte" style="font-size:12.5px;margin:-6px 2px 10px">${esc(ponte.msg)}</p>
       <div class="ob-filtros">
         <div class="ob-chips">${chip("contratante", "todos", "Todas")}${chip("contratante", "uby", "Uby")}${chip("contratante", "terceiro", "Terceiros")}${chip("contratante", "p3", "P3")}</div>
         <select id="fAno" aria-label="Ano">${opts([["todos", "Todos os anos"], ...anos.map(a => [a, a])], F.ano)}</select>
@@ -142,7 +174,7 @@
       </div>` : ""}
       <div class="card section"><h2>Obras <small class="muted">(${lista.length})</small></h2>
         ${lista.length ? `<div class="table-wrap" style="box-shadow:none"><table><thead><tr>${th("nome", "Obra")}<th>Contratante</th>${th("data", "Data")}<th>Situação</th>${th("venda", "Venda", 1)}${th("custo", "Custo", 1)}${th("lucro", "Lucro", 1)}${th("margem", "Margem", 1)}</tr></thead><tbody>
-        ${lista.map(o => `<tr data-id="${esc(o.id)}" style="cursor:pointer"><td><b>${esc(o.nome)}</b><small>${esc([o.tipo, o.cidade, o.modo === "detalhado" ? "orçamento detalhado" : ""].filter(Boolean).join(" · "))}</small></td>
+        ${lista.map(o => `<tr data-id="${esc(o.id)}" style="cursor:pointer"><td><b>${esc(o.nome)}</b><small>${esc([o.tipo, o.cidade, o.modo === "detalhado" ? "orçamento detalhado" : ""].filter(Boolean).join(" · "))}</small>${o.uby ? `<small class="ob-uby">Uby: ${esc(o.uby.status || "—")}${o.uby.progresso != null ? ` · ${dec(o.uby.progresso, 0)}%` : ""}</small>` : ""}</td>
           <td>${esc(CONTRATANTE[o.contratante || "p3"])}</td><td>${esc(fmt.data(dataRef(o)))}</td><td>${badge(...(STATUS[o.status || "concluida"] || ["—", ""]))}</td>
           <td class="right">${brl(o._c.venda)}</td><td class="right">${brl(o._c.custo)}</td><td class="right" style="color:${o._c.lucro < 0 ? "var(--bad)" : "inherit"}">${brl(o._c.lucro)}</td><td class="right">${pct(o._c.margem)}</td></tr>`).join("")}
         </tbody></table></div>` : `<div class="empty">Nenhuma obra ${obras.length ? "com esses filtros" : "lançada ainda"}.</div>`}
@@ -154,6 +186,8 @@
     let t; $("#fBusca").oninput = e => { clearTimeout(t); t = setTimeout(() => { filtro.busca = e.target.value; desenhar(main, obras); const i = $("#fBusca"); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 250); };
     $$("th[data-o]", main).forEach(h => h.onclick = () => { filtro.ordem = [h.dataset.o, col === h.dataset.o ? -dir : (h.dataset.o === "nome" ? 1 : -1)]; desenhar(main, obras); });
     $$("tr[data-id]", main).forEach(r => r.onclick = () => editar(main, obras.find(o => o.id === r.dataset.id)));
+    $("#obUby").onclick = () => sincronizarUby(main, true);
+    mostrarPonte();
     $("#novaSimples").onclick = () => editar(main, { modo: "simples", status: "concluida", contratante: "uby", lancamentos: [] });
     $("#novaDet").onclick = () => editar(main, { modo: "detalhado", status: "orcamento", contratante: "uby", tipo: "Eletroposto DC", imposto_pct: 6, admin_pct: 0, gestao_pct: 0, itens: MODELO.map(i => ({ ...i })), lancamentos: [] });
   }
@@ -179,6 +213,7 @@
         <div class="grid-form" id="obPot">${campo("carregadores_dc", "Carregadores DC", 'inputmode="decimal"')}${campo("carregadores_ac", "Carregadores AC", 'inputmode="decimal"')}${campo("potencia_kw", "Potência (kW)", 'inputmode="decimal"')}${campo("kwp", "Solar (kWp)", 'inputmode="decimal"')}</div></details>
       <div class="ob-modo"><button type="button" class="btn sm" data-modo="simples">Valor fechado</button><button type="button" class="btn sm" data-modo="detalhado">Orçamento detalhado</button></div>
       <div id="obValores"></div>
+      ${o.uby ? painelUby(o.uby, o.uby_sync_em) : ""}
       <h3 class="ob-h3">Pagamentos e recebimentos</h3>
       <p class="muted" style="margin:0 0 6px;font-size:12.5px">Recibos pagos na obra e cobranças recebidas do contratante, para comparar o orçado com o realizado.</p>
       <div id="obLanc"></div>

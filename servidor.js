@@ -160,6 +160,12 @@
       if (r.error) throw new Error("Arquivo não encontrado.");
       return { url: r.data.signedUrl };
     }
+    // Ponte com a plataforma da Uby: traz as obras em Projeto / Em obra e o andamento das etapas (só leitura lá).
+    if (m === "POST" && p[0] === "ponte-uby") {
+      const r = await sb.functions.invoke("ponte-uby", { body: {} });
+      if (r.error) { let msg = r.error.message; try { msg = (await r.error.context.json()).erro || msg; } catch (_) { } throw new Error(msg); }
+      return r.data;
+    }
     if (m === "POST" && p[0] === "abrir-pasta") throw new Error("Na versão online não há pasta para abrir: os PDFs e os backups ficam guardados na nuvem.");
     if (CRUD.has(p[0])) {
       const t = p[0], id = p[1];
