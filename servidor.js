@@ -9,7 +9,7 @@
   const sb = window.supabase.createClient(window.P3_CONFIG.url, window.P3_CONFIG.chave);
   const base = new Base(sb), servico = new Servico(base);
   const R = window.P3_RELATORIOS, F = window.P3_FINANCEIRO, C = window.P3_CONFERENCIA;
-  const CRUD = new Set(["donos", "clientes", "usinas", "ucs", "vinculos", "faturas", "usina_mes", "projecoes", "custos", "custos_fixos", "obras", "nf_regras", "notas_fiscais", "propostas"]);
+  const CRUD = new Set(["donos", "clientes", "usinas", "ucs", "vinculos", "faturas", "usina_mes", "projecoes", "custos", "custos_fixos", "obras", "nf_regras", "notas_fiscais", "propostas", "tarefas"]);
   const COPIAS = "copias", BUCKET = "p3", MANTER_COPIAS = 30, SEIS_HORAS = 6 * 3600 * 1000;
   const r2 = window.P3_MOTOR.r2;
   const num = v => { const s = String(v).trim(); return Number(/,/.test(s) ? s.replace(/\./g, "").replace(",", ".") : s); };
