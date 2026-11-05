@@ -26,7 +26,8 @@
 
   // ───────── Visão geral ─────────
   function visao(el) {
-    const v = F.visao(db().custos, hoje());
+    const v = F.visao(db().custos, hoje(), 30, db().custosFixos);
+    const prev = F.previsao(db(), P3.mesAtual(), 6);
     const max = Math.max(1, ...v.calendario.map(d => d.valor));
     const maxSem = Math.max(1, ...v.semanas.map(s => s.valor));
     const brancos = (v.calendario[0].semana + 6) % 7;
@@ -54,15 +55,19 @@
             ${v.categorias.map(c => `<div class="linha-cat"><span>${esc(F.CATEGORIAS[c.categoria] || c.categoria)}</span><b>${fmt.brl(c.valor)}</b></div><div class="barra"><i style="width:${c.valor / maxCat * 100}%"></i></div>`).join("") || `<p class="muted" style="margin:0">Nenhuma conta em aberto.</p>`}</div>
         </div>
       </div>
-      <div class="section"><div class="section-head"><div><h2>Próximas contas</h2><p>Atrasadas primeiro, depois por vencimento.</p></div></div>
-        ${tabelaCustos(v.proximos, "Nenhuma conta da P3 em aberto. Lance os custos em Custos do mês.")}</div>`;
+      <div class="section"><div class="section-head"><div><h2>Próximas contas</h2><p>Atrasadas primeiro, depois por vencimento. As marcadas como previstas vêm dos custos fixos e ainda não foram lançadas.</p></div></div>
+        ${tabelaCustos(v.proximos, "Nenhuma conta da P3 em aberto. Lance os custos em Custos do mês.")}</div>
+      <div class="section"><div class="section-head"><div><h2>Previsão dos próximos 6 meses</h2><p>Arrendamento e gestão pelo cadastro das usinas; custos lançados mais os previstos pelos custos fixos.</p></div></div>
+        <div class="table-wrap"><table><thead><tr><th>Mês</th><th class="n">Arrendamento contratado</th><th class="n">Gestão P3</th><th class="n">Custos da P3</th><th class="n">Custos dos donos</th><th class="n">Sai do caixa da P3</th><th class="n">Resultado P3</th></tr></thead><tbody>
+        ${prev.map(p => `<tr><td><b>${esc(fmt.mesLongo(p.competencia))}</b>${p.previsto ? `<small>${fmt.brl(p.previsto)} previsto</small>` : ""}</td><td class="n">${fmt.brl(p.arrendamento)}</td><td class="n">${fmt.brl(p.gestao)}</td><td class="n">${fmt.brl(p.custoP3)}</td><td class="n">${fmt.brl(p.custoDono)}</td><td class="n">${fmt.brl(p.saiCaixaP3)}<small>o que a P3 paga, com reembolso ou não</small></td><td class="n"><b class="${p.resultadoP3 < 0 ? "neg" : "pos"}">${fmt.brl(p.resultadoP3)}</b></td></tr>`).join("")}
+        </tbody></table></div></div>`;
     ligarTabela(el);
   }
 
   // ───────── Custos do mês ─────────
   function custos(el, main) {
     const D = db();
-    const lista = D.custos.filter(c => c.competencia === ui.comp && (!ui.usina || c.usina_id === ui.usina)).sort((a, b) => String(a.vencimento || "9").localeCompare(String(b.vencimento || "9")));
+    const lista = D.custos.concat(F.previstos(D.custosFixos, D.custos, ui.comp, 1)).filter(c => c.competencia === ui.comp && (!ui.usina || c.usina_id === ui.usina)).sort((a, b) => String(a.vencimento || "9").localeCompare(String(b.vencimento || "9")));
     const fim = M.addMonths(P3.mesAtual(), 3);
     const meses = M.monthRange(M.addMonths(P3.mesAtual(), -24), fim).reverse();
     const faltam = F.gerarDoMes(D.custosFixos, D.custos, ui.comp).length;
@@ -98,8 +103,8 @@
         <td>${esc(PAGA[c.pago_por] || c.pago_por)}</td>
         <td>${c.reembolso && c.reembolso !== "nao" ? `${esc(REEMB[c.reembolso])}${c.reembolso_status === "recebido" ? `<small class="pos">recebido ${fmt.data(c.reembolsado_em)}</small>` : F.reembolsoPendente(c) ? `<small class="neg">pendente</small>` : `<small>depois de pagar</small>`}` : `<span class="muted">—</span>`}</td>
         <td class="n"><b>${fmt.brl(c.valor)}</b></td>
-        <td>${c.status === "pago" ? badge("Pago", "ok") + (c.pago_em ? `<small>${fmt.data(c.pago_em)}</small>` : "") : badge("A pagar", atrasado(c) ? "bad" : "warn")}</td>
-        <td class="right" style="white-space:nowrap">${c.status !== "pago" ? `<button class="btn sm" data-pagar="${esc(c.id)}">Marcar pago</button>` : ""}${F.reembolsoPendente(c) ? `<button class="btn sm" data-reemb="${esc(c.id)}">Recebi o reembolso</button>` : ""}<button class="btn ghost sm" data-edc="${esc(c.id)}">Editar</button></td></tr>`).join("")}
+        <td>${c.previsto ? badge("Previsto", "info") + `<small>custo fixo</small>` : c.status === "pago" ? badge("Pago", "ok") + (c.pago_em ? `<small>${fmt.data(c.pago_em)}</small>` : "") : badge("A pagar", atrasado(c) ? "bad" : "warn")}</td>
+        <td class="right" style="white-space:nowrap">${c.previsto ? `<button class="btn sm" data-lancar="${esc(c.id)}">Lançar</button>` : `${c.status !== "pago" ? `<button class="btn sm" data-pagar="${esc(c.id)}">Marcar pago</button>` : ""}${F.reembolsoPendente(c) ? `<button class="btn sm" data-reemb="${esc(c.id)}">Recebi o reembolso</button>` : ""}<button class="btn ghost sm" data-edc="${esc(c.id)}">Editar</button>`}</td></tr>`).join("")}
       </tbody></table></div>`;
   }
   function ligarTabela(el) {
@@ -108,6 +113,14 @@
     $$("[data-pagar]", el).forEach(b => b.onclick = () => gravar(b.dataset.pagar, { status: "pago", pago_em: hoje() }, "Marcado como pago."));
     $$("[data-reemb]", el).forEach(b => b.onclick = () => gravar(b.dataset.reemb, { reembolso_status: "recebido", reembolsado_em: hoje() }, "Reembolso registrado."));
     $$("[data-edc]", el).forEach(b => b.onclick = () => editarCusto(achar(b.dataset.edc)));
+    // Previsto → vira lançamento de verdade, ligado ao custo fixo (não duplica depois).
+    $$("[data-lancar]", el).forEach(b => b.onclick = async () => {
+      const [, fixo, comp] = b.dataset.lancar.match(/^prev_(.+)_(\d{4}-\d{2})$/) || [];
+      const c = F.previstos(db().custosFixos.filter(f => f.id === fixo), db().custos, comp, 1)[0];
+      if (!c) return toast("Este custo já foi lançado.", "bad");
+      const { id, previsto, ...dados } = c; dados.status = "a_pagar";
+      try { await P3.save("custos", dados); toast("Custo lançado.", "ok"); await P3.refresh(); } catch (e) { toast(e.message, "bad"); }
+    });
   }
 
   const camposPagamento = v => `
@@ -176,7 +189,7 @@
   function fixos(el) {
     const lista = db().custosFixos;
     el.innerHTML = `
-      <div class="section-head"><div><p style="margin:0" class="muted">Custos que se repetem todo mês, como internet e arrendamento. Em Custos do mês, um botão lança os do mês de uma vez.</p></div><button class="btn" id="novoFixo">+ Novo custo fixo</button></div>
+      <div class="section-head"><div><p style="margin:0" class="muted">Custos que se repetem todo mês, como internet e arrendamento do terreno. Eles já aparecem como previsão no calendário, nos meses seguintes e nos custos do dono no Fechamento; em Custos do mês você lança de verdade (um a um ou todos de uma vez).</p></div><button class="btn" id="novoFixo">+ Novo custo fixo</button></div>
       ${lista.length ? `<div class="table-wrap"><table><thead><tr><th>Custo</th><th>Usina</th><th>Quem paga</th><th>Reembolso</th><th class="n">Dia</th><th class="n">Valor</th><th>Situação</th><th></th></tr></thead><tbody>
       ${lista.map(f => `<tr><td><b>${esc(f.descricao)}</b><small>${esc(F.CATEGORIAS[f.categoria] || "")}</small></td><td>${f.usina_id ? esc(nomeUsina(f.usina_id)) : `<span class="muted">P3 geral</span>`}</td><td>${esc(PAGA[f.pago_por] || "")}</td><td>${esc(REEMB[f.reembolso || "nao"])}</td><td class="n">${esc(f.dia_vencimento)}</td><td class="n"><b>${fmt.brl(f.valor)}</b></td><td>${f.ativo === 0 ? badge("Inativo") : badge("Ativo", "ok")}</td><td class="right"><button class="btn ghost sm" data-edf="${esc(f.id)}">Editar</button></td></tr>`).join("")}
       </tbody></table></div>` : `<div class="empty">Nenhum custo fixo ainda.</div>`}`;
@@ -184,8 +197,8 @@
     $$("[data-edf]", el).forEach(b => b.onclick = () => editarFixo(db().custosFixos.find(f => f.id === b.dataset.edf)));
   }
 
-  async function editarFixo(f) {
-    const v = f || { categoria: "internet", dia_vencimento: 10, pago_por: "p3", reembolso: "nao", ativo: 1, inicio: P3.mesAtual() };
+  async function editarFixo(f, padrao) {
+    const v = f || { categoria: "internet", dia_vencimento: 10, pago_por: "p3", reembolso: "nao", ativo: 1, inicio: P3.mesAtual(), ...(padrao || {}) };
     const html = `<div class="grid-form">
       <label class="f wide">Descrição<input name="descricao" value="${esc(v.descricao || "")}" placeholder="Ex.: Internet da usina"></label>
       <label class="f">Usina<select name="usina_id">${opts(usinaOpts(), v.usina_id, "P3 geral (sem usina)")}</select></label>
@@ -207,5 +220,6 @@
     if (await p) await P3.refresh();
   }
 
+  P3.editarFixo = editarFixo;
   P3.register("financeiro", { render });
 })();

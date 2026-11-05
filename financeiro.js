@@ -30,14 +30,50 @@
     return `${comp}-${String(Math.min(n(dia) || 10, ultimo)).padStart(2, "0")}`;
   }
 
-  // Custos fixos que ainda faltam lançar no mês (rodar de novo não duplica).
+  // Custos fixos que ainda faltam lançar no mês. Rodar de novo não duplica, nem quando o custo já foi lançado à mão
+  // (mesma usina e mesma descrição).
   function gerarDoMes(fixos, custos, comp) {
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(comp || ""))) throw new Error("Competência deve ser AAAA-MM.");
-    const ja = new Set((custos || []).filter(c => c.competencia === comp).map(c => c.fixo_id));
-    return (fixos || []).filter(f => f.ativo !== 0 && !ja.has(f.id) && (!f.inicio || comp >= f.inicio) && (!f.fim || comp <= f.fim)).map(f => ({
+    const doMes = (custos || []).filter(c => c.competencia === comp);
+    return (fixos || []).filter(f => motor.fixoNoMes(f, comp) && !doMes.some(c => motor.mesmoCusto(c, f))).map(f => ({
       usina_id: f.usina_id || null, competencia: comp, descricao: f.descricao, categoria: f.categoria || "outro", valor: n(f.valor),
       vencimento: vencimentoDe(comp, f.dia_vencimento), pago_por: f.pago_por || "p3", reembolso: f.reembolso || "nao", status: "a_pagar", fixo_id: f.id
     }));
+  }
+
+  // Previsão: o que os custos fixos vão gerar nos próximos meses e ainda não foi lançado (não é gravado).
+  function previstos(fixos, custos, de, meses) {
+    const out = [];
+    for (let i = 0; i < (meses || 1); i++) {
+      const comp = motor.addMonths(de, i);
+      for (const c of gerarDoMes(fixos, custos, comp)) out.push({ ...c, id: `prev_${c.fixo_id}_${comp}`, status: "previsto", previsto: true });
+    }
+    return out;
+  }
+
+  // Projeção mês a mês: arrendamento contratado das usinas ativas, gestão da P3 e custos (lançados + previstos),
+  // separados por quem arca no fim (P3, dono ou cliente).
+  function previsao(db, de, meses) {
+    meses = meses || 6;
+    const prev = previstos(db.custosFixos, db.custos, de, meses);
+    const arca = c => motor.arcaDono(c) ? "dono" : (c.pago_por === "cliente" ? "cliente" : "p3");
+    const out = [];
+    for (let i = 0; i < meses; i++) {
+      const comp = motor.addMonths(de, i);
+      const lista = (db.custos || []).filter(c => c.competencia === comp).concat(prev.filter(c => c.competencia === comp));
+      const ativas = (db.usinas || []).filter(u => u.status !== "inativa" && (!u.inicio_operacao || comp >= u.inicio_operacao) && (!u.fim_operacao || comp <= u.fim_operacao));
+      const gestao = soma(ativas, u => u.gestao_modo === "valor" ? u.gestao_valor : n(u.arrendamento_mensal) * n(u.gestao_pct) / 100);
+      const custoP3 = soma(lista.filter(c => arca(c) === "p3"), c => c.valor);
+      out.push({
+        competencia: comp, arrendamento: soma(ativas, u => u.arrendamento_mensal), gestao, custoP3,
+        custoDono: soma(lista.filter(c => arca(c) === "dono"), c => c.valor),
+        custoCliente: soma(lista.filter(c => arca(c) === "cliente"), c => c.valor),
+        saiCaixaP3: soma(lista.filter(daP3), c => c.valor),
+        lancado: soma(lista.filter(c => !c.previsto), c => c.valor), previsto: soma(lista.filter(c => c.previsto), c => c.valor),
+        resultadoP3: r2(gestao - custoP3)
+      });
+    }
+    return out;
   }
 
   const daP3 = c => (c.pago_por || "p3") === "p3";
@@ -45,8 +81,10 @@
   const reembolsoPendente = c => daP3(c) && (c.reembolso || "nao") !== "nao" && c.status === "pago" && c.reembolso_status !== "recebido";
 
   // Painel: só o que sai do caixa da P3. Custo sem vencimento fica em "sem data" e não some da conta.
-  function visao(custos, hoje, dias) {
+  // Com os custos fixos, a previsão dos próximos meses entra no calendário (marcada como prevista).
+  function visao(custos, hoje, dias, fixos) {
     dias = dias || 30;
+    if (fixos) custos = (custos || []).concat(previstos(fixos, custos, hoje.slice(0, 7), 3));
     const fim = somaDias(hoje, dias - 1), fimSemana = somaDias(hoje, (7 - diaSemana(hoje)) % 7);
     const abertos = (custos || []).filter(emAberto);
     const janela = abertos.filter(c => c.vencimento && c.vencimento >= hoje && c.vencimento <= fim);
@@ -88,7 +126,7 @@
       const reembolsos = soma(doDono.filter(reembolsoPendente), c => c.valor);
       return {
         usina_id: us.id, nome: us.nome, dono_id: us.dono_id, recebe, arrendamento, gestao, recebidoP3, reembolsos,
-        aindaNaoPago: soma(doDono.filter(c => c.status !== "pago"), c => c.valor), custosFechamento: u ? u.custosDono : 0,
+        aindaNaoPago: soma(doDono.filter(c => c.status !== "pago"), c => c.valor), custosFechamento: u ? u.custosProprios : 0,
         saldo: r2(recebidoP3 - gestao - reembolsos), status: u ? u.status : "aberto"
       };
     });
@@ -101,5 +139,5 @@
     return { competencia: comp, usinas, donos: [...donos.values()] };
   }
 
-  return { gerarDoMes, visao, acertoMes, vencimentoDe, reembolsoPendente, emAberto, CATEGORIAS };
+  return { gerarDoMes, previstos, previsao, visao, acertoMes, vencimentoDe, reembolsoPendente, emAberto, CATEGORIAS };
 });

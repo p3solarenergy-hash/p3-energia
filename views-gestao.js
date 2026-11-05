@@ -106,6 +106,8 @@
     const us = D.by.usinas.get(usinaId);
     const um = D.usinaMes.find(x => x.usina_id === usinaId && x.competencia === comp) || {};
     const custos = Array.isArray(um.custos) ? um.custos.slice() : [];
+    const linhaMes = P3.calcMes(comp).usinas.find(x => x.usina_id === usinaId);
+    const doFin = linhaMes ? linhaMes.custos.filter(c => c.origem !== "fechamento") : [];
     const linhaCusto = (c, i) => `<div class="inline" data-c="${i}" style="margin-bottom:6px"><input placeholder="Descrição (ex.: arrendamento do terreno)" value="${esc(c.descricao || "")}" data-cd style="flex:2"><input placeholder="Valor" inputmode="decimal" value="${esc(c.valor ?? "")}" data-cv style="flex:1"><button class="btn ghost sm" data-crm>✕</button></div>`;
     const html = `<p class="muted" style="margin-top:0">${esc(us.nome)} · ${esc(fmt.mesLongo(comp))}. Deixe em branco para usar o valor do contrato da usina.</p>
       <div class="grid-form">
@@ -117,7 +119,8 @@
         <label class="f">Situação<select name="status">${opts(Object.entries(P3.STATUS).map(([k, [l]]) => [k, l]), um.status || "aberto")}</select></label>
       </div>
       <hr class="sep"><b style="font-size:13px">Custos do dono neste mês</b><p class="muted" style="font-size:12.5px;margin:2px 0 8px">Saem do líquido do dono (manutenção, terreno, seguro…).</p>
-      <div id="custos">${custos.map(linhaCusto).join("")}</div><button class="btn sm" id="addCusto">+ custo</button>
+      ${doFin.length ? `<div class="note" style="margin-bottom:8px"><b>Já vêm do Financeiro</b> (não precisa escrever aqui):${doFin.map(c => `<div class="linha-cat"><span>${esc(c.descricao)}${c.origem === "previsto" ? " · previsto pelo custo fixo" : ""}</span><b>${fmt.brl(c.valor)}</b></div>`).join("")}</div>` : ""}
+      <div id="custos">${custos.map(linhaCusto).join("")}</div><button class="btn sm" id="addCusto">+ outro custo</button>
       <hr class="sep"><label class="f">Observação<textarea name="obs">${esc(um.obs || "")}</textarea></label>`;
     const p = modal("Fechamento do mês", html, {
       onSave: async bg => {

@@ -31,10 +31,28 @@
     $$("[data-go]", main).forEach(tr => tr.onclick = () => P3.go(`#/usinas/${encodeURIComponent(tr.dataset.go)}`));
   }
 
+  // Arrendamento do terreno da usina = custo fixo de categoria "terreno" (um só por usina).
+  const terrenoDa = usinaId => db().custosFixos.find(f => f.usina_id === usinaId && f.categoria === "terreno" && f.ativo !== 0);
+  async function salvarTerreno(bg, usinaId, inicioOperacao) {
+    const t = {}; $$("[data-t]", bg).forEach(i => { t[i.dataset.t] = i.value; });
+    const valor = Number(String(t.valor || "").replace(/\./g, "").replace(",", ".")) || 0;
+    const atual = terrenoDa(usinaId);
+    if (!valor && !atual) return;
+    if (t.pago_por !== "p3") t.reembolso = "nao";
+    if (atual) {
+      if (!valor) return P3.save("custos_fixos", { ativo: 0, fim: P3.mesAtual() }, atual.id);
+      return P3.save("custos_fixos", { valor, dia_vencimento: t.dia_vencimento, pago_por: t.pago_por, reembolso: t.reembolso }, atual.id);
+    }
+    // Começa no mês atual (ou no início da operação, se for depois): meses passados não ganham custo novo.
+    const inicio = [P3.mesAtual(), inicioOperacao || ""].sort().pop();
+    return P3.save("custos_fixos", { usina_id: usinaId, descricao: "Arrendamento do terreno", categoria: "terreno", valor, dia_vencimento: t.dia_vencimento, pago_por: t.pago_por, reembolso: t.reembolso, inicio, ativo: 1 });
+  }
+
   async function editarUsina(u) {
     const D = db();
     if (!D.donos.length) { toast("Cadastre o dono antes da usina.", "bad"); return P3.go("#/donos"); }
     const v = u || { gestao_modo: "pct", gestao_pct: 10, rateio_modo: "kwh", geradora_paga_por: "cliente", status: "ativa", inicio_operacao: P3.mesAtual() };
+    const terreno = (u && terrenoDa(u.id)) || {};
     const html = `<div class="grid-form">
       <label class="f">Nome da usina<input name="nome" value="${esc(v.nome || "")}" required></label>
       <label class="f">Dono<select name="dono_id">${opts(D.donos.map(d => [d.id, d.nome]), v.dono_id, "Escolha…")}</select></label>
@@ -53,8 +71,19 @@
       <label class="f">Início da operação<input type="month" name="inicio_operacao" value="${esc(v.inicio_operacao || "")}"><small>a partir daqui o arrendamento contratual entra todo mês</small></label>
       <label class="f">Fim da operação<input type="month" name="fim_operacao" value="${esc(v.fim_operacao || "")}"></label>
       <label class="f">Situação<select name="status">${opts([["ativa", "Ativa"], ["inativa", "Inativa"]], v.status)}</select></label>
-      <label class="f wide">Observação<textarea name="obs">${esc(v.obs || "")}</textarea></label></div>`;
-    const r = await modal(u ? `Editar ${u.nome}` : "Nova usina", html, { wide: true, onSave: async bg => salvarEAtualizar("usinas", formData(bg), u && u.id, "Usina salva.") });
+      <label class="f wide">Observação<textarea name="obs">${esc(v.obs || "")}</textarea></label></div>
+      <hr class="sep"><b style="font-size:13px">Arrendamento do terreno</b><p class="muted" style="font-size:12.5px;margin:2px 0 8px">Vira um custo fixo: aparece como previsão no Financeiro e entra nos custos do dono no Fechamento todo mês. Deixe em branco se não houver.</p>
+      <div class="grid-form">
+        <label class="f">Valor por mês (R$)<input data-t="valor" inputmode="decimal" value="${esc(terreno.valor ?? "")}"></label>
+        <label class="f">Dia do vencimento<input data-t="dia_vencimento" inputmode="numeric" value="${esc(terreno.dia_vencimento ?? 10)}"></label>
+        <label class="f">Quem paga<select data-t="pago_por">${opts([["p3", "P3 (eu pago)"], ["dono", "Dono paga direto"], ["cliente", "Cliente paga direto"]], terreno.pago_por || "p3")}</select></label>
+        <label class="f">Reembolso à P3<select data-t="reembolso">${opts([["nao", "Sem reembolso"], ["dono", "Dono reembolsa"], ["cliente", "Cliente reembolsa"]], terreno.reembolso || "dono")}</select></label>
+      </div>`;
+    const r = await modal(u ? `Editar ${u.nome}` : "Nova usina", html, { wide: true, onSave: async bg => {
+      const salvo = await salvarEAtualizar("usinas", formData(bg), u && u.id, "Usina salva.");
+      await salvarTerreno(bg, (salvo && salvo.id) || u.id, formData(bg).inicio_operacao);
+      return salvo;
+    } });
     if (r) { await P3.load(); P3.go(`#/usinas/${encodeURIComponent(r.id || u.id)}`); }
   }
 
@@ -72,6 +101,7 @@
     const nOp = hist.filter(r => r.arrendamento > 0).length;
     const vincs = D.vinculos.filter(v => v.usina_id === id);
     const geradora = D.ucs.filter(x => x.usina_geradora_id === id);
+    const fixosUs = D.custosFixos.filter(f => f.usina_id === id);
     main.innerHTML = `
       <div class="head"><div><p class="kicker"><a href="#/usinas">Usinas</a> ›</p><h1>${esc(u.nome)}</h1><p>${esc(nomeDono(u.dono_id))} · UC geradora ${esc(fmt.uc(u.uc_geradora) || u.uc_geradora_conces || "—")} · contrato ${fmt.brl(u.arrendamento_mensal)}/mês · gestão ${u.gestao_modo === "valor" ? fmt.brl(u.gestao_valor) : fmt.pctN(u.gestao_pct)}</p></div>
         <div class="actions"><a class="btn" href="#/relatorios/dono/${encodeURIComponent(u.dono_id || "")}">Extrato do dono</a><button class="btn" id="ed">Editar</button><button class="btn ghost danger" id="ex">Excluir</button></div></div>
@@ -87,10 +117,16 @@
         ${geradora.map(g => `<tr><td class="mono">${esc(ucNum(g))}</td><td><span class="muted">UC geradora da usina</span></td><td class="n">—</td><td class="n">—</td><td>${badge("Geradora", "info")}</td></tr>`).join("")}
         ${vincs.map(v => { const uc = D.by.ucs.get(v.uc_id) || {}; return `<tr><td><b class="mono">${esc(ucNum(uc))}</b><small>${esc(uc.descricao || "")}</small></td><td>${esc(nomeCliente(uc.cliente_id))}</td><td class="n">${fmt.pctN(v.percentual)}</td><td class="n">${uc.defasagem ? `+${uc.defasagem} mês` : "—"}</td><td>${uc.ativa === 0 ? badge("Inativa") : badge("Ativa", "ok")}</td></tr>`; }).join("") || `<tr><td colspan="5" class="empty">Nenhuma UC vinculada.</td></tr>`}
         </tbody></table></div></div>
+      <div class="section"><div class="section-head"><div><h2>Custos fixos desta usina</h2><p>Terreno, internet, seguro… Entram como previsão no Financeiro e nos custos do dono no Fechamento.</p></div><button class="btn" id="novoFixoUs">+ Custo fixo</button></div>
+        <div class="table-wrap"><table><thead><tr><th>Custo</th><th>Quem paga</th><th>Reembolso</th><th class="n">Dia</th><th>Desde</th><th class="n">Valor/mês</th><th></th></tr></thead><tbody>
+        ${fixosUs.map(f => `<tr><td><b>${esc(f.descricao)}</b><small>${esc(P3_FINANCEIRO.CATEGORIAS[f.categoria] || "")}${f.ativo === 0 ? " · inativo" : ""}</small></td><td>${esc({ p3: "P3", dono: "Dono", cliente: "Cliente" }[f.pago_por] || "P3")}</td><td>${esc({ nao: "—", dono: "Dono reembolsa", cliente: "Cliente reembolsa" }[f.reembolso || "nao"])}</td><td class="n">${esc(f.dia_vencimento ?? "")}</td><td>${f.inicio ? esc(fmt.mes(f.inicio)) : "—"}${f.fim ? ` até ${esc(fmt.mes(f.fim))}` : ""}</td><td class="n"><b>${fmt.brl(f.valor)}</b></td><td class="right"><button class="btn ghost sm" data-edfu="${esc(f.id)}">Editar</button></td></tr>`).join("") || `<tr><td colspan="7" class="empty">Nenhum custo fixo. Os custos lançados só no mês não se repetem sozinhos.</td></tr>`}
+        </tbody></table></div></div>
       <div class="section"><div class="section-head"><div><h2>Histórico mês a mês</h2></div><a class="btn" href="#/fechamento">Fechamento</a></div>
         <div class="table-wrap"><table><thead><tr><th>Mês</th><th class="n">Arrendamento</th><th class="n">Gestão P3</th><th class="n">Custos</th><th class="n">Geradora</th><th class="n">Líquido dono</th><th class="n">Geração</th><th class="n">Entregue</th><th class="n">Economia clientes</th><th>Situação</th></tr></thead>
         <tbody>${hist.slice().reverse().map(r => `<tr><td><b>${esc(fmt.mes(r.competencia))}</b>${r.avisos.length ? `<small class="neg">${esc(r.avisos.join(" "))}</small>` : ""}</td><td class="n">${fmt.brl(r.arrendamento)}</td><td class="n">${fmt.brl(r.gestao)}</td><td class="n">${r.custosDono ? fmt.brl(r.custosDono) : "—"}</td><td class="n">${r.valorGeradora ? fmt.brl(r.valorGeradora) : "—"}</td><td class="n"><b>${fmt.brl(r.liquidoDono)}</b></td><td class="n">${r.geracaoKwh ? fmt.kwh(r.geracaoKwh) : "—"}</td><td class="n">${fmt.kwh(r.kwhCompensado)}</td><td class="n pos">${fmt.brl(r.economiaClientes)}</td><td>${statusBadge(r.status)}</td></tr>`).join("") || `<tr><td colspan="10" class="empty">Sem histórico.</td></tr>`}</tbody></table></div></div>`;
     $("#ed").onclick = () => editarUsina(u);
+    $("#novoFixoUs").onclick = () => P3.editarFixo(null, { usina_id: id });
+    $$("[data-edfu]", main).forEach(b => b.onclick = () => P3.editarFixo(D.custosFixos.find(f => f.id === b.dataset.edfu)));
     $("#ex").onclick = async () => { if (await excluir("usinas", u.id, u.nome)) P3.go("#/usinas"); };
   }
 

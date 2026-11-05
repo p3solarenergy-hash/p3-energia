@@ -117,6 +117,20 @@
     return { ucs, usinas, clientes, donos, vincPorUc, vincPorUsina, fatPorComp, um, scee };
   }
 
+  // Custo lançado que corresponde a um custo fixo: pelo vínculo, ou (lançado à mão) mesma usina e mesma descrição.
+  const norm = s => String(s || "").trim().toLowerCase();
+  const mesmoCusto = (c, f) => c.fixo_id === f.id || (!c.fixo_id && (c.usina_id || null) === (f.usina_id || null) && norm(c.descricao) === norm(f.descricao));
+  const fixoNoMes = (f, comp) => f.ativo !== 0 && f.ativo !== "0" && (!f.inicio || comp >= f.inicio) && (!f.fim || comp <= f.fim);
+  // Quem arca com o custo no fim: o dono quando ele paga direto ou reembolsa a P3.
+  const arcaDono = c => c.pago_por === "dono" || ((c.pago_por || "p3") === "p3" && c.reembolso === "dono");
+  // Custos do dono que vêm do Financeiro (lançados no mês ou previstos pelos custos fixos).
+  function custosDoFinanceiro(db, usinaId, comp) {
+    const lanc = (db.custos || []).filter(c => c.usina_id === usinaId && c.competencia === comp);
+    const prev = (db.custosFixos || []).filter(f => f.usina_id === usinaId && fixoNoMes(f, comp) && !lanc.some(c => mesmoCusto(c, f)));
+    return [...lanc.map(c => ({ ...c, _o: "financeiro" })), ...prev.map(f => ({ ...f, _o: "previsto" }))].filter(arcaDono)
+      .map(c => ({ descricao: c.descricao || "Custo", valor: r2(c.valor), origem: c._o }));
+  }
+
   function calcMes(db, comp, ix) {
     ix = ix || index(db);
     const faturas = ix.fatPorComp.get(comp) || [];
@@ -195,8 +209,11 @@
       });
       const naoAtribuido = r2(arr.valor - arrAtribuido);
       const gest = gestaoDoMes(usina, um, arr.valor);
-      const custos = (um && Array.isArray(um.custos) ? um.custos : []).map(c => ({ descricao: c.descricao || "Custo", valor: r2(c.valor) }));
+      // Custos do dono: os escritos no Fechamento mais os do Financeiro que ainda não estão lá (mesma descrição não repete).
+      const proprios = (um && Array.isArray(um.custos) ? um.custos : []).map(c => ({ descricao: c.descricao || "Custo", valor: r2(c.valor), origem: "fechamento" }));
+      const custos = proprios.concat(custosDoFinanceiro(db, usina.id, comp).filter(c => !proprios.some(p => norm(p.descricao) === norm(c.descricao))));
       const custosDono = r2(custos.reduce((s, c) => s + c.valor, 0));
+      const custosProprios = r2(proprios.reduce((s, c) => s + c.valor, 0));
       const geradoraDono = pagaGer === "dono" ? valorGeradora : 0;
       const liquido = r2(arr.valor - gest.valor - custosDono - geradoraDono);
       const kwh = partes.reduce((s, p) => s + p.kwh, 0);
@@ -214,7 +231,7 @@
       usinaRows.push({
         usina_id: usina.id, usina, dono_id: usina.dono_id, competencia: comp, status: (um && um.status) || "aberto",
         arrendamento: arr.valor, arrendamentoOrigem: arr.origem, gestao: gest.valor, gestaoModo: gest.modo, gestaoPct: gest.pct,
-        custos, custosDono, valorGeradora, geradoraPagaPor: pagaGer, geradoraDono, liquidoDono: liquido,
+        custos, custosDono, custosProprios, valorGeradora, geradoraPagaPor: pagaGer, geradoraDono, liquidoDono: liquido,
         kwhCompensado: kwh, creditosClientes: creditos, economiaClientes: r2(creditos - arr.valor - (cobraGerCliente ? valorGeradora : 0)),
         geracaoKwh: um && um.geracao_kwh != null ? n(um.geracao_kwh) : null,
         naoAtribuido, faltam: faltando.length, ucs: partes.map(p => ({ uc_id: p.row.uc_id, cliente_id: p.row.cliente_id, temFatura: p.row.temFatura, pct: p.pct * 100, fontePct: p.fonte, kwh: p.kwh, creditos: p.creditos, arrendamento: p.arrendamento || 0, geradora: p.geradora || 0 })),
@@ -274,5 +291,5 @@
     return all[0] || null;
   }
 
-  return { calcMes, calcPeriodo, index, splitCents, addMonths, monthRange, monthLabel, monthLong, primeiraCompetencia, r2 };
+  return { calcMes, calcPeriodo, index, splitCents, addMonths, monthRange, monthLabel, monthLong, primeiraCompetencia, r2, mesmoCusto, fixoNoMes, arcaDono };
 });
