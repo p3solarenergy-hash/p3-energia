@@ -5,7 +5,15 @@
 (function () {
   "use strict";
   const { esc, $, $$, fmt, api, toast, opts, modal, confirmar, formData, kpi, badge } = window.P3;
-  const n = v => { if (v == null || v === "") return 0; if (typeof v === "number") return v; const s = String(v).trim(); const x = Number(/,/.test(s) ? s.replace(/\./g, "").replace(",", ".") : s); return Number.isFinite(x) ? x : 0; };
+  // Número digitado do jeito brasileiro: "6.000", "6.000,50", "6000,5" ou "6000.5".
+  const n = v => {
+    if (v == null || v === "") return 0; if (typeof v === "number") return v;
+    let s = String(v).trim().replace(/[R$\s]/g, "");
+    if (/,/.test(s)) s = s.replace(/\./g, "").replace(",", ".");
+    else if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, "");
+    const x = Number(s); return Number.isFinite(x) ? x : 0;
+  };
+  const NUMEROS = ["kwp", "carregadores_dc", "carregadores_ac", "potencia_kw", "custo_material", "custo_mao_obra", "custo_outros", "imposto_pct", "admin_pct", "gestao_pct", "desconto", "valor_contratado"];
   const brl = v => fmt.brl(v);
   const brlK = v => { const a = Math.abs(v); return a >= 1e6 ? `R$ ${(v / 1e6).toLocaleString("pt-BR", { maximumFractionDigits: 2 })} mi` : a >= 1e3 ? `R$ ${(v / 1e3).toLocaleString("pt-BR", { maximumFractionDigits: 0 })} mil` : brl(v); };
   const pct = v => `${(v * 100).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
@@ -99,7 +107,7 @@
     const lista = obras.filter(o => (F.contratante === "todos" || (o.contratante || "p3") === F.contratante) && (F.ano === "todos" || ano(o) === F.ano) && (F.status === "todos" || (o.status || "concluida") === F.status)
       && (!F.busca || `${o.nome} ${o.tipo || ""} ${o.cidade || ""} ${o.vendedor || ""}`.toLowerCase().includes(F.busca.toLowerCase())));
     const validas = lista.filter(o => o.status !== "cancelada" && o.status !== "orcamento");
-    const T = validas.reduce((t, o) => ({ venda: t.venda + o._c.venda, custo: t.custo + o._c.custo, lucro: t.lucro + o._c.lucro, kwp: t.kwp + n(o.kwp), pag: t.pag + o._c.pag, rec: t.rec + o._c.rec }), { venda: 0, custo: 0, lucro: 0, kwp: 0, pag: 0, rec: 0 });
+    const T = validas.reduce((t, o) => ({ venda: t.venda + o._c.venda, custo: t.custo + o._c.custo, lucro: t.lucro + o._c.lucro, kwp: t.kwp + n(o.kwp), pag: t.pag + o._c.pag, rec: t.rec + o._c.rec, aRec: t.aRec + (o._c.rec ? o._c.venda - o._c.rec : 0) }), { venda: 0, custo: 0, lucro: 0, kwp: 0, pag: 0, rec: 0, aRec: 0 });
     const andamento = lista.filter(o => o.status === "andamento").length, orcam = lista.filter(o => o.status === "orcamento").length;
     const porAno = agrupar(validas.filter(o => dataRef(o)), ano).sort((a, b) => a.k.localeCompare(b.k));
     const porTipo = agrupar(validas, o => o.tipo || "Sem tipo").sort((a, b) => b.venda - a.venda).slice(0, 8);
@@ -125,7 +133,7 @@
         ${kpi("Faturamento", brl(T.venda), validas.length ? `média de ${brlK(T.venda / validas.length)} por obra` : "")}
         ${kpi("Custo", brl(T.custo), T.pag ? `${brl(T.pag)} já pago` : "")}
         ${kpi("Lucro", brl(T.lucro), `margem de ${pct(T.venda ? T.lucro / T.venda : 0)}`)}
-        ${T.rec ? kpi("Recebido", brl(T.rec), `falta ${brl(T.venda - T.rec)}`) : ""}
+        ${T.rec ? kpi("Recebido", brl(T.rec), `falta ${brl(T.aRec)} nas obras com recebimento lançado`) : ""}
       </div>
       ${orcam ? `<p class="muted" style="font-size:12.5px;margin:6px 2px 0">Os números somam só obras em andamento e concluídas; orçamentos e canceladas ficam de fora.</p>` : ""}
       ${validas.length ? `<div class="grid2 section">
@@ -187,6 +195,9 @@
         const corpo = { ...o, venda: c.venda, custo: c.custo,
           itens: o.modo === "detalhado" ? o.itens.filter(i => n(i.qtd) || (i.item && !MODELO.some(m => m.item === i.item))) : [],
           lancamentos: o.lancamentos.filter(l => n(l.valor) || l.descricao) };
+        for (const k of NUMEROS) corpo[k] = corpo[k] === "" || corpo[k] == null ? null : n(corpo[k]);
+        corpo.itens = corpo.itens.map(i => ({ ...i, qtd: n(i.qtd), unit: n(i.unit) }));
+        corpo.lancamentos = corpo.lancamentos.map(l => ({ ...l, valor: n(l.valor) }));
         if (o.modo !== "detalhado") corpo.valor_contratado = null;
         delete corpo.id; delete corpo.criado_em; delete corpo.atualizado_em;
         await api(o.id ? `obras/${encodeURIComponent(o.id)}` : "obras", { method: o.id ? "PUT" : "POST", body: corpo });
