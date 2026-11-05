@@ -9,7 +9,7 @@
   const sb = window.supabase.createClient(window.P3_CONFIG.url, window.P3_CONFIG.chave);
   const base = new Base(sb), servico = new Servico(base);
   const R = window.P3_RELATORIOS, F = window.P3_FINANCEIRO, C = window.P3_CONFERENCIA;
-  const CRUD = new Set(["donos", "clientes", "usinas", "ucs", "vinculos", "faturas", "usina_mes", "projecoes", "custos", "custos_fixos", "obras", "nf_regras", "notas_fiscais", "propostas", "tarefas"]);
+  const CRUD = new Set(["donos", "clientes", "usinas", "ucs", "vinculos", "faturas", "usina_mes", "projecoes", "custos", "custos_fixos", "obras", "nf_regras", "notas_fiscais", "propostas", "tarefas", "agendas_google"]);
   const COPIAS = "copias", BUCKET = "p3", MANTER_COPIAS = 30, SEIS_HORAS = 6 * 3600 * 1000;
   const r2 = window.P3_MOTOR.r2;
   const num = v => { const s = String(v).trim(); return Number(/,/.test(s) ? s.replace(/\./g, "").replace(",", ".") : s); };
@@ -165,6 +165,12 @@
     // Ponte com a plataforma da Uby: traz as obras em Projeto / Em obra e o andamento das etapas (só leitura lá).
     if (m === "POST" && p[0] === "ponte-uby") {
       const r = await sb.functions.invoke("ponte-uby", { body: {} });
+      if (r.error) { let msg = r.error.message; try { msg = (await r.error.context.json()).erro || msg; } catch (_) { } throw new Error(msg); }
+      return r.data;
+    }
+    // Agendas do Google: a função "agenda-google" busca o .ics de cada agenda cadastrada (só admin).
+    if (m === "GET" && p[0] === "agenda-google") {
+      const r = await sb.functions.invoke("agenda-google", { body: {} });
       if (r.error) { let msg = r.error.message; try { msg = (await r.error.context.json()).erro || msg; } catch (_) { } throw new Error(msg); }
       return r.data;
     }

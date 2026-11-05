@@ -282,3 +282,10 @@ td small.ob-uby { color: var(--brand-2); font-weight: 600; }
 .pr-prev { position: sticky; top: 12px; height: calc(100vh - 140px); min-height: 420px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #5d6656; }
 .pr-prev iframe { width: 100%; height: 100%; border: 0; display: block; }
 @media (max-width: 980px) { .pr-ed { grid-template-columns: 1fr; } .pr-prev { position: static; height: 70vh; } }
+/* Tarefas: dias do calendário clicáveis e compromissos da agenda do Google */
+.cal-dias .d { border: 0; text-align: left; cursor: pointer; font: inherit; font-size: 11px; display: block; width: 100%; }
+.cal-dias .d:hover { outline: 1px solid var(--brand-2); outline-offset: -1px; }
+.cal-dias .d.passado { opacity: .55; }
+.cal-dias .d small { font-size: 9.5px; margin-left: 3px; }
+.cal .d i.ag { display: block; font-style: normal; font-size: 10px; color: var(--brand-2); line-height: 1.15; }
+.cal .d.forte i.ag { color: #fff; }
