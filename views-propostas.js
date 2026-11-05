@@ -32,7 +32,10 @@
       qtd_modulos: 16, modulo_w: 620, modulo_marca: "Canadian", inversor: "1 inversor Canadian 7 kW", fator_kwh_kwp: 105, estrutura: "Telhado",
       garantia_modulo: "12 anos contra defeito de fabricação e 25 anos de garantia de performance", garantia_inversor: "10 anos contra defeito de fabricação",
       valor_equip: 0, valor_impl: 0, avista: "", parcelas: "3, 6, 12", juros_parcela: 3, prazo: "2 meses",
-      pagamento_obs: "Sujeito à validação da estrutura do telhado.", reajuste: 5, degradacao: 0.5, anos: 25
+      pagamento_obs: "Sujeito à validação da estrutura do telhado.", reajuste: 5, degradacao: 0.5, anos: 25,
+      // Custo da obra pela planilha de obra solar (o mesmo modelo da tela Obras). Não aparece no PDF.
+      c_instalacao: "telhado", c_km: 0, c_viagens_eng: 1, c_viagens_equipe: 1, c_pessoas: 4, c_dias: 5, c_margem_kwp: 620, c_faturamento: "p3", c_imp_total: 5.93, c_imp_servico: 16.33,
+      c_kit: 0, c_bateria: 0, c_estrutura: 0, c_transformador: 0, c_padrao: 0, c_descarregamento: 0, c_conexao: 0, c_comissao: 0, c_terrenista: 0
     },
     ev: {
       qtd: 1, corrente: "AC", potencia_kw: 7, modelo: "Livoltek 7,3 kW", clamper: true, quadro: true, desligamento: true,
@@ -81,6 +84,23 @@
     const parcelas = String(d.parcelas || "").split(/[,;\s]+/).map(Number).filter(x => x > 1).map(q => ({ q, valor: r2(investimento * (1 + n(d.juros_parcela) / 100) / q) }));
     const autonomia = n(d.carga_critica_kw) ? r2(n(d.bat_kwh) * (n(d.bat_qtd) || 1) * 0.9 / n(d.carga_critica_kw)) : 0;
     return { kwp, geracao, consumo, conta, tarifa, comSolar, estimado, mensal, pct: conta ? mensal / conta : 0, investimento, porAno, ano1: soma(1), ano5: soma(5), ano20: soma(Math.min(20, anos)), total: soma(anos), anos, payback, avista, parcelas, autonomia, cobertura: consumo ? geracao / consumo : 0 };
+  }
+  // A obra por trás da proposta solar, pela planilha de custos de obra solar (views-obras.js): itens com cálculo
+  // pelos parâmetros + os valores à mão (kit, estrutura…). Dá o preço sugerido (custos + margem por kWp) e o lucro
+  // líquido do preço que está na proposta. Também é o orçamento detalhado da obra quando a proposta vira obra.
+  const CUSTO_MANUAL = [["c_kit", "Sistema fotovoltaico (kit)"], ["c_estrutura", "Estrutura"], ["c_transformador", "Transformador"], ["c_padrao", "Padrão de entrada"], ["c_descarregamento", "Descarregamento"], ["c_conexao", "Conexão (concessionária)"], ["c_comissao", "Comissão"], ["c_terrenista", "Terrenista"]];
+  function obraSolar(d, tipo) {
+    const S = window.P3_OBRA_SOLAR; if (!S) return null;
+    const kwp = r2(n(d.qtd_modulos) * n(d.modulo_w) / 1000);
+    const o = { tipo: kwp >= 75 ? "Usina solar" : "Sistema solar residencial", kwp, modo: "detalhado", itens: [], lancamentos: [],
+      solar: { instalacao: d.c_instalacao || "telhado", km: n(d.c_km), viagens_eng: n(d.c_viagens_eng), viagens_equipe: n(d.c_viagens_equipe), pessoas: n(d.c_pessoas), dias: n(d.c_dias), margem_kwp: n(d.c_margem_kwp), faturamento: d.c_faturamento || "p3", imp_total: n(d.c_imp_total), imp_servico: n(d.c_imp_servico) } };
+    S.aplicarModeloSolar(o);
+    for (const [k, nome] of CUSTO_MANUAL) { const it = o.itens.find(i => i.item === nome); if (it) { it.qtd = 1; it.unit = n(d[k]); } }
+    if (tipo === "bateria" && n(d.c_bateria)) o.itens.splice(1, 0, { categoria: "Equipamentos", item: "Baterias e inversor híbrido", unid: "un", qtd: 1, unit: n(d.c_bateria), imp: false, direto: true });
+    const sugerido = S.calc(o).sugerido;
+    const venda = r2(n(d.valor_equip) + n(d.valor_impl) + (tipo === "bateria" ? n(d.valor_bateria) : 0));
+    o.valor_contratado = venda || null;
+    return { obra: o, c: S.calc(o), sugerido, venda };
   }
   function calcEv(d) {
     const qtd = Math.max(1, n(d.qtd));
@@ -380,6 +400,14 @@
       + (p.tipo === "bateria" ? bloco("Bateria", `
         ${campo("bat_qtd", "Quantidade de baterias", "num")}${campo("bat_kwh", "Capacidade de cada (kWh)", "num")}${campo("bat_modelo", "Modelo")}
         ${campo("carga_critica_kw", "Cargas essenciais no backup (kW)", "num")}${campo("bat_garantia", "Garantia das baterias")}${campo("valor_bateria", "Valor das baterias (R$)", "num")}`) : "")
+      + bloco("Custo da obra (planilha solar · não sai no PDF)", `
+        ${escolha("c_instalacao", "Instalação", [["telhado", "Telhado"], ["solo", "Solo"]])}${campo("c_km", "Distância até a obra (km, ida)", "num")}
+        ${campo("c_viagens_eng", "Viagens da engenharia", "num")}${campo("c_viagens_equipe", "Viagens da equipe", "num")}${campo("c_pessoas", "Pessoas na equipe", "num")}${campo("c_dias", "Dias de obra (hospedagem)", "num")}
+        ${campo("c_kit", "Custo do kit fotovoltaico (R$)", "num")}${p.tipo === "bateria" ? campo("c_bateria", "Custo das baterias e inversor híbrido (R$)", "num") : ""}${campo("c_estrutura", "Estrutura (R$)", "num")}${campo("c_transformador", "Transformador (R$)", "num")}
+        ${campo("c_padrao", "Padrão de entrada (R$)", "num")}${campo("c_descarregamento", "Descarregamento (R$)", "num")}${campo("c_conexao", "Conexão (R$)", "num")}${campo("c_comissao", "Comissão (R$)", "num")}${campo("c_terrenista", "Terrenista (R$)", "num")}
+        ${campo("c_margem_kwp", "Margem P3 (R$/kWp)", "num")}${escolha("c_faturamento", "Faturamento", [["p3", "Tudo pela P3 (5,93%)"], ["direto", "Kit direto ao cliente (16,33% no serviço)"]])}
+        ${campo("c_imp_total", "% imposto · tudo pela P3", "num")}${campo("c_imp_servico", "% imposto · NF de serviço", "num")}
+        <div class="wide"><button type="button" class="btn sm primary" id="prCustos">Calcular preço pela planilha</button><p class="muted" id="prLucro" style="margin:8px 0 0;font-size:12.5px;white-space:pre-line"></p></div>`)
       + bloco("Investimento e condições", `
         ${campo("valor_equip", "Equipamentos (R$)", "num")}${campo("valor_impl", "Projeto e implantação (R$)", "num")}
         ${campo("avista", "À vista (R$) — vazio = valor total", "num")}${campo("parcelas", "Parcelas (ex.: 3, 6, 12)")}${campo("juros_parcela", "Acréscimo no parcelado (%)", "num")}
@@ -419,9 +447,18 @@
         $("#prResumo", main).textContent = p.tipo === "ev"
           ? `${d.cliente || "Cliente"} · ${c.qtd} carregador(es) · investimento ${brl(c.investimento)}${d.operacao ? ` · fixo mensal ${brl(n(d.manutencao_mensal) ? c.fixoCom : c.fixoSem)}` : ""}`
           : `${d.cliente || "Cliente"} · ${num(c.kwp, 2)} kWp · ${num(c.geracao)} kWh/mês · economia ${brl(c.mensal)}/mês (${Math.round(c.pct * 100)}%) · ${brl(c.investimento)} · payback ${c.payback != null ? num(c.payback, 1) + " anos" : "—"}`;
+        // Custo e lucro da obra (só na tela): o preço que está na proposta contra a planilha de obra solar.
+        const lucro = $("#prLucro", main), os = p.tipo !== "ev" && obraSolar(d, p.tipo);
+        if (lucro && os) {
+          const k = os.c, kwp = n(os.obra.kwp);
+          lucro.textContent = `Custos da obra ${brl(k.sub)} + margem ${brl(k.margemP3)} = preço sugerido ${brl(os.sugerido)}${kwp ? ` (${brl(os.sugerido / kwp)}/kWp)` : ""}.`
+            + (os.venda ? `\nNa proposta: ${brl(os.venda)} · imposto ${brl(k.imposto)} · lucro líquido ${brl(k.lucro)} (${num(k.margem * 100, 1)}%).` : "\nToque em \"Calcular preço pela planilha\" para preencher os valores da proposta.");
+          lucro.style.color = os.venda && k.lucro < 0 ? "var(--bad)" : "";
+        }
       }, 250);
     };
-    const NUMS = new Set(["validade_dias", "consumo_kwh", "conta_atual", "fio_b_pct", "qtd_modulos", "modulo_w", "fator_kwh_kwp", "valor_equip", "valor_impl", "juros_parcela", "reajuste", "degradacao", "anos", "bat_qtd", "bat_kwh", "carga_critica_kw", "valor_bateria", "qtd", "potencia_kw", "software_mensal", "manutencao_mensal"]);
+    const NUMS = new Set(["validade_dias", "consumo_kwh", "conta_atual", "fio_b_pct", "qtd_modulos", "modulo_w", "fator_kwh_kwp", "valor_equip", "valor_impl", "juros_parcela", "reajuste", "degradacao", "anos", "bat_qtd", "bat_kwh", "carga_critica_kw", "valor_bateria", "qtd", "potencia_kw", "software_mensal", "manutencao_mensal",
+      "c_km", "c_viagens_eng", "c_viagens_equipe", "c_pessoas", "c_dias", "c_margem_kwp", "c_imp_total", "c_imp_servico", "c_kit", "c_bateria", "c_estrutura", "c_transformador", "c_padrao", "c_descarregamento", "c_conexao", "c_comissao", "c_terrenista"]);
     const OPCIONAL = new Set(["avista", "custo_com_solar"]);
     $$("[data-k]", main).forEach(el => {
       el.oninput = el.onchange = () => {
@@ -450,6 +487,19 @@
     };
     if (p.tipo === "ev") desenharInv();
 
+    // Preço pela planilha de obra solar: equipamentos = kit; baterias = custo delas; o resto do preço sugerido
+    // (implantação, projeto, logística, demais itens e a margem P3) vai em "Projeto e implantação".
+    const bc = $("#prCustos", main);
+    if (bc) bc.onclick = () => {
+      const os = obraSolar(d, p.tipo);
+      if (!os) return toast("Abra a tela Obras uma vez e tente de novo.", "bad");
+      if (!n(os.obra.kwp)) return toast("Preencha os módulos para ter a potência (kWp).", "bad");
+      d.valor_equip = r2(n(d.c_kit));
+      if (p.tipo === "bateria") d.valor_bateria = r2(n(d.c_bateria));
+      d.valor_impl = r2(Math.max(0, os.sugerido - d.valor_equip - (p.tipo === "bateria" ? d.valor_bateria : 0)));
+      for (const k of ["valor_equip", "valor_impl", "valor_bateria"]) { const el = $(`[data-k="${k}"]`, main); if (el) el.value = String(d[k] ?? "").replace(".", ","); }
+      sujo = true; atualizar(); toast(`Preço pela planilha: ${brl(os.sugerido)}.`, "ok");
+    };
     const g = $("#prGeracao", main);
     if (g) g.onclick = async () => {
       if (!d.cidade) return toast("Preencha a cidade.", "bad");
@@ -491,7 +541,11 @@
       const tipoObra = p.tipo === "ev" ? (d.corrente === "DC" ? "Eletroposto DC" : "Carregador EV comercial") : c.kwp >= 75 ? "Usina solar" : "Sistema solar residencial";
       if (!await confirmar("Virar obra", `Cria a obra "${esc(d.cliente || p.numero)}" (${esc(tipoObra)}) com venda de ${brl(c.investimento)} na tela Obras. Continuar?`, "Criar obra")) return;
       try {
-        const o = await api("obras", { method: "POST", body: { nome: d.cliente || p.numero, contratante: p.tipo === "ev" ? "terceiro" : "p3", tipo: tipoObra, cidade: d.cidade, vendedor: (VENDEDORES[d.vendedor] || {}).nome, status: "andamento", modo: "simples", venda: c.investimento, kwp: p.tipo === "ev" ? null : c.kwp, carregadores_dc: p.tipo === "ev" && d.corrente === "DC" ? c.qtd : null, carregadores_ac: p.tipo === "ev" && d.corrente === "AC" ? c.qtd : null, potencia_kw: p.tipo === "ev" ? n(d.potencia_kw) * c.qtd : null, data_inicio: hoje(), origem: "proposta", obs: `Gerada da proposta ${p.numero}.` } });
+        const corpo = { nome: d.cliente || p.numero, contratante: p.tipo === "ev" ? "terceiro" : "p3", tipo: tipoObra, cidade: d.cidade, vendedor: (VENDEDORES[d.vendedor] || {}).nome, status: "andamento", modo: "simples", venda: c.investimento, kwp: p.tipo === "ev" ? null : c.kwp, carregadores_dc: p.tipo === "ev" && d.corrente === "DC" ? c.qtd : null, carregadores_ac: p.tipo === "ev" && d.corrente === "AC" ? c.qtd : null, potencia_kw: p.tipo === "ev" ? n(d.potencia_kw) * c.qtd : null, data_inicio: hoje(), origem: "proposta", obs: `Gerada da proposta ${p.numero}.` };
+        // Solar: a obra já nasce com o orçamento detalhado da planilha de obra solar e o valor da proposta como contratado.
+        const os = p.tipo !== "ev" && obraSolar(d, p.tipo);
+        if (os) Object.assign(corpo, { modo: "detalhado", itens: os.obra.itens.filter(i => n(i.qtd) * n(i.unit)), solar: os.obra.solar, valor_contratado: c.investimento, custo: os.c.custo });
+        const o = await api("obras", { method: "POST", body: corpo });
         await api(`propostas/${encodeURIComponent(p.id)}`, { method: "PUT", body: { obra_id: o.id } });
         toast("Obra criada.", "ok"); window.P3.go("#/obras");
       } catch (e) { toast(e.message, "bad"); }

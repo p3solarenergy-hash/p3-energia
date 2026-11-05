@@ -444,5 +444,7 @@
     if (await p) { toast("Obra salva.", "ok"); render(main); }
   }
 
+  // A proposta solar usa a mesma planilha de custos de obra solar (views-propostas.js).
+  window.P3_OBRA_SOLAR = { modeloSolar, aplicarModeloSolar, calc, SOLAR_PADRAO };
   window.P3.register("obras", { render });
 })();
