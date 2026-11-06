@@ -292,7 +292,7 @@
     <section class="slide dark capa">${d.foto_capa ? `<div class="foto" style="background-image:url('${d.foto_capa}')"></div>` : ""}
       <div style="position:relative;max-width:${d.foto_capa ? "760px" : "100%"}">
         ${LOGO("#eef0e8", "#a8c23c")}
-        <div class="kicker" style="margin-top:56px">Proposta comercial · ${esc(mesAno(d.data))}${p.numero ? ` · ${esc(p.numero)}` : ""}</div>
+        <div class="kicker" style="margin-top:56px">${esc(d._kicker || "Proposta comercial")} · ${esc(mesAno(d.data))}${p.numero ? ` · ${esc(p.numero)}` : ""}</div>
         <h1>${titulo}</h1><div class="traco"></div>
         <p style="font-size:28px;margin:0">${esc(d.cliente || "Cliente")}</p><p class="mut" style="font-size:19px">${esc(sub)}</p>
         ${d.logo_cliente ? `<img class="cli-logo" src="${d.logo_cliente}" alt="">` : ""}
@@ -1029,6 +1029,8 @@
     atualizar();
   }
 
-  window.P3_PROPOSTA = { montar, calcSolar, calcEv, calc, dadosDe, textoWhats };
+  // Peças do visual da P3 usadas também pelos relatórios técnicos (views-laudos.js).
+  const imprimirHtml = (html, titulo) => { const f = document.createElement("iframe"); f.style.cssText = "position:fixed;width:0;height:0;border:0;left:-9999px"; f.onload = () => { const t = document.title; document.title = titulo; f.contentWindow.focus(); f.contentWindow.print(); setTimeout(() => { document.title = t; f.remove(); }, 60000); }; f.srcdoc = html; document.body.appendChild(f); };
+  window.P3_PROPOSTA = { montar, calcSolar, calcEv, calc, dadosDe, textoWhats, visual: { CSS, LOGO, topo, pe, capa, contato, empresa, imagem, imprimirHtml, VENDEDORES, CNPJ, dataLonga, mesAno, numx, num, linhas, hoje } };
   window.P3.register("propostas", { render });
 })();
