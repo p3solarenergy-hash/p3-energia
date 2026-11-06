@@ -157,6 +157,8 @@
         const t = l.c.t;
         l.hoje = r2(l.C * (t.tarifa + t.bandeira) + t.iluminacao - l.atuais * t.creditosAtuaisRate);
         l.valorCredito = r2(l.comp * (l.cred + t.bandeira));
+        // Quanto a energia que a usina atende custaria hoje na Copel (base da "economia na energia atendida").
+        l.hojeAtendido = r2(l.comp * (t.tarifa + t.bandeira));
         l.comUsina = r2(l.hoje - l.valorCredito);
         l.arrendamento = p.acordo === "fixo" ? fixos[k] : p.acordo === "kwh" ? r2(l.comp * n(p.valorKwh)) : r2(l.valorCredito * (1 - n(p.desconto) / 100));
         l.custosUsina = custos[k] || 0;
@@ -175,7 +177,7 @@
       meses.push({ ...op, mes: linhas[0].mes, consumo: linhas.reduce((s, l) => s + l.C, 0), compensado: compMes, creditosAtuais: linhas.reduce((s, l) => s + l.atuais, 0),
         mesHistorico: linhas[0].mesHistorico, pctFioB: linhas[0].pct,
         geracao: ger, saldoInicial: ger != null ? saldoAntes : null, saldo: ger != null ? saldo : null, faltou: Math.max(0, Math.round(totalComp - compMes)),
-        hoje: S("hoje"), valorCredito: S("valorCredito"), comUsina: S("comUsina"), arrendamento: S("arrendamento"), custosUsina: S("custosUsina"), total: S("total"), economia: S("economia"), contas: linhas.map(l => ({ uc: l.c.uc, consumo: l.C, compensado: l.comp, hoje: l.hoje, comUsina: l.comUsina, arrendamento: l.arrendamento, economia: l.economia })) });
+        hoje: S("hoje"), hojeAtendido: S("hojeAtendido"), valorCredito: S("valorCredito"), comUsina: S("comUsina"), arrendamento: S("arrendamento"), custosUsina: S("custosUsina"), total: S("total"), economia: S("economia"), contas: linhas.map(l => ({ uc: l.c.uc, consumo: l.C, compensado: l.comp, hoje: l.hoje, comUsina: l.comUsina, arrendamento: l.arrendamento, economia: l.economia })) });
     }
     const A = k => r2(meses.reduce((s, m) => s + n(m[k]), 0));
     const anual = { consumo: A("consumo"), compensado: A("compensado"), hoje: A("hoje"), valorCredito: A("valorCredito"), comUsina: A("comUsina"), arrendamento: A("arrendamento"), custosUsina: A("custosUsina"), total: A("total"), economia: A("economia") };
@@ -189,6 +191,10 @@
     anual.custoUsinaMes = custoUsinaMes;
     anual.ajusteGeracao = Math.round((ajusteGer - 1) * 100);
     anual.economiaPct = anual.hoje > 0 ? anual.economia / anual.hoje : 0;
+    // A economia só acontece na energia compensada: % sobre essa parte e quanto do consumo a usina atende.
+    anual.hojeAtendido = A("hojeAtendido");
+    anual.economiaAtendidaPct = anual.hojeAtendido > 0 ? anual.economia / anual.hojeAtendido : 0;
+    anual.atendidoPct = anual.consumo > 0 ? anual.compensado / anual.consumo : 0;
     const comGeracao = meses.some(m => m.geracao != null);
     anual.geracao = comGeracao ? meses.reduce((s, m) => s + n(m.geracao), 0) : null;
     anual.saldoFinal = comGeracao ? meses[meses.length - 1].saldo : null;
@@ -245,7 +251,7 @@
       out.push({ n: k + 1, ano: Number(inicio.slice(0, 4)), inicio, fim, periodo: `${motor.monthLabel(inicio)} a ${motor.monthLabel(fim)}`,
         pctFioB: pcts[pcts.length - 1], pctsFioB: pcts, fatorTarifa, saldoInicio: r.anual.geracao != null ? saldo : null, saldoFim: r.anual.saldoFinal,
         hoje: r.anual.hoje, economia: r.anual.economia, economiaMes: r.anual.economia / nM, economiaPct: r.anual.economiaPct, faltou: r.anual.faltou, compensado: r.anual.compensado, arrendamento: r.anual.arrendamento,
-        donoLiquido: r.anual.donoLiquido, donoRecebe: r.anual.donoRecebe, p3Lucro: r.anual.p3Lucro });
+        economiaAtendidaPct: r.anual.economiaAtendidaPct, donoLiquido: r.anual.donoLiquido, donoRecebe: r.anual.donoRecebe, p3Lucro: r.anual.p3Lucro });
       if (r.anual.saldoFinal != null) saldo = r.anual.saldoFinal;
     }
     return out;

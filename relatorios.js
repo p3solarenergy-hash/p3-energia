@@ -410,7 +410,7 @@ function projecao(pj) {
 </div>
 <div class="hero">
   <div class="main"><small>Economia média por mês · 1º ano</small><b>${brl(ecoMes)}</b><span>${mesesPositivos} de ${nM} meses com economia</span></div>
-  <div><small>Economia média</small><b>${pct(pctMedio)}</b><span>da conta de energia</span></div>
+  <div><small>Economia média</small><b>${pct(pctMedio)}</b><span>da conta toda · ${pct(A.economiaAtendidaPct)} na energia atendida pela usina${A.atendidoPct < 0.98 ? ` (${pct(A.atendidoPct)} do consumo)` : ""}</span></div>
   <div><small>Economia no 1º ano</small><b>${brl(A.economia)}</b><span>média de ${brl(media5)}/ano em 5 anos</span></div>
 </div>
 <div class="compare">

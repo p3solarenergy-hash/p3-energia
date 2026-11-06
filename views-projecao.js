@@ -170,7 +170,8 @@
       <div class="kpis" style="margin-top:4px">
         ${kpi("Conta Copel hoje · 12 meses", fmt.brl(A.hoje), `média ${fmt.brl(A.hoje / r.meses.length)}/mês`)}
         ${kpi("Com a usina P3", fmt.brl(A.total), `Copel ${fmt.brl(A.comUsina)} + arrend. ${fmt.brl(A.arrendamento)}`)}
-        ${kpi("Economia projetada", fmt.brl(A.economia), `${fmt.pct(A.economiaPct)} · ${fmt.brl(r.media.economia)}/mês`, "lead")}
+        ${kpi("Economia projetada", fmt.brl(A.economia), `${fmt.pct(A.economiaPct)} da conta toda · ${fmt.brl(r.media.economia)}/mês`, "lead")}
+        ${kpi("Economia na energia atendida", fmt.pct(A.economiaAtendidaPct), `a usina atende ${fmt.pct(A.atendidoPct)} do consumo · o resto segue pago cheio na Copel`)}
         ${kpi("Valor dos créditos", fmt.brl(A.valorCredito), `${fmt.kwh(A.compensado)} compensados`)}
         ${kpi("Pior mês", r.piorMes ? fmt.brl(r.piorMes.economia) : "—", r.piorMes ? `${fmt.mes(r.piorMes.mes)} · ${fmt.kwh(r.piorMes.consumo)}` : "")}
         ${A.custoUsinaMes ? kpi("Custos da UC geradora", fmt.brl(A.custoUsinaMes) + "/mês", ({ p3: A.intermediacao ? "pagos pela P3" : "pagos pela P3/dono", dono: "pagos pelo dono da usina" })[pc.custosUsina.quemPaga] || "pagos pelo cliente (já no total)") : ""}
@@ -215,7 +216,7 @@
       ? kpi("Dono recebe · 12 meses", fmt.brl(A.donoRecebe), `${valorDono} · ${fmt.kwh(A.compensado)}`, "lead")
         + kpi("Líquido do dono por mês", fmt.brl(A.donoLiquido / nM), A.donoCustos ? `já sem ${fmt.brl(A.donoCustos / nM)}/mês da UC geradora` : "média do 1º ano")
         + kpi("Líquido em 5 anos", fmt.brl(anos.reduce((s, x) => s + n(x.donoLiquido), 0)), "com a transição do Fio B")
-      : kpi("Economia do cliente", fmt.brl(A.economia), `${fmt.pct(A.economiaPct)} · ${fmt.brl(A.economia / nM)}/mês`)
+      : kpi("Economia do cliente", fmt.brl(A.economia), `${fmt.pct(A.economiaPct)} da conta · ${fmt.pct(A.economiaAtendidaPct)} na energia atendida`)
         + kpi("Dono da usina", fmt.brl(A.donoLiquido), `${valorDono}${A.donoCustos ? ` · menos custos da UC` : ""} · ${fmt.brl(A.donoLiquido / nM)}/mês`)
         + kpi("Lucro da P3", fmt.brl(A.p3Lucro), `${fmt.brl(A.p3Lucro / nM)}/mês · R$ ${fmt.num(A.margemKwh, 4)}/kWh`, "lead");
     const cols = so ? ["Compensado", "Dono recebe", ...(A.donoCustos ? ["Custos da UC"] : []), "Líquido do dono"]
