@@ -22,7 +22,8 @@
     rafael: { nome: "Rafael Berger Prochet", tel: "(43) 99925-8220", email: "rafael@p3energy.com.br" }
   };
   const CNPJ = "45.173.949/0001-21";
-  const DISPONIBILIDADE = { mono: 30, bi: 50, tri: 100 }; // kWh mínimos cobrados pela concessionária
+  const DISPONIBILIDADE = { mono: 30, bi: 50, tri: 100 };
+  const GER_PADRAO = { telhado: 108.3, solo: 120.8 }; // kWh por kWp ao mês (planilha da P3: 1.300 e 1.450 por ano) // kWh mínimos cobrados pela concessionária
 
   // Valores de partida de cada tipo (tudo editável na tela).
   const COMUM = { cliente: "", cidade: "Londrina", data: "", validade_dias: 15, vendedor: "eduardo", logo_cliente: "", foto_capa: "", layout_img: "", fechamento: "" };
@@ -30,6 +31,9 @@
     solar: {
       consumo_kwh: 1000, conta_atual: 1000, fase: "bi", fio_b_pct: 14, custo_com_solar: "",
       qtd_modulos: 16, modulo_w: 620, modulo_marca: "Canadian", inversor: "1 inversor Canadian 7 kW", fator_kwh_kwp: 105, estrutura: "Telhado",
+      // Telhado × solo geram diferente (planilha da P3: 1.300 e 1.450 kWh por kWp ao ano; pela cidade, PVGIS de cada montagem).
+      // Simultaneidade: parte da geração consumida na hora, que não passa pela rede nem paga Fio B.
+      instalacao: "telhado", simultaneidade: 0, ger_telhado: "", ger_solo: "", fatura_info: "",
       garantia_modulo: "12 anos contra defeito de fabricação e 25 anos de garantia de performance", garantia_inversor: "10 anos contra defeito de fabricação",
       valor_equip: 0, valor_impl: 0, avista: "", parcelas: "3, 6, 12", juros_parcela: 3, prazo: "2 meses",
       // Pagamento separado (como na proposta da Multicampo): cada parte com seu à vista e seu parcelado, e tudo junto.
@@ -80,8 +84,10 @@
     const consumo = n(d.consumo_kwh), conta = n(d.conta_atual);
     const tarifa = consumo ? conta / consumo : 0;
     const disp = DISPONIBILIDADE[d.fase] || 50;
-    const compensado = Math.max(0, Math.min(geracao, consumo - disp));
-    const estimado = r2((consumo - compensado) * tarifa + compensado * tarifa * n(d.fio_b_pct) / 100);
+    const autoconsumo = Math.round(Math.min(geracao * n(d.simultaneidade) / 100, consumo));
+    const consumoRede = consumo - autoconsumo, injetada = geracao - autoconsumo;
+    const compensado = Math.max(0, Math.min(injetada, consumoRede - disp));
+    const estimado = r2((consumoRede - compensado) * tarifa + compensado * tarifa * n(d.fio_b_pct) / 100);
     const comSolar = d.custo_com_solar !== "" && d.custo_com_solar != null ? n(d.custo_com_solar) : estimado;
     const mensal = r2(Math.max(0, conta - comSolar));
     const investimento = r2(n(d.valor_equip) + n(d.valor_impl) + (tipo === "bateria" ? n(d.valor_bateria) : 0));
@@ -98,7 +104,7 @@
     const avista = d.avista !== "" && d.avista != null ? n(d.avista) : investimento;
     const parcelas = String(d.parcelas || "").split(/[,;\s]+/).map(Number).filter(x => x > 1).map(q => ({ q, valor: r2(investimento * (1 + n(d.juros_parcela) / 100) / q) }));
     const autonomia = n(d.carga_critica_kw) ? r2(n(d.bat_kwh) * (n(d.bat_qtd) || 1) * 0.9 / n(d.carga_critica_kw)) : 0;
-    return { kwp, geracao, consumo, conta, tarifa, comSolar, estimado, mensal, pct: conta ? mensal / conta : 0, investimento, porAno, ano1: soma(1), ano5: soma(5), ano20: soma(Math.min(20, anos)), total: soma(anos), anos, payback, avista, parcelas, autonomia, cobertura: consumo ? geracao / consumo : 0 };
+    return { kwp, geracao, consumo, conta, tarifa, autoconsumo, compensado, comSolar, estimado, mensal, pct: conta ? mensal / conta : 0, investimento, porAno, ano1: soma(1), ano5: soma(5), ano20: soma(Math.min(20, anos)), total: soma(anos), anos, payback, avista, parcelas, autonomia, cobertura: consumo ? geracao / consumo : 0 };
   }
   // A obra por trás da proposta solar, pela planilha de custos de obra solar (views-obras.js): itens com cálculo
   // pelos parâmetros + os valores à mão (kit, estrutura…). Dá o preço sugerido (custos + margem por kWp) e o lucro
@@ -108,7 +114,7 @@
     const S = window.P3_OBRA_SOLAR; if (!S) return null;
     const kwp = r2(n(d.qtd_modulos) * n(d.modulo_w) / 1000);
     const o = { tipo: kwp >= 75 ? "Usina solar" : "Sistema solar residencial", kwp, modo: "detalhado", itens: [], lancamentos: [],
-      solar: { instalacao: d.c_instalacao || "telhado", km: n(d.c_km), viagens_eng: n(d.c_viagens_eng), viagens_equipe: n(d.c_viagens_equipe), pessoas: n(d.c_pessoas), dias: n(d.c_dias), margem_kwp: n(d.c_margem_kwp), faturamento: d.c_faturamento || "p3", imp_total: n(d.c_imp_total), imp_servico: n(d.c_imp_servico) } };
+      solar: { instalacao: d.instalacao || d.c_instalacao || "telhado", km: n(d.c_km), viagens_eng: n(d.c_viagens_eng), viagens_equipe: n(d.c_viagens_equipe), pessoas: n(d.c_pessoas), dias: n(d.c_dias), margem_kwp: n(d.c_margem_kwp), faturamento: d.c_faturamento || "p3", imp_total: n(d.c_imp_total), imp_servico: n(d.c_imp_servico) } };
     S.aplicarModeloSolar(o);
     for (const [k, nome] of CUSTO_MANUAL) { const it = o.itens.find(i => i.item === nome); if (it) { it.qtd = 1; it.unit = n(d[k]); } }
     if (tipo === "bateria" && n(d.c_bateria)) o.itens.splice(1, 0, { categoria: "Equipamentos", item: "Baterias e inversor híbrido", unid: "un", qtd: 1, unit: n(d.c_bateria), imp: false, direto: true });
@@ -254,7 +260,7 @@
         <div class="card lim"><small>Economia projetada</small><b class="big">${brl(c.mensal)}</b><span>por mês · cerca de ${Math.round(c.pct * 100)}%</span></div>
       </div>
       <div class="grid g2" style="margin-top:28px;gap:40px">
-        <div><h3>Energia</h3><ul class="lista"><li>Consumo médio: <b>${num(c.consumo)} kWh/mês</b></li><li>Geração projetada: <b>${num(c.geracao)} kWh/mês</b></li><li>Cobertura do consumo: <b>${Math.round(c.cobertura * 100)}%</b></li></ul></div>
+        <div><h3>Energia</h3><ul class="lista"><li>Consumo médio: <b>${num(c.consumo)} kWh/mês</b></li><li>Geração projetada: <b>${num(c.geracao)} kWh/mês</b></li><li>Cobertura do consumo: <b>${Math.round(c.cobertura * 100)}%</b></li>${c.autoconsumo ? `<li>Consumido na hora (simultaneidade ${num(d.simultaneidade)}%): <b>${num(c.autoconsumo)} kWh/mês</b></li>` : ""}</ul></div>
         <div><h3>Projeto</h3><ul class="lista"><li>Potência do sistema: <b>${num(c.kwp, 2)} kWp</b></li><li>${esc(`${num(d.qtd_modulos)} módulos ${d.modulo_marca} ${num(d.modulo_w)} W`)}</li><li>${esc(bat ? d.inv_hibrido : d.inversor)}</li></ul></div>
       </div>${pe(d)}</section>`);
     pgs.push(`<section class="slide">${topo("Retorno do investimento", "Retorno ao longo dos anos")}
@@ -574,6 +580,7 @@
     if (id === "nova") {
       if (!TIPOS[tipoNovo]) return window.P3.go("#/propostas");
       p = { tipo: tipoNovo, status: "rascunho", dados: novaDados(tipoNovo) };
+      if (tipoNovo !== "ev" && tipoNovo !== "manutencao") Object.assign(p.dados, { simultaneidade: 30, fator_kwh_kwp: GER_PADRAO.telhado });
     } else {
       main.innerHTML = `<div class="loading">Abrindo a proposta…</div>`;
       try { p = await api(`propostas/${encodeURIComponent(id)}`); } catch (e) { main.innerHTML = `<div class="note bad">${esc(e.message)}</div>`; return; }
@@ -596,12 +603,13 @@
       ${img("logo_cliente", "Logo do cliente", "Aparece na capa (opcional).")}${img("foto_capa", "Foto da capa", "Foto do local ou do projeto (opcional).")}
       ${campo("fechamento", "Frase final (opcional)", "area", 2)}`);
     const solar = () => bloco("Consumo e conta", `
+        <div class="wide"><label class="btn sm" for="prFatura">Ler fatura da Copel (PDF)</label><input type="file" id="prFatura" accept="application/pdf,.pdf" hidden> <span class="muted" id="prFaturaMsg" style="font-size:12.5px">${esc(d.fatura_info || "Puxa o consumo médio dos 12 meses, a tarifa real e o tipo de ligação.")}</span></div>
         ${campo("consumo_kwh", "Consumo médio (kWh/mês)", "num")}${campo("conta_atual", "Conta atual (R$/mês)", "num")}
         ${escolha("fase", "Ligação", [["mono", "Monofásica (30 kWh)"], ["bi", "Bifásica (50 kWh)"], ["tri", "Trifásica (100 kWh)"]])}
         ${campo("fio_b_pct", "Fio B e encargos sobre o compensado (%)", "num")}
-        ${campo("custo_com_solar", "Custo com solar (R$/mês) — vazio = calcular", "num")}`)
+        ${campo("simultaneidade", "Simultaneidade (% da geração usada na hora)", "num")}${campo("custo_com_solar", "Custo com solar (R$/mês) — vazio = calcular", "num")}`)
       + bloco("Sistema", `
-        ${campo("qtd_modulos", "Quantidade de módulos", "num")}${campo("modulo_w", "Potência do módulo (W)", "num")}${campo("modulo_marca", "Marca do módulo")}
+        ${escolha("instalacao", "Instalação", [["telhado", "Telhado"], ["solo", "Solo"]])}${campo("qtd_modulos", "Quantidade de módulos", "num")}${campo("modulo_w", "Potência do módulo (W)", "num")}${campo("modulo_marca", "Marca do módulo")}
         ${p.tipo === "bateria" ? campo("inv_hibrido", "Inversor híbrido") : campo("inversor", "Inversor")}
         <label class="f">Geração (kWh por kWp ao mês)<span style="display:flex;gap:6px"><input data-k="fator_kwh_kwp" inputmode="decimal" value="${esc(String(d.fator_kwh_kwp).replace(".", ","))}"><button type="button" class="btn sm" id="prGeracao" title="Calcula pela cidade (dados de satélite)">Pela cidade</button></span></label>
         ${campo("estrutura", "Estrutura")}${campo("garantia_modulo", "Garantia dos módulos", "area", 2)}${campo("garantia_inversor", "Garantia do inversor", "area", 2)}
@@ -610,7 +618,7 @@
         ${campo("bat_qtd", "Quantidade de baterias", "num")}${campo("bat_kwh", "Capacidade de cada (kWh)", "num")}${campo("bat_modelo", "Modelo")}
         ${campo("carga_critica_kw", "Cargas essenciais no backup (kW)", "num")}${campo("bat_garantia", "Garantia das baterias")}${campo("valor_bateria", "Valor das baterias (R$)", "num")}`) : "")
       + bloco("Custo da obra (planilha solar · não sai no PDF)", `
-        ${escolha("c_instalacao", "Instalação", [["telhado", "Telhado"], ["solo", "Solo"]])}${campo("c_km", "Distância até a obra (km, ida)", "num")}
+        ${campo("c_km", "Distância até a obra (km, ida)", "num")}
         ${campo("c_viagens_eng", "Viagens da engenharia", "num")}${campo("c_viagens_equipe", "Viagens da equipe", "num")}${campo("c_pessoas", "Pessoas na equipe", "num")}${campo("c_dias", "Dias de obra (hospedagem)", "num")}
         ${campo("c_kit", "Custo do kit fotovoltaico (R$)", "num")}${p.tipo === "bateria" ? campo("c_bateria", "Custo das baterias e inversor híbrido (R$)", "num") : ""}${campo("c_estrutura", "Estrutura (R$)", "num")}${campo("c_transformador", "Transformador (R$)", "num")}
         ${campo("c_padrao", "Padrão de entrada (R$)", "num")}${campo("c_descarregamento", "Descarregamento (R$)", "num")}${campo("c_conexao", "Conexão (R$)", "num")}${campo("c_comissao", "Comissão (R$)", "num")}${campo("c_terrenista", "Terrenista (R$)", "num")}
@@ -691,7 +699,7 @@
     };
     const NUMS = new Set(["validade_dias", "consumo_kwh", "conta_atual", "fio_b_pct", "qtd_modulos", "modulo_w", "fator_kwh_kwp", "valor_equip", "valor_impl", "juros_parcela", "reajuste", "degradacao", "anos", "bat_qtd", "bat_kwh", "carga_critica_kw", "valor_bateria", "qtd", "potencia_kw", "software_mensal", "manutencao_mensal",
       "c_km", "c_viagens_eng", "c_viagens_equipe", "c_pessoas", "c_dias", "c_margem_kwp", "c_imp_total", "c_imp_servico", "c_kit", "c_bateria", "c_estrutura", "c_transformador", "c_padrao", "c_descarregamento", "c_conexao", "c_comissao", "c_terrenista",
-      "kwp", "km", "beneficiarias", "juros_equip", "juros_bat", "juros_impl", "garantia_meses", "fiscal_pct", "markup_3x", "markup_anual", "markup_avulso", "tarifa_kwh"]);
+      "kwp", "km", "beneficiarias", "simultaneidade", "juros_equip", "juros_bat", "juros_impl", "garantia_meses", "fiscal_pct", "markup_3x", "markup_anual", "markup_avulso", "tarifa_kwh"]);
     const OPCIONAL = new Set(["avista", "custo_com_solar", "modulos", "avista_equip", "avista_bat", "avista_impl"]);
     $$("[data-k]", main).forEach(el => {
       el.oninput = el.onchange = () => {
@@ -699,6 +707,7 @@
         d[k] = el.type === "checkbox" ? el.checked : NUMS.has(k) ? n(el.value) : OPCIONAL.has(k) ? (el.value.trim() === "" ? "" : n(el.value)) : el.value;
         sujo = true; atualizar();
         if (k === "pag_separado" && p.tipo === "ev") desenharInv();
+        if (k === "instalacao") ajustarGeracao();
       };
     });
     $$("[data-img]", main).forEach(el => el.onchange = async () => {
@@ -734,15 +743,51 @@
       for (const k of ["valor_equip", "valor_impl", "valor_bateria"]) { const el = $(`[data-k="${k}"]`, main); if (el) el.value = String(d[k] ?? "").replace(".", ","); }
       sujo = true; atualizar(); toast(`Preço pela planilha: ${brl(os.sugerido)}.`, "ok");
     };
+    // Telhado × solo: usa a geração da cidade (se já buscou) ou o padrão da planilha da P3.
+    const ajustarGeracao = () => {
+      const k = d.instalacao === "solo" ? "solo" : "telhado", outra = k === "solo" ? "telhado" : "solo";
+      const daCidade = n(d["ger_" + k]);
+      if (daCidade) d.fator_kwh_kwp = daCidade;
+      else if (!n(d.fator_kwh_kwp) || [105, GER_PADRAO[outra]].includes(n(d.fator_kwh_kwp))) d.fator_kwh_kwp = GER_PADRAO[k];
+      const el = $('[data-k="fator_kwh_kwp"]', main); if (el) el.value = String(d.fator_kwh_kwp).replace(".", ",");
+      atualizar();
+    };
+    // Fatura da Copel: consumo médio do histórico (12 meses), tarifa real (conta sem créditos ÷ kWh) e tipo de ligação.
+    const fat = $("#prFatura", main);
+    if (fat) fat.onchange = async e => {
+      const arq = e.target.files[0]; e.target.value = ""; if (!arq) return;
+      const msg = $("#prFaturaMsg", main); msg.textContent = "Lendo a fatura…";
+      try {
+        const r = await api("ler-pdf", { method: "POST", raw: true, body: arq, headers: { "X-Nome": encodeURIComponent(arq.name || "fatura.pdf"), "X-So-Ler": "1" } });
+        if (!r.ok) throw new Error(r.erro || "Não consegui ler a fatura.");
+        const f = r.campos || {};
+        const hist = (f.historico || []).map(h => n(h.kwh)).filter(x => x > 0);
+        const consumo = hist.length >= 3 ? Math.round(hist.reduce((a, b) => a + b, 0) / hist.length) : n(f.consumoKwh);
+        if (!consumo) throw new Error("A fatura não trouxe o consumo em kWh.");
+        const semCreditos = n(f.semUsina) || n(f.total);
+        const tarifa = n(f.consumoKwh) && semCreditos ? semCreditos / n(f.consumoKwh) : 0;
+        d.consumo_kwh = consumo;
+        if (tarifa) d.conta_atual = r2(consumo * tarifa);
+        const fase = { monofasico: "mono", bifasico: "bi", trifasico: "tri" }[f.fase]; if (fase) d.fase = fase;
+        if (!d.cliente && f.titular) d.cliente = f.titular;
+        if ((!d.cidade || d.cidade === "Londrina") && f.cidade) d.cidade = f.cidade;
+        d.fatura_info = `Fatura ${f.referencia || ""}${f.uc || f.ucConces ? ` · UC ${f.uc || f.ucConces}` : ""}: consumo médio ${num(consumo)} kWh${hist.length >= 3 ? ` (${hist.length} meses)` : ""}${tarifa ? ` · tarifa R$ ${num(tarifa, 3)}/kWh com impostos` : ""}.`;
+        for (const k of ["consumo_kwh", "conta_atual", "cliente", "cidade"]) { const el = $(`[data-k="${k}"]`, main); if (el) el.value = /kwh|conta/.test(k) ? String(d[k]).replace(".", ",") : d[k]; }
+        const fe = $('[data-k="fase"]', main); if (fe) fe.value = d.fase;
+        msg.textContent = d.fatura_info; sujo = true; atualizar(); toast("Fatura lida. Confira os números.", "ok");
+      } catch (err) { msg.textContent = err.message; toast(err.message, "bad"); }
+    };
     const g = $("#prGeracao", main);
     if (g) g.onclick = async () => {
       if (!d.cidade) return toast("Preencha a cidade.", "bad");
       g.disabled = true; g.textContent = "Buscando…";
       try {
         const r = await api(`geracao-local?local=${encodeURIComponent(d.cidade)}&perdas=14`);
-        d.fator_kwh_kwp = Math.round(r.anual / 12 * 10) / 10;
+        d.ger_telhado = Math.round((r.telhado ? r.telhado.anual : r.anual * 1300 / 1450) / 12 * 10) / 10;
+        d.ger_solo = Math.round((r.solo ? r.solo.anual : r.anual) / 12 * 10) / 10;
+        d.fator_kwh_kwp = d.instalacao === "solo" ? d.ger_solo : d.ger_telhado;
         $('[data-k="fator_kwh_kwp"]', main).value = String(d.fator_kwh_kwp).replace(".", ",");
-        toast(`${r.local}: ${num(r.anual)} kWh por kWp ao ano (${num(d.fator_kwh_kwp, 1)} ao mês).`, "ok"); sujo = true; atualizar();
+        toast(`${r.local}: telhado ${num(d.ger_telhado, 1)} e solo ${num(d.ger_solo, 1)} kWh por kWp ao mês. Usando ${d.instalacao === "solo" ? "solo" : "telhado"}.`, "ok"); sujo = true; atualizar();
       } catch (e) { toast(e.message, "bad"); }
       finally { g.disabled = false; g.textContent = "Pela cidade"; }
     };
