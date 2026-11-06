@@ -66,7 +66,8 @@
   const pDados = l => ({ numero: l.numero });
 
   function paginasManutencao(l, d, vend) {
-    const v = V(), titulo = l.tipo === "correcao" ? "Relatório<br>de correção" : "Relatório<br>de manutenção";
+    const v = V(), titulo = d.titulo_capa ? esc(d.titulo_capa) : l.tipo === "correcao" ? "Relatório<br>de correção" : "Relatório<br>de manutenção";
+    const kick = d.titulo_capa || (l.tipo === "correcao" ? "Relatório de correção" : "Relatório de manutenção");
     const pgs = [];
     const stats = [d.kwp && [`${v.numx(n(d.kwp))} kWp`, "Potência do sistema"], d.modulos && [`${num(n(d.modulos))}`, "Módulos"], [v.dataLonga(d.data).replace(/ de \d{4}$/, ""), "Data da visita"]].filter(Boolean);
     pgs.push(v.capa(pDados(l), d, titulo, [d.endereco, d.cidade].filter(Boolean).join(" · ") || "Usina fotovoltaica", stats));
@@ -74,7 +75,7 @@
     if (d.resumo || d.kwp || d.inversor || d.tecnico) pgs.push(`<section class="slide">${v.topo("Resumo", "Visita técnica")}
       <div class="grid g2" style="gap:50px"><div>${d.resumo ? `<p>${esc(d.resumo)}</p>` : ""}<ul class="lista">${secoes.map((s, i) => `<li><b>${i + 1}.</b> ${esc(s.titulo)}</li>`).join("")}</ul></div>
         <div class="grid" style="gap:14px;align-content:start">${[["Cliente", d.cliente], ["Local", [d.endereco, d.cidade].filter(Boolean).join(" · ")], ["Sistema", [d.kwp && `${v.numx(n(d.kwp))} kWp`, d.modulos && `${num(n(d.modulos))} módulos`, d.inversor].filter(Boolean).join(" · ")], ["Data", v.dataLonga(d.data)], ["Responsável técnico", d.tecnico || vend.nome]].filter(x => x[1]).map(([a, b]) => `<div class="card"><small>${esc(a)}</small>${esc(b)}</div>`).join("")}</div></div>${v.pe(d)}</section>`);
-    secoes.forEach((s, i) => pgs.push(`<section class="slide">${v.topo(l.tipo === "correcao" ? "Relatório de correção" : "Relatório de manutenção", `<span class="sec-n">${i + 1}</span>${esc(s.titulo)}`)}
+    secoes.forEach((s, i) => pgs.push(`<section class="slide">${v.topo(kick, `<span class="sec-n">${i + 1}</span>${esc(s.titulo)}`)}
       <div class="grid" style="grid-template-columns:${s.observacao || s.recomendacao ? "1.3fr 1fr" : "1fr"};gap:40px">
         <ul class="lista">${linhas(s.itens).map(x => `<li>${esc(x)}</li>`).join("")}</ul>
         ${s.observacao || s.recomendacao ? `<div class="grid" style="gap:16px;align-content:start">${s.observacao ? `<div class="card"><small>Observação técnica</small>${esc(s.observacao)}</div>` : ""}${s.recomendacao ? `<div class="card lim"><small>Recomendação</small>${esc(s.recomendacao)}</div>` : ""}</div>` : ""}
@@ -171,7 +172,7 @@
     const bloco = (titulo, html, aberto = true) => `<details class="pr-bloco" ${aberto ? "open" : ""}><summary>${titulo}</summary><div class="grid-form">${html}</div></details>`;
     const comum = bloco("Cliente e relatório", `${campo("cliente", "Cliente")}${campo("cidade", "Cidade")}${campo("endereco", "Endereço / local")}${campo("data", "Data", "date")}
       <label class="f">Contato no relatório<select data-k="vendedor">${opts(Object.entries(v.VENDEDORES).map(([k, x]) => [k, x.nome]), d.vendedor)}</select></label>
-      ${l.tipo !== "economia" ? campo("tecnico", "Responsável técnico (vazio = contato)") : ""}`);
+      ${l.tipo !== "economia" ? campo("tecnico", "Responsável técnico (vazio = contato)") + campo("titulo_capa", "Título da capa (opcional, ex.: Relatório técnico de sinistro)") : ""}`);
     const corpo = l.tipo === "economia"
       ? bloco("Período e tarifas", `${campo("periodo", "Período (ex.: 31/12/2025 a 06/01/2026)")}${campo("fontes", "Fontes")}${campo("tar_b", "Tarifa Grupo B (R$/kWh)", "num")}${campo("tar_fp", "Grupo A fora de ponta (R$/kWh)", "num")}${campo("tar_p", "Grupo A ponta (R$/kWh)", "num")}`)
         + bloco("Unidades", `<div class="wide" id="ltUnid"></div>`)
