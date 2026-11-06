@@ -348,6 +348,13 @@
     return pgs;
   }
 
+  // Formas de pagamento da preventiva: o à vista sempre aparece; o parcelado em 3× (padrão) e/ou 12×.
+  function formasManut(d, c) {
+    const f = [{ rot: "À vista", valor: brl(c.avista), sub: "pagamento único", texto: brl(c.avista) }];
+    if (d.pag_3x || !d.pag_12x) f.push({ rot: "Parcelado em 3×", valor: `3× ${brl(c.parcela3)}`, sub: `total de ${brl(c.parcela3 * 3)}`, texto: `3× de ${brl(c.parcela3)}` });
+    if (d.pag_12x) f.push({ rot: "Parcelado em 12×", valor: `12× ${brl(c.parcela12)}`, sub: `total de ${brl(c.parcela12 * 12)}`, texto: `12× de ${brl(c.parcela12)}` });
+    return f;
+  }
   function paginasManut(p, d, c, v) {
     const g = n(d.garantia_meses) || 3, pgs = [];
     pgs.push(capa(p, d, "Manutenção<br>preventiva", `Manutenção inteligente da sua energia solar${d.cidade ? ` · ${d.cidade}` : ""}`,
@@ -377,7 +384,7 @@
         <div class="card"><h3 style="color:var(--ver)">Serviços</h3><ul class="lista">${linhas(d.inclusos).map(l => `<li>${esc(l)}</li>`).join("")}<li>Garantia de ${g} meses na execução dos serviços</li></ul></div>
         <div class="card"><h3 style="color:#a23b2a">Itens exclusos</h3><ul class="lista x">${linhas(d.exclusos).map(l => `<li>${esc(l)}</li>`).join("")}</ul></div>
       </div>${pe(d)}</section>`);
-    const formas = [d.pag_3x && `3× ${brl(c.parcela3)}`, d.pag_12x && `12× ${brl(c.parcela12)}`, d.pag_avista && `à vista ${brl(c.avista)}`].filter(Boolean);
+    const formas = formasManut(d, c);
     pgs.push(`<section class="slide">${topo("Investimento", "Sua manutenção")}
       <div class="grid" style="grid-template-columns:1fr 1.3fr;gap:40px">
         <div class="grid" style="gap:16px;align-content:start">
@@ -386,11 +393,13 @@
           <div class="card"><small>Consultor</small>${esc(v.nome)} · ${esc(v.tel)}</div>
         </div>
         <div><table><thead><tr><th>Serviço</th><th class="n">Investimento</th></tr></thead><tbody>
-          ${d.srv_preventiva ? `<tr><td><b>Manutenção preventiva</b><small>visita anual com check-list, limpeza dos módulos, inversor e estrutura</small></td><td class="n"><b style="font-size:24px">${esc(formas[0] || brl(c.plano))}</b>${formas.length > 1 ? `<small>ou ${esc(formas.slice(1).join(" ou "))}</small>` : ""}</td></tr>` : ""}
+          ${d.srv_preventiva ? `<tr><td><b>Manutenção preventiva</b><small>visita anual com check-list, limpeza dos módulos, inversor e estrutura</small></td><td class="n"><b style="font-size:24px">${brl(c.avista)}</b><small>à vista · ou parcelado (abaixo)</small></td></tr>` : ""}
           ${d.srv_monitoramento ? `<tr><td><b>Monitoramento da geração</b><small>acompanhamento mensal com alertas</small></td><td class="n"><b style="font-size:24px">${brl(c.monitVenda)}/mês</b></td></tr>` : ""}
           ${d.srv_limpeza ? `<tr><td><b>Limpeza dos módulos</b><small>avulsa, ${Math.round(c.mod)} módulos</small></td><td class="n"><b style="font-size:24px">${brl(c.limpezaPreco)}</b></td></tr>` : ""}
           ${d.srv_visita ? `<tr><td><b>Visita técnica / laudo</b><small>avulsa, com relatório</small></td><td class="n"><b style="font-size:24px">${brl(c.visitaPreco)}</b></td></tr>` : ""}
         </tbody></table>
+        ${d.srv_preventiva ? `<h3 style="margin:22px 0 10px;font-size:15px;letter-spacing:.14em;color:var(--mut)">Escolha a forma de pagamento da preventiva</h3>
+        <div class="grid g${formas.length}" style="gap:14px">${formas.map((f, i) => `<div class="card ${i === 0 ? "lim" : ""}"><small>${esc(f.rot)}</small><b class="big" style="white-space:nowrap;font-size:${formas.length > 2 ? 29 : 36}px">${esc(f.valor)}</b><span ${i ? 'class="mut"' : ""}>${esc(f.sub)}</span></div>`).join("")}</div>` : ""}
         <p class="nota">Valores para uma visita por ano. Deslocamentos e limpezas adicionais são orçados à parte.</p></div>
       </div>${pe(d)}</section>`);
     pgs.push(contato(d, v, ["Aprovação da proposta", "Agendamento da visita técnica", "Execução da manutenção com check-list", "Relatório do sistema e próxima visita"], "Seu sistema protegido e gerando o máximo, todos os anos."));
@@ -409,26 +418,47 @@
       const bat = p.tipo === "bateria", capKwh = n(d.bat_kwh) * (n(d.bat_qtd) || 1);
       const parc = c.parcelas.length ? c.parcelas[c.parcelas.length - 1] : null;
       msg.push(`Segue em anexo a proposta${nr} do sistema de energia solar${bat ? " com baterias" : ""}${para} ☀️`, "",
-        `• Sistema de ${num(c.kwp, 2)} kWp, gerando cerca de ${num(c.geracao)} kWh por mês`,
-        `• Economia estimada de ${brl(c.mensal)} por mês (cerca de ${Math.round(c.pct * 100)}% da conta de luz)`);
-      if (bat) msg.push(`• ${numx(capKwh)} kWh em baterias: mantêm as cargas essenciais por cerca de ${num(c.autonomia, 1)} h quando falta energia`);
-      msg.push(`• Investimento de ${brl(c.investimento)}${c.avista < c.investimento ? ` (à vista ${brl(c.avista)})` : ""}${parc ? `, ou em até ${parc.q}× de ${brl(parc.valor)}` : ""}`);
-      if (c.payback != null) msg.push(`• O investimento se paga em cerca de ${num(c.payback, 1)} anos, e em ${c.anos} anos a economia passa de ${brl(c.total)}`);
+        `*O sistema*`,
+        `• ${num(c.kwp, 2)} kWp: ${num(d.qtd_modulos)} módulos ${d.modulo_marca} de ${num(d.modulo_w)} W e ${bat ? d.inv_hibrido : d.inversor}`,
+        `• Geração média de cerca de ${num(c.geracao)} kWh por mês (${Math.round(c.cobertura * 100)}% do seu consumo de ${num(c.consumo)} kWh)`);
+      if (bat) msg.push(`• ${numx(capKwh)} kWh em baterias (${d.bat_modelo}): quando a energia cai, mantêm as cargas essenciais ligadas por cerca de ${num(c.autonomia, 1)} h`);
+      msg.push("", `*O que está incluso*`,
+        `• Projeto e homologação na concessionária`,
+        `• Equipamentos, estrutura${d.estrutura ? ` (${String(d.estrutura).toLowerCase()})` : ""} e materiais`,
+        `• Instalação completa, testes e ligação do sistema`,
+        `• Garantia dos módulos: ${d.garantia_modulo}`,
+        `• Garantia do inversor: ${d.garantia_inversor}`);
+      if (d.prazo) msg.push(`• Prazo de execução: ${d.prazo}`);
+      msg.push("", `*Economia e investimento*`,
+        `• Conta de luz de ${brl(c.conta)} para cerca de ${brl(c.comSolar)} por mês: economia de ${brl(c.mensal)} (${Math.round(c.pct * 100)}%)`,
+        `• Investimento de ${brl(c.investimento)}${c.avista < c.investimento ? ` (à vista ${brl(c.avista)})` : ""}${parc ? `, ou em até ${parc.q}× de ${brl(parc.valor)}` : ""}`);
+      if (c.payback != null) msg.push(`• O sistema se paga em cerca de ${num(c.payback, 1)} anos, e em ${c.anos} anos a economia passa de ${brl(c.total)}`);
     } else if (p.tipo === "ev") {
+      const q = c.qtd, escopo = [`${q} ${q > 1 ? "carregadores" : "carregador"} ${d.corrente} de ${num(d.potencia_kw)} kW${d.modelo ? ` (${d.modelo})` : ""}`];
+      if (d.clamper) escopo.push(`${q} Mobi Smart Clamper`);
+      if (d.quadro) escopo.push(`Quadro dedicado com proteção para ${q > 1 ? "os carregadores" : "o carregador"}`);
+      if (d.desligamento) escopo.push(`${q} ${q > 1 ? "botões" : "botão"} de desligamento rápido (emergência)`);
+      escopo.push(...linhas(d.escopo_extra), "Montagem, ligação elétrica, configuração, testes e comissionamento");
       msg.push(`Segue em anexo a proposta${nr} de implantação de recarga para veículos elétricos${para} ⚡`, "",
-        `• ${c.qtd} ${c.qtd > 1 ? "pontos" : "ponto"} de recarga ${d.corrente} de ${num(d.potencia_kw)} kW${d.modelo ? ` (${d.modelo})` : ""}, com infraestrutura elétrica dedicada`,
-        `• Investimento de ${brl(c.investimento)}`);
-      if (d.operacao) msg.push(`• Operação e cobrança pelo aplicativo (cartão e Pix), com custo fixo de ${brl(n(d.manutencao_mensal) ? c.fixoCom : c.fixoSem)} por mês${n(d.manutencao_mensal) && d.manutencao_opcional ? ", já com a manutenção preventiva (opcional)" : ""}`);
-      if (linhas(d.pagamento).length) msg.push(`• Pagamento: ${linhas(d.pagamento).join("; ")}`);
+        `*O que está incluso*`, ...escopo.map(x => `• ${x}`));
+      if (d.conexao) msg.push(`• ${d.conexao}`);
+      if (d.operacao) msg.push("", `*Operação pela P3*`,
+        `• Gestão dos carregadores, monitoramento em tempo real e suporte técnico`,
+        `• Cobrança automática pelo aplicativo, com cartão e Pix, e relatórios de uso e receita`,
+        `• Custo fixo de ${brl(c.fixoSem)} por mês (software)${n(d.manutencao_mensal) ? ` + ${brl(c.manut)} de manutenção preventiva${d.manutencao_opcional ? " (opcional)" : ""}` : ""}`);
+      if (d.operacao && linhas(d.variaveis).length) msg.push(...linhas(d.variaveis).map(x => `• ${x}`));
+      msg.push("", `*Investimento*`, `• ${brl(c.investimento)} na implantação`);
+      if (linhas(d.pagamento).length) msg.push(...linhas(d.pagamento).map(x => `• ${x}`));
     } else if (p.tipo === "manutencao") {
-      const formas = [d.pag_3x && `3× de ${brl(c.parcela3)}`, d.pag_12x && `12× de ${brl(c.parcela12)}`, d.pag_avista && `${brl(c.avista)} à vista`].filter(Boolean);
-      msg.push(`Segue em anexo a proposta${nr} de manutenção${para}, para o sistema de ${numx(c.kwp)} kWp 🔧`, "");
-      if (d.srv_preventiva) msg.push(`• Manutenção preventiva anual: visita técnica com check-list, limpeza dos módulos e do inversor e revisão da estrutura e dos terminais`, `• Investimento: ${formas.join(" ou ") || brl(c.plano)}`);
-      if (d.srv_monitoramento) msg.push(`• Monitoramento da geração: ${brl(c.monitVenda)} por mês`);
-      if (d.srv_limpeza) msg.push(`• Limpeza dos módulos (avulsa): ${brl(c.limpezaPreco)}`);
-      if (d.srv_visita) msg.push(`• Visita técnica / laudo (avulsa): ${brl(c.visitaPreco)}`);
-      msg.push(`• Garantia de ${n(d.garantia_meses) || 3} meses nos serviços`);
-      if (d.srv_preventiva && c.economiaAnual) msg.push("", `O sistema economiza cerca de ${brl(c.economiaAnual)} por ano. A manutenção mantém essa economia e evita paradas e custos inesperados.`);
+      msg.push(`Segue em anexo a proposta${nr} de manutenção${para}, para o sistema de ${numx(c.kwp)} kWp (${Math.round(c.mod)} módulos) 🔧`, "");
+      if (d.srv_preventiva) {
+        msg.push(`*Manutenção preventiva (1 visita por ano)*`, ...linhas(d.inclusos).map(x => `• ${x}`), `• Garantia de ${n(d.garantia_meses) || 3} meses nos serviços`, "",
+          `*Investimento da preventiva (escolha a forma)*`, ...formasManut(d, c).map(f => `• ${f.rot}: ${f.texto}`));
+      }
+      const extras = [d.srv_monitoramento && `• Monitoramento da geração, com alerta quando o sistema produz menos: ${brl(c.monitVenda)} por mês`, d.srv_limpeza && `• Limpeza dos módulos (avulsa): ${brl(c.limpezaPreco)}`, d.srv_visita && `• Visita técnica / laudo com relatório (avulsa): ${brl(c.visitaPreco)}`].filter(Boolean);
+      if (extras.length) msg.push("", `*Outros serviços*`, ...extras);
+      if (linhas(d.exclusos).length) msg.push("", `Não inclui: ${linhas(d.exclusos).map(x => x.charAt(0).toLowerCase() + x.slice(1)).join("; ")}.`);
+      if (d.srv_preventiva && c.economiaAnual) msg.push("", `O sistema economiza cerca de ${brl(c.economiaAnual)} por ano. A manutenção mantém essa economia, evita paradas e prolonga a vida útil dos equipamentos.`);
     }
     msg.push("", `A proposta vale até ${validade}. Qualquer dúvida, é só me chamar por aqui. Posso te ligar para explicar os detalhes?`, "", `${v.nome} · P3 Energy`, v.tel);
     return msg.join("\n");
@@ -558,7 +588,7 @@
       + bloco("Serviços e pagamento", `
         ${campo("srv_preventiva", "Manutenção preventiva anual", "check")}${campo("srv_monitoramento", "Monitoramento mensal", "check")}
         ${campo("srv_limpeza", "Limpeza dos módulos (avulsa)", "check")}${campo("srv_visita", "Visita técnica / laudo (avulsa)", "check")}
-        ${campo("pag_3x", "Preventiva em 3×", "check")}${campo("pag_12x", "Preventiva em 12×", "check")}${campo("pag_avista", "Preventiva à vista (plano anual)", "check")}
+        ${campo("pag_3x", "Oferecer parcelado em 3×", "check")}${campo("pag_12x", "Oferecer parcelado em 12×", "check")}<p class="muted wide" style="margin:0;font-size:12px">O preço à vista sempre aparece na proposta, ao lado do parcelado.</p>
         ${campo("garantia_meses", "Garantia dos serviços (meses)", "num")}`)
       + bloco("Calculadora (planilha de O&M · não sai no PDF)", `
         ${campo("fiscal_pct", "Custo fiscal (%)", "num")}${campo("markup_3x", "Margem no parcelado (%)", "num")}${campo("markup_anual", "Margem à vista / plano anual (%)", "num")}
