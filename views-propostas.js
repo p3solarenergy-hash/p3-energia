@@ -34,6 +34,10 @@
       // Telhado × solo geram diferente (planilha da P3: 1.300 e 1.450 kWh por kWp ao ano; pela cidade, PVGIS de cada montagem).
       // Simultaneidade: parte da geração consumida na hora, que não passa pela rede nem paga Fio B.
       instalacao: "telhado", simultaneidade: 0, ger_telhado: "", ger_solo: "", fatura_info: "",
+      // Economia pela Lei 14.300 (eco_v2): tarifas da ANEEL por distribuidora/subgrupo, Grupo A ou B, Fio B escalonado.
+      eco_v2: false, mostrar_economia: true, grupo: "B", distribuidora: "COPEL-DIS", subgrupo: "B1", subgrupo_a: "A4", modalidade: "Verde", icms_pct: 19, pis_cofins_pct: 5, aneel: null,
+      tarifa_kwh: "", fio_b_kwh: "", fio_b_parcela: 28, ilum_publica: 0, regra: "gd2", ano_inicio: "", fatura_uso: "tudo", fat: null,
+      demanda_kw: 0, tar_demanda: "", consumo_fp: 0, consumo_p: 0, tar_fp: "", tar_p: "", fio_fp: "", fio_p: "", te_fp: "", te_p: "",
       garantia_modulo: "12 anos contra defeito de fabricação e 25 anos de garantia de performance", garantia_inversor: "10 anos contra defeito de fabricação",
       valor_equip: 0, valor_impl: 0, avista: "", parcelas: "3, 6, 12", juros_parcela: 3, prazo: "2 meses",
       // Pagamento separado (como na proposta da Multicampo): cada parte com seu à vista e seu parcelado, e tudo junto.
@@ -78,7 +82,86 @@
   // ───────── cálculos ─────────
   // Conta com solar: o que não é compensado paga a tarifa cheia (inclui a taxa mínima da ligação); o compensado
   // ainda paga o fio B e encargos (Lei 14.300). Ex. Multicampo: 1.244 kWh, R$ 1.287, trifásico, 14% → ~R$ 269.
+  // ───────── economia pela Lei 14.300/2022 e REN ANEEL 1.059/2023 ─────────
+  // Fio B (TUSD de remuneração da rede) sobre a energia COMPENSADA, em escalonamento para GD II (conexão a partir de 2023):
+  // 15% em 2023, 30% em 2024, 45% em 2025, 60% em 2026, 75% em 2027, 90% em 2028 e 100% a partir de 2029.
+  // GD I (direito adquirido, protocolado até 07/01/2023) não paga Fio B sobre o compensado até 2045.
+  const TRANSICAO = { 2023: 0.15, 2024: 0.30, 2025: 0.45, 2026: 0.60, 2027: 0.75, 2028: 0.90 };
+  const fatorFioB = (ano, regra) => regra === "gd1" || ano < 2023 ? 0 : ano >= 2029 ? 1 : TRANSICAO[ano];
+  const vazioOuE = (v, padrao) => v === "" || v == null ? padrao : n(v);
+  // Tarifas com impostos (a ANEEL publica sem ICMS e PIS/COFINS): valor ÷ (1 − ICMS − PIS/COFINS).
+  function tarifasEco(d) {
+    const imp = 1 - (n(d.icms_pct) + n(d.pis_cofins_pct)) / 100, ci = v => imp > 0 ? v / imp : v;
+    const a = d.aneel && d.aneel.postos ? d.aneel : null, P = a ? a.postos : {};
+    const consumoB = n(d.consumo_kwh), ilum = n(d.ilum_publica);
+    if (d.grupo === "A") {
+      const fp = P.foraPonta || {}, pt = P.ponta || {};
+      return {
+        tarFp: vazioOuE(d.tar_fp, ci(n(fp.te) + n(fp.tusd))), tarP: vazioOuE(d.tar_p, ci(n(pt.te) + n(pt.tusd))),
+        fioFp: vazioOuE(d.fio_fp, ci(n(fp.fioB))), fioP: vazioOuE(d.fio_p, ci(n(pt.fioB))),
+        teFp: vazioOuE(d.te_fp, n(fp.te)), teP: vazioOuE(d.te_p, n(pt.te)),
+        tarDem: vazioOuE(d.tar_demanda, ci(n(a && a.demanda))), ilum
+      };
+    }
+    const u = P.unico || {};
+    const tar = vazioOuE(d.tarifa_kwh, a ? ci(n(u.te) + n(u.tusd)) : consumoB ? Math.max(0, n(d.conta_atual) - ilum) / consumoB : 0);
+    const fio = vazioOuE(d.fio_b_kwh, a && u.fioB != null ? ci(n(u.fioB)) : tar * (n(d.fio_b_parcela) || 28) / 100);
+    return { tar, fio, ilum };
+  }
+  // Conta de um mês no ano k (1 = primeiro ano), com e sem o sistema.
+  function contaMes(d, t, geracaoMes, k, ano0) {
+    const reaj = Math.pow(1 + n(d.reajuste) / 100, k - 1), ger = geracaoMes * Math.pow(1 - n(d.degradacao) / 100, k - 1);
+    const s = n(d.simultaneidade) / 100, fat = fatorFioB(ano0 + k - 1, d.regra), ilum = t.ilum * reaj;
+    if (d.grupo === "A") {
+      const cfp = n(d.consumo_fp), cp = n(d.consumo_p), dem = n(d.demanda_kw) * t.tarDem * reaj;
+      const auto = Math.min(ger * s, cfp), redeFp = cfp - auto, inj = ger - auto;
+      const compFp = Math.min(inj, redeFp), sobra1 = inj - compFp;
+      const ajuste = t.teP ? t.teFp / t.teP : 1; // 1 kWh fora de ponta vale "ajuste" kWh na ponta (fator de ajuste da REN 1.059)
+      const compP = Math.min(cp, sobra1 * ajuste), sobra = Math.max(0, sobra1 - (ajuste ? compP / ajuste : 0));
+      const energia = ((redeFp - compFp) * t.tarFp + (cp - compP) * t.tarP) * reaj;
+      const fio = (compFp * t.fioFp + compP * t.fioP) * fat * reaj;
+      const sem = dem + (cfp * t.tarFp + cp * t.tarP) * reaj + ilum, com = dem + energia + fio + ilum;
+      return { sem, com, auto, comp: compFp + compP, compFp, compP, naoComp: (redeFp - compFp) + (cp - compP), sobra, energia, fio, dem, ilum, minimo: 0, minimoAplicado: false, fat, ajuste };
+    }
+    const consumo = n(d.consumo_kwh), disp = DISPONIBILIDADE[d.fase] || 50;
+    const auto = Math.min(ger * s, consumo), rede = consumo - auto, inj = ger - auto;
+    const comp = Math.min(inj, rede), naoComp = rede - comp, sobra = Math.max(0, inj - rede);
+    const energia = naoComp * t.tar * reaj, fio = comp * t.fio * fat * reaj, minimo = disp * t.tar * reaj;
+    // Sem cobrança em duplicidade: paga o maior entre o mínimo da ligação e (energia não compensada + Fio B).
+    const minimoAplicado = minimo > energia + fio;
+    const sem = consumo * t.tar * reaj + ilum, com = Math.max(energia + fio, minimo) + ilum;
+    return { sem, com, auto, comp, naoComp, sobra, energia, fio, minimo, minimoAplicado, ilum, dem: 0, fat, disp };
+  }
   function calcSolar(d, tipo) {
+    if (!d.eco_v2) return calcSolarAntigo(d, tipo);
+    const kwp = r2(n(d.qtd_modulos) * n(d.modulo_w) / 1000);
+    const geracao = Math.round(kwp * n(d.fator_kwh_kwp));
+    const consumo = d.grupo === "A" ? n(d.consumo_fp) + n(d.consumo_p) : n(d.consumo_kwh);
+    const t = tarifasEco(d), ano0 = n(d.ano_inicio) || new Date().getFullYear();
+    const m1 = contaMes(d, t, geracao, 1, ano0);
+    const conta = r2(m1.sem);
+    const manual = d.custo_com_solar !== "" && d.custo_com_solar != null;
+    const comSolar = manual ? n(d.custo_com_solar) : r2(m1.com);
+    const mensal = r2(Math.max(0, conta - comSolar));
+    const investimento = r2(n(d.valor_equip) + n(d.valor_impl) + (tipo === "bateria" ? n(d.valor_bateria) : 0));
+    const anos = Math.max(5, Math.min(30, n(d.anos) || 25));
+    const ajusteManual = manual ? comSolar - m1.com : 0;
+    const porAno = []; let acum = 0, payback = null;
+    for (let k = 1; k <= anos; k++) {
+      const mk = contaMes(d, t, geracao, k, ano0);
+      const e = r2(Math.max(0, mk.sem - (mk.com + ajusteManual)) * 12);
+      const antes = acum; acum = r2(acum + e);
+      if (payback == null && investimento > 0 && e > 0 && acum >= investimento) payback = (k - 1) + (investimento - antes) / e;
+      porAno.push({ ano: k, anoCal: ano0 + k - 1, economia: e, acumulado: acum, fat: mk.fat });
+    }
+    const soma = k => r2(porAno.slice(0, k).reduce((s, x) => s + x.economia, 0));
+    const avista = d.avista !== "" && d.avista != null ? n(d.avista) : investimento;
+    const parcelas = String(d.parcelas || "").split(/[,;\s]+/).map(Number).filter(x => x > 1).map(q => ({ q, valor: r2(investimento * (1 + n(d.juros_parcela) / 100) / q) }));
+    const autonomia = n(d.carga_critica_kw) ? r2(n(d.bat_kwh) * (n(d.bat_qtd) || 1) * 0.9 / n(d.carga_critica_kw)) : 0;
+    return { eco: true, kwp, geracao, consumo, conta, tarifa: d.grupo === "A" ? t.tarFp : t.tar, t, m1, ano0, autoconsumo: Math.round(m1.auto), compensado: Math.round(m1.comp),
+      comSolar, estimado: r2(m1.com), mensal, pct: conta ? mensal / conta : 0, investimento, porAno, ano1: soma(1), ano5: soma(5), ano20: soma(Math.min(20, anos)), total: soma(anos), anos, payback, avista, parcelas, autonomia, cobertura: consumo ? geracao / consumo : 0 };
+  }
+  function calcSolarAntigo(d, tipo) {
     const kwp = r2(n(d.qtd_modulos) * n(d.modulo_w) / 1000);
     const geracao = Math.round(kwp * n(d.fator_kwh_kwp));
     const consumo = n(d.consumo_kwh), conta = n(d.conta_atual);
@@ -247,13 +330,32 @@
     return `<svg viewBox="0 -10 ${W} ${H + 40}" width="100%" height="${H + 40}" role="img" aria-label="Economia acumulada ao longo dos anos">${barras}${inv}</svg>`;
   }
 
+  // Como fica a conta com solar no 1º ano (Lei 14.300 / REN 1.059), linha a linha.
+  function composicaoConta(d, c) {
+    const m = c.m1, linhas = [];
+    if (d.grupo === "A") {
+      linhas.push(["Demanda contratada", `${numx(d.demanda_kw)} kW`, m.dem]);
+      linhas.push(["Energia da rede não compensada", `${num(m.naoComp)} kWh`, m.energia]);
+      linhas.push([`Fio B sobre a energia compensada (${Math.round(m.fat * 100)}% em ${c.ano0})`, `${num(m.comp)} kWh`, m.fio]);
+    } else if (m.minimoAplicado) {
+      linhas.push(["Mínimo da ligação (custo de disponibilidade)", `${num(m.disp)} kWh`, m.minimo]);
+    } else {
+      linhas.push(["Energia da rede não compensada", `${num(m.naoComp)} kWh`, m.energia]);
+      linhas.push([`Fio B sobre a energia compensada (${Math.round(m.fat * 100)}% em ${c.ano0})`, `${num(m.comp)} kWh`, m.fio]);
+    }
+    if (m.ilum) linhas.push(["Iluminação pública", "", m.ilum]);
+    const ag = d.aneel && d.aneel.agente ? `${d.aneel.agente} ${d.aneel.subgrupo}${d.grupo === "A" ? " " + d.aneel.modalidade : ""}` : "";
+    return `<div><h3>Conta com solar · 1º ano</h3><table style="font-size:16px"><tbody>${linhas.map(([a, b, x]) => `<tr><td style="padding:8px 10px">${esc(a)}${b ? `<small>${esc(b)}</small>` : ""}</td><td class="n" style="padding:8px 10px">${brl(x)}</td></tr>`).join("")}
+      <tr class="tot"><td style="padding:9px 10px">Total por mês</td><td class="n" style="padding:9px 10px">${brl(c.estimado)}</td></tr></tbody></table>
+      <p class="nota" style="font-size:12.5px;margin-top:8px">Lei 14.300/2022 e REN ANEEL 1.059/2023${d.regra === "gd1" ? " (GD I: sem Fio B sobre o compensado)" : ": Fio B escalonado sobre a energia compensada"}; o mínimo da ligação não é cobrado em duplicidade.${m.sobra > 1 ? ` Sobram cerca de ${num(m.sobra)} kWh/mês em créditos (válidos por 60 meses).` : ""}${ag ? ` Tarifas: ${esc(ag)} (ANEEL), com ICMS ${num(d.icms_pct)}% e PIS/COFINS ${num(d.pis_cofins_pct)}%.` : ""}</p></div>`;
+  }
   function paginasSolar(p, d, c, v) {
     const bat = p.tipo === "bateria", capKwh = n(d.bat_kwh) * (n(d.bat_qtd) || 1);
     const pgs = [];
     pgs.push(capa(p, d, bat ? "Energia solar<br>com bateria" : "Energia solar", d.cidade ? `${d.cidade} · ${dataLonga(d.data)}` : dataLonga(d.data),
-      [[`${num(c.kwp, 2)} kWp`, "Potência do sistema"], [`${num(c.geracao)} kWh`, "Geração média mensal"], [`${Math.round(c.pct * 100)}%`, "Economia na conta"]].concat(bat ? [[`${numx(capKwh)} kWh`, "Armazenamento"]] : [])));
+      [[`${num(c.kwp, 2)} kWp`, "Potência do sistema"], [`${num(c.geracao)} kWh`, "Geração média mensal"], ...(d.mostrar_economia === false ? [] : [[`${Math.round(c.pct * 100)}%`, "Economia na conta"]])].concat(bat ? [[`${numx(capKwh)} kWh`, "Armazenamento"]] : [])));
     pgs.push(empresa(d));
-    pgs.push(`<section class="slide">${topo("Estudo de consumo", "Simulação de economia")}
+    if (d.mostrar_economia !== false) pgs.push(`<section class="slide">${topo("Estudo de consumo", "Simulação de economia")}
       <div class="grid g3">
         <div class="card"><small>Custo sem solar (estimado)</small><b class="big">${brl(c.conta)}</b><span class="mut">por mês · ${num(c.consumo)} kWh</span></div>
         <div class="card"><small>Custo com solar (estimado)</small><b class="big">${brl(c.comSolar)}</b><span class="mut">por mês · taxa mínima e encargos</span></div>
@@ -261,9 +363,9 @@
       </div>
       <div class="grid g2" style="margin-top:28px;gap:40px">
         <div><h3>Energia</h3><ul class="lista"><li>Consumo médio: <b>${num(c.consumo)} kWh/mês</b></li><li>Geração projetada: <b>${num(c.geracao)} kWh/mês</b></li><li>Cobertura do consumo: <b>${Math.round(c.cobertura * 100)}%</b></li>${c.autoconsumo ? `<li>Consumido na hora (simultaneidade ${num(d.simultaneidade)}%): <b>${num(c.autoconsumo)} kWh/mês</b></li>` : ""}</ul></div>
-        <div><h3>Projeto</h3><ul class="lista"><li>Potência do sistema: <b>${num(c.kwp, 2)} kWp</b></li><li>${esc(`${num(d.qtd_modulos)} módulos ${d.modulo_marca} ${num(d.modulo_w)} W`)}</li><li>${esc(bat ? d.inv_hibrido : d.inversor)}</li></ul></div>
+        ${c.eco ? composicaoConta(d, c) : `<div><h3>Projeto</h3><ul class="lista"><li>Potência do sistema: <b>${num(c.kwp, 2)} kWp</b></li><li>${esc(`${num(d.qtd_modulos)} módulos ${d.modulo_marca} ${num(d.modulo_w)} W`)}</li><li>${esc(bat ? d.inv_hibrido : d.inversor)}</li></ul></div>`}
       </div>${pe(d)}</section>`);
-    pgs.push(`<section class="slide">${topo("Retorno do investimento", "Retorno ao longo dos anos")}
+    if (d.mostrar_economia !== false) pgs.push(`<section class="slide">${topo("Retorno do investimento", "Retorno ao longo dos anos")}
       <div class="grid g4">
         <div class="card"><small>Economia 1º ano</small><b class="big">${brl(c.ano1)}</b></div>
         <div class="card"><small>Economia 5 anos</small><b class="big">${brl(c.ano5)}</b></div>
@@ -271,7 +373,7 @@
         <div class="card esc"><small>Payback estimado</small><b class="big">${c.payback != null ? `${num(c.payback, 1)} anos` : "—"}</b></div>
       </div>
       <div style="margin-top:24px">${graficoRetorno(c)}</div>
-      <p class="nota">Economia acumulada em ${c.anos} anos: ${brl(c.total)}. Valores estimados com ${num(d.reajuste, 1)}% de reajuste anual da tarifa e ${num(d.degradacao, 1)}% de perda de rendimento dos módulos por ano.</p>${pe(d)}</section>`);
+      <p class="nota">Economia acumulada em ${c.anos} anos: ${brl(c.total)}. Valores estimados com ${num(d.reajuste, 1)}% de reajuste anual da tarifa e ${num(d.degradacao, 1)}% de perda de rendimento dos módulos por ano${c.eco && d.regra !== "gd1" ? ", com o Fio B sobre a energia compensada subindo conforme a Lei 14.300 (até 100% em 2029)" : ""}.</p>${pe(d)}</section>`);
     const det = [["Potência do sistema", `${num(c.kwp, 2)} kWp`], ["Módulos", `${num(d.qtd_modulos)} × ${num(d.modulo_w)} W ${d.modulo_marca}`], [bat ? "Inversor híbrido" : "Inversor", bat ? d.inv_hibrido : d.inversor], ["Geração média mensal", `${num(c.geracao)} kWh/mês`], ["Estrutura", d.estrutura]];
     if (bat) det.push(["Baterias", `${num(n(d.bat_qtd) || 1)} × ${numx(d.bat_kwh)} kWh · ${d.bat_modelo}`]);
     pgs.push(`<section class="slide">${topo("Detalhamento do projeto", "O sistema")}
@@ -475,10 +577,10 @@
         `• Garantia dos módulos: ${d.garantia_modulo}`,
         `• Garantia do inversor: ${d.garantia_inversor}`);
       if (d.prazo) msg.push(`• Prazo de execução: ${d.prazo}`);
-      msg.push("", `*Economia e investimento*`,
-        `• Conta de luz de ${brl(c.conta)} para cerca de ${brl(c.comSolar)} por mês: economia de ${brl(c.mensal)} (${Math.round(c.pct * 100)}%)`,
+      msg.push("", d.mostrar_economia === false ? `*Investimento*` : `*Economia e investimento*`,
+        ...(d.mostrar_economia === false ? [] : [`• Conta de luz de ${brl(c.conta)} para cerca de ${brl(c.comSolar)} por mês: economia de ${brl(c.mensal)} (${Math.round(c.pct * 100)}%)`]),
         ...(() => { const fp = formasPagamento(p, d, c); return fp.separado ? [`• Investimento total de ${brl(c.investimento)}. Formas de pagamento:`, ...fp.grupos.map(g => `  – ${textoForma(g)}`), ...(fp.mostrarJunto ? [`  – ${textoForma(fp.junto)}`] : [])] : [`• Investimento de ${brl(c.investimento)}${c.avista < c.investimento ? ` (à vista ${brl(c.avista)})` : ""}${parc ? `, ou em até ${parc.q}× de ${brl(parc.valor)}` : ""}`]; })());
-      if (c.payback != null) msg.push(`• O sistema se paga em cerca de ${num(c.payback, 1)} anos, e em ${c.anos} anos a economia passa de ${brl(c.total)}`);
+      if (c.payback != null && d.mostrar_economia !== false) msg.push(`• O sistema se paga em cerca de ${num(c.payback, 1)} anos, e em ${c.anos} anos a economia passa de ${brl(c.total)}`);
     } else if (p.tipo === "ev") {
       const q = c.qtd, escopo = [`${q} ${q > 1 ? "carregadores" : "carregador"} ${d.corrente} de ${num(d.potencia_kw)} kW${d.modelo ? ` (${d.modelo})` : ""}`];
       if (d.clamper) escopo.push(`${q} Mobi Smart Clamper`);
@@ -580,7 +682,7 @@
     if (id === "nova") {
       if (!TIPOS[tipoNovo]) return window.P3.go("#/propostas");
       p = { tipo: tipoNovo, status: "rascunho", dados: novaDados(tipoNovo) };
-      if (tipoNovo !== "ev" && tipoNovo !== "manutencao") Object.assign(p.dados, { simultaneidade: 30, fator_kwh_kwp: GER_PADRAO.telhado });
+      if (tipoNovo !== "ev" && tipoNovo !== "manutencao") Object.assign(p.dados, { simultaneidade: 30, fator_kwh_kwp: GER_PADRAO.telhado, eco_v2: true, ano_inicio: new Date().getFullYear() });
     } else {
       main.innerHTML = `<div class="loading">Abrindo a proposta…</div>`;
       try { p = await api(`propostas/${encodeURIComponent(id)}`); } catch (e) { main.innerHTML = `<div class="note bad">${esc(e.message)}</div>`; return; }
@@ -602,12 +704,13 @@
       ${escolha("vendedor", "Contato na proposta", Object.entries(VENDEDORES).map(([k, x]) => [k, x.nome]))}
       ${img("logo_cliente", "Logo do cliente", "Aparece na capa (opcional).")}${img("foto_capa", "Foto da capa", "Foto do local ou do projeto (opcional).")}
       ${campo("fechamento", "Frase final (opcional)", "area", 2)}`);
-    const solar = () => bloco("Consumo e conta", `
+    const solar = () => (d.eco_v2 ? blocoEco() : bloco("Consumo e conta", `
+        <div class="wide note" style="font-size:12.5px">Esta proposta usa o cálculo antigo. <button type="button" class="btn sm" id="prEcoV2">Usar o cálculo da Lei 14.300</button></div>
         <div class="wide"><label class="btn sm" for="prFatura">Ler fatura da Copel (PDF)</label><input type="file" id="prFatura" accept="application/pdf,.pdf" hidden> <span class="muted" id="prFaturaMsg" style="font-size:12.5px">${esc(d.fatura_info || "Puxa o consumo médio dos 12 meses, a tarifa real e o tipo de ligação.")}</span></div>
         ${campo("consumo_kwh", "Consumo médio (kWh/mês)", "num")}${campo("conta_atual", "Conta atual (R$/mês)", "num")}
         ${escolha("fase", "Ligação", [["mono", "Monofásica (30 kWh)"], ["bi", "Bifásica (50 kWh)"], ["tri", "Trifásica (100 kWh)"]])}
         ${campo("fio_b_pct", "Fio B e encargos sobre o compensado (%)", "num")}
-        ${campo("simultaneidade", "Simultaneidade (% da geração usada na hora)", "num")}${campo("custo_com_solar", "Custo com solar (R$/mês) — vazio = calcular", "num")}`)
+        ${campo("simultaneidade", "Simultaneidade (% da geração usada na hora)", "num")}${campo("custo_com_solar", "Custo com solar (R$/mês) — vazio = calcular", "num")}`))
       + bloco("Sistema", `
         ${escolha("instalacao", "Instalação", [["telhado", "Telhado"], ["solo", "Solo"]])}${campo("qtd_modulos", "Quantidade de módulos", "num")}${campo("modulo_w", "Potência do módulo (W)", "num")}${campo("modulo_marca", "Marca do módulo")}
         ${p.tipo === "bateria" ? campo("inv_hibrido", "Inversor híbrido") : campo("inversor", "Inversor")}
@@ -644,6 +747,28 @@
         ${campo("markup_avulso", "Margem dos avulsos (%)", "num")}${campo("tarifa_kwh", "Tarifa para a economia (R$/kWh)", "num")}${campo("arredondar", "Arredondar preços para R$ 5", "check")}
         <p class="muted wide" id="prManut" style="margin:4px 0 0;font-size:12.5px;white-space:pre-line"></p>`)
       + bloco("Textos", `${campo("inclusos", "Serviços inclusos (um por linha)", "area", 6)}${campo("exclusos", "Itens exclusos (um por linha)", "area", 4)}`, false);
+    // Consumo e conta pela Lei 14.300: Grupo B ou A, tarifas da ANEEL (distribuidora/subgrupo) ou da fatura, impostos e regra.
+    const so = (g, html) => html.replace(/^<label class="f/, `<label data-g="${g}" class="f`);
+    const blocoEco = () => bloco("Consumo, tarifas e economia", `
+        ${campo("mostrar_economia", "Mostrar a economia na proposta (desmarque se ainda não há dados de consumo e custo)", "check")}
+        ${escolha("grupo", "Grupo", [["B", "Grupo B (baixa tensão)"], ["A", "Grupo A (média tensão)"]])}
+        <label class="f">Distribuidora<input data-k="distribuidora" list="prDistrib" value="${esc(d.distribuidora || "")}" placeholder="COPEL-DIS"><datalist id="prDistrib"></datalist></label>
+        ${so("B", escolha("subgrupo", "Subgrupo", [["B1", "B1 residencial"], ["B2", "B2 rural"], ["B3", "B3 comercial/industrial"]]))}
+        ${so("A", escolha("subgrupo_a", "Subgrupo A", [["A4", "A4 (2,3 a 25 kV)"], ["A3a", "A3a (30 a 44 kV)"], ["A3", "A3 (69 kV)"], ["A2", "A2 (88 a 138 kV)"]]))}
+        ${so("A", escolha("modalidade", "Modalidade", [["Verde", "Verde"], ["Azul", "Azul"]]))}
+        <div class="wide"><button type="button" class="btn sm" id="prAneel">Buscar tarifas na ANEEL</button> <span class="muted" id="prAneelMsg" style="font-size:12.5px">${esc(d.aneel && d.aneel.info || "TE, TUSD e Fio B vigentes da distribuidora (sem impostos; os impostos abaixo entram por cima).")}</span></div>
+        ${campo("icms_pct", "ICMS (%)", "num")}${campo("pis_cofins_pct", "PIS/COFINS (%)", "num")}
+        <div class="wide" data-gb="B"><label class="btn sm" for="prFatura">Ler fatura da Copel (PDF)</label><input type="file" id="prFatura" accept="application/pdf,.pdf" hidden> <select data-k="fatura_uso" aria-label="O que usar da fatura">${opts([["tudo", "Usar tudo (consumo, tarifa, ligação)"], ["tarifa", "Só o custo do kWh (projetar outro consumo)"]], d.fatura_uso)}</select> <span class="muted" id="prFaturaMsg" style="font-size:12.5px">${esc(d.fatura_info || "")}</span></div>
+        ${so("B", campo("consumo_kwh", "Consumo médio (kWh/mês)", "num"))}${so("B", escolha("fase", "Ligação", [["mono", "Monofásica (mín. 30 kWh)"], ["bi", "Bifásica (mín. 50 kWh)"], ["tri", "Trifásica (mín. 100 kWh)"]]))}
+        ${so("B", campo("tarifa_kwh", "Tarifa com impostos (R$/kWh) — vazio = ANEEL", "num"))}${so("B", campo("fio_b_kwh", "Fio B com impostos (R$/kWh) — vazio = ANEEL", "num"))}
+        ${so("A", campo("demanda_kw", "Demanda contratada (kW)", "num"))}${so("A", campo("tar_demanda", "Tarifa da demanda (R$/kW) — vazio = ANEEL", "num"))}
+        ${so("A", campo("consumo_fp", "Consumo fora de ponta (kWh/mês)", "num"))}${so("A", campo("consumo_p", "Consumo na ponta (kWh/mês)", "num"))}
+        ${so("A", campo("tar_fp", "Tarifa fora de ponta c/ impostos — vazio = ANEEL", "num"))}${so("A", campo("tar_p", "Tarifa na ponta c/ impostos — vazio = ANEEL", "num"))}
+        ${so("A", campo("fio_fp", "Fio B fora de ponta c/ impostos — vazio = ANEEL", "num"))}${so("A", campo("fio_p", "Fio B na ponta c/ impostos — vazio = ANEEL", "num"))}
+        ${campo("ilum_publica", "Iluminação pública (R$/mês)", "num")}${campo("simultaneidade", "Simultaneidade (% da geração usada na hora)", "num")}
+        ${escolha("regra", "Regra da geração distribuída", [["gd2", "GD II · Lei 14.300 (paga Fio B escalonado)"], ["gd1", "GD I · direito adquirido (sem Fio B até 2045)"]])}${campo("ano_inicio", "Ano de início da operação", "num")}
+        ${campo("custo_com_solar", "Conta com solar (R$/mês) — vazio = calcular", "num")}
+        <p class="muted wide" id="prEco" style="margin:2px 0 0;font-size:12.5px;white-space:pre-line"></p>`);
     const ev = () => bloco("Carregadores", `
         ${campo("qtd", "Quantidade", "num")}${escolha("corrente", "Tipo", [["AC", "AC"], ["DC", "DC"]])}${campo("potencia_kw", "Potência (kW)", "num")}${campo("modelo", "Modelo")}
         ${campo("clamper", "Mobi Smart Clamper (um por carregador)", "check")}${campo("quadro", "Quadro dedicado", "check")}${campo("desligamento", "Desligamento rápido (um por carregador)", "check")}${campo("operacao", "Incluir operação e cobrança pelo app", "check")}
@@ -687,6 +812,17 @@
           : p.tipo === "ev"
           ? `${d.cliente || "Cliente"} · ${c.qtd} carregador(es) · investimento ${brl(c.investimento)}${d.operacao ? ` · fixo mensal ${brl(n(d.manutencao_mensal) ? c.fixoCom : c.fixoSem)}` : ""}`
           : `${d.cliente || "Cliente"} · ${num(c.kwp, 2)} kWp · ${num(c.geracao)} kWh/mês · economia ${brl(c.mensal)}/mês (${Math.round(c.pct * 100)}%) · ${brl(c.investimento)} · payback ${c.payback != null ? num(c.payback, 1) + " anos" : "—"}`;
+        const ec = $("#prEco", main);
+        if (ec && c.eco) {
+          const m = c.m1, t = c.t;
+          ec.textContent = [
+            d.grupo === "A" ? `Tarifas c/ impostos: fora de ponta R$ ${num(t.tarFp, 3)} · ponta R$ ${num(t.tarP, 3)} · Fio B fp R$ ${num(t.fioFp, 3)} / p R$ ${num(t.fioP, 3)} · demanda R$ ${num(t.tarDem, 2)}/kW`
+              : `Tarifa c/ impostos R$ ${num(t.tar, 3)}/kWh · Fio B R$ ${num(t.fio, 3)}/kWh (${t.tar ? Math.round(t.fio / t.tar * 100) : 0}% da tarifa)`,
+            `Mês 1 (${c.ano0}): gera ${num(c.geracao)} kWh · usa na hora ${num(m.auto)} · compensa ${num(m.comp)} · da rede sem compensar ${num(m.naoComp)}${m.sobra > 1 ? ` · sobra ${num(m.sobra)} em créditos` : ""}`,
+            `Conta sem solar ${brl(c.conta)} → com solar ${brl(c.estimado)}${m.minimoAplicado ? " (vale o mínimo da ligação)" : ` (Fio B ${Math.round(m.fat * 100)}%: ${brl(m.fio)})`} · economia ${brl(c.mensal)}/mês`,
+            `Economia por ano: ${c.porAno.slice(0, 5).map(x => `${x.anoCal} ${brl(x.economia)}`).join(" · ")}`
+          ].join("\n");
+        }
         // Custo e lucro da obra (só na tela): o preço que está na proposta contra a planilha de obra solar.
         const lucro = $("#prLucro", main), os = (p.tipo === "solar" || p.tipo === "bateria") && obraSolar(d, p.tipo);
         if (lucro && os) {
@@ -699,8 +835,8 @@
     };
     const NUMS = new Set(["validade_dias", "consumo_kwh", "conta_atual", "fio_b_pct", "qtd_modulos", "modulo_w", "fator_kwh_kwp", "valor_equip", "valor_impl", "juros_parcela", "reajuste", "degradacao", "anos", "bat_qtd", "bat_kwh", "carga_critica_kw", "valor_bateria", "qtd", "potencia_kw", "software_mensal", "manutencao_mensal",
       "c_km", "c_viagens_eng", "c_viagens_equipe", "c_pessoas", "c_dias", "c_margem_kwp", "c_imp_total", "c_imp_servico", "c_kit", "c_bateria", "c_estrutura", "c_transformador", "c_padrao", "c_descarregamento", "c_conexao", "c_comissao", "c_terrenista",
-      "kwp", "km", "beneficiarias", "simultaneidade", "juros_equip", "juros_bat", "juros_impl", "garantia_meses", "fiscal_pct", "markup_3x", "markup_anual", "markup_avulso", "tarifa_kwh"]);
-    const OPCIONAL = new Set(["avista", "custo_com_solar", "modulos", "avista_equip", "avista_bat", "avista_impl"]);
+      "kwp", "km", "beneficiarias", "simultaneidade", "icms_pct", "pis_cofins_pct", "fio_b_parcela", "ilum_publica", "ano_inicio", "demanda_kw", "consumo_fp", "consumo_p", "juros_equip", "juros_bat", "juros_impl", "garantia_meses", "fiscal_pct", "markup_3x", "markup_anual", "markup_avulso", "tarifa_kwh"]);
+    const OPCIONAL = new Set(["tarifa_kwh", "fio_b_kwh", "tar_demanda", "tar_fp", "tar_p", "fio_fp", "fio_p", "te_fp", "te_p", "avista", "custo_com_solar", "modulos", "avista_equip", "avista_bat", "avista_impl"]);
     $$("[data-k]", main).forEach(el => {
       el.oninput = el.onchange = () => {
         const k = el.dataset.k;
@@ -708,6 +844,8 @@
         sujo = true; atualizar();
         if (k === "pag_separado" && p.tipo === "ev") desenharInv();
         if (k === "instalacao") ajustarGeracao();
+        if (k === "grupo") mostrarGrupo();
+        if (k === "fatura_uso") aplicarFatura();
       };
     });
     $$("[data-img]", main).forEach(el => el.onchange = async () => {
@@ -752,7 +890,20 @@
       const el = $('[data-k="fator_kwh_kwp"]', main); if (el) el.value = String(d.fator_kwh_kwp).replace(".", ",");
       atualizar();
     };
-    // Fatura da Copel: consumo médio do histórico (12 meses), tarifa real (conta sem créditos ÷ kWh) e tipo de ligação.
+    // Grupo A × B: mostra só os campos do grupo escolhido.
+    const mostrarGrupo = () => { $$("[data-g], [data-gb]", main).forEach(l => { l.style.display = (l.dataset.g || l.dataset.gb) === (d.grupo || "B") ? "" : "none"; }); };
+    const poe = (k, v) => { const el = $(`[data-k="${k}"]`, main); if (el) el.value = typeof v === "number" ? String(v).replace(".", ",") : (v ?? ""); };
+    // Fatura da Copel: consumo médio do histórico (12 meses), tarifa real sem a iluminação pública e tipo de ligação.
+    // "Só o custo do kWh" usa a tarifa e a iluminação, e deixa o consumo livre para projetar outro tamanho.
+    const aplicarFatura = () => {
+      const f = d.fat; if (!f) return;
+      if (d.eco_v2) { d.tarifa_kwh = r2(f.tarifa * 1000) / 1000; d.ilum_publica = f.ilum; poe("tarifa_kwh", d.tarifa_kwh); poe("ilum_publica", d.ilum_publica); }
+      if (!d.eco_v2 || d.fatura_uso !== "tarifa") {
+        d.consumo_kwh = f.consumo; poe("consumo_kwh", f.consumo);
+        if (f.fase) { d.fase = f.fase; poe("fase", f.fase); }
+        if (!d.eco_v2) { d.conta_atual = r2(f.consumo * f.tarifa + f.ilum); poe("conta_atual", d.conta_atual); }
+      }
+    };
     const fat = $("#prFatura", main);
     if (fat) fat.onchange = async e => {
       const arq = e.target.files[0]; e.target.value = ""; if (!arq) return;
@@ -764,19 +915,45 @@
         const hist = (f.historico || []).map(h => n(h.kwh)).filter(x => x > 0);
         const consumo = hist.length >= 3 ? Math.round(hist.reduce((a, b) => a + b, 0) / hist.length) : n(f.consumoKwh);
         if (!consumo) throw new Error("A fatura não trouxe o consumo em kWh.");
-        const semCreditos = n(f.semUsina) || n(f.total);
-        const tarifa = n(f.consumoKwh) && semCreditos ? semCreditos / n(f.consumoKwh) : 0;
-        d.consumo_kwh = consumo;
-        if (tarifa) d.conta_atual = r2(consumo * tarifa);
-        const fase = { monofasico: "mono", bifasico: "bi", trifasico: "tri" }[f.fase]; if (fase) d.fase = fase;
-        if (!d.cliente && f.titular) d.cliente = f.titular;
-        if ((!d.cidade || d.cidade === "Londrina") && f.cidade) d.cidade = f.cidade;
-        d.fatura_info = `Fatura ${f.referencia || ""}${f.uc || f.ucConces ? ` · UC ${f.uc || f.ucConces}` : ""}: consumo médio ${num(consumo)} kWh${hist.length >= 3 ? ` (${hist.length} meses)` : ""}${tarifa ? ` · tarifa R$ ${num(tarifa, 3)}/kWh com impostos` : ""}.`;
-        for (const k of ["consumo_kwh", "conta_atual", "cliente", "cidade"]) { const el = $(`[data-k="${k}"]`, main); if (el) el.value = /kwh|conta/.test(k) ? String(d[k]).replace(".", ",") : d[k]; }
-        const fe = $('[data-k="fase"]', main); if (fe) fe.value = d.fase;
+        const ilum = n(f.iluminacaoPublica);
+        const tarifa = n(f.consumoKwh) ? Math.max(0, (n(f.semUsina) || n(f.total)) - ilum) / n(f.consumoKwh) : 0;
+        d.fat = { consumo, tarifa, ilum, fase: { monofasico: "mono", bifasico: "bi", trifasico: "tri" }[f.fase] || "" };
+        if (!d.cliente && f.titular) { d.cliente = f.titular; poe("cliente", d.cliente); }
+        if ((!d.cidade || d.cidade === "Londrina") && f.cidade) { d.cidade = f.cidade; poe("cidade", d.cidade); }
+        d.fatura_info = `Fatura ${f.referencia || ""}${f.uc || f.ucConces ? ` · UC ${f.uc || f.ucConces}` : ""}: consumo médio ${num(consumo)} kWh${hist.length >= 3 ? ` (${hist.length} meses)` : ""} · tarifa R$ ${num(tarifa, 3)}/kWh com impostos${ilum ? ` · iluminação ${brl(ilum)}` : ""}.`;
+        aplicarFatura();
         msg.textContent = d.fatura_info; sujo = true; atualizar(); toast("Fatura lida. Confira os números.", "ok");
       } catch (err) { msg.textContent = err.message; toast(err.message, "bad"); }
     };
+    // Tarifas da ANEEL pela distribuidora e subgrupo.
+    let distribuidoras = null;
+    const dl = $("#prDistrib", main), di = $('[data-k="distribuidora"]', main);
+    if (di) di.addEventListener("focus", async () => {
+      if (distribuidoras) return;
+      try { distribuidoras = (await api("tarifas-aneel", { method: "POST", body: {} })).distribuidoras || []; dl.innerHTML = distribuidoras.map(x => `<option value="${esc(x)}">`).join(""); } catch (_) { distribuidoras = []; }
+    });
+    const bA = $("#prAneel", main);
+    if (bA) bA.onclick = async () => {
+      const msg = $("#prAneelMsg", main), sub = d.grupo === "A" ? (d.subgrupo_a || "A4") : (d.subgrupo || "B1");
+      if (!d.distribuidora) return toast("Escolha a distribuidora.", "bad");
+      bA.disabled = true; msg.textContent = "Buscando na ANEEL…";
+      try {
+        const r = await api("tarifas-aneel", { method: "POST", body: { agente: d.distribuidora, subgrupo: sub, modalidade: d.grupo === "A" ? d.modalidade : "Convencional" } });
+        const P = r.postos || {}, f3 = v => num(v, 4);
+        const partes = Object.entries(P).map(([k, x]) => `${{ unico: "", foraPonta: "fora de ponta: ", ponta: "ponta: ", intermediario: "intermediário: " }[k] || ""}TE ${f3(x.te)} + TUSD ${f3(x.tusd)}${x.fioB != null ? ` (Fio B ${f3(x.fioB)})` : ""}`);
+        r.info = `${r.agente} ${r.subgrupo}${d.grupo === "A" ? " " + r.modalidade : ""} · vigente desde ${fmt.data(r.vigencia.inicio)} · R$/kWh sem impostos: ${partes.join(" · ")}${r.demanda ? ` · demanda R$ ${num(r.demanda, 2)}/kW` : ""}.`;
+        d.aneel = r; msg.textContent = r.info; sujo = true; atualizar(); toast("Tarifas da ANEEL carregadas.", "ok");
+      } catch (err) { msg.textContent = err.message; toast(err.message, "bad"); }
+      finally { bA.disabled = false; }
+    };
+    // Proposta antiga: passa a usar o cálculo da Lei 14.300 (a tarifa vem da conta que já estava nela).
+    const up = $("#prEcoV2", main);
+    if (up) up.onclick = async () => {
+      d.eco_v2 = true; if (!d.ano_inicio) d.ano_inicio = new Date().getFullYear();
+      if (d.tarifa_kwh === "" && n(d.consumo_kwh)) d.tarifa_kwh = r2(n(d.conta_atual) / n(d.consumo_kwh) * 1000) / 1000;
+      try { if (p.id) { await salvar(); editor(main, p.id); } else editor(main, "nova", p.tipo); } catch (err) { toast(err.message, "bad"); }
+    };
+    mostrarGrupo();
     const g = $("#prGeracao", main);
     if (g) g.onclick = async () => {
       if (!d.cidade) return toast("Preencha a cidade.", "bad");

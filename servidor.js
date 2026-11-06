@@ -69,6 +69,13 @@
     if (m === "GET" && p[0] === "info") return { pastas: { dados: "nuvem (Supabase)", backups: "nuvem (Supabase)" }, navegadorPdf: "navegador" };
     if (m === "GET" && p[0] === "conferencia") return C.conferir(await base.snapshot(), hoje());
     if (m === "GET" && p[0] === "auditoria") return base.auditoria(q.limit);
+    // Tarifas homologadas da ANEEL (TE, TUSD, Fio B) por distribuidora e subgrupo; sem "agente", a lista de distribuidoras.
+    if (m === "POST" && p[0] === "tarifas-aneel") {
+      const r = await sb.functions.invoke("tarifas-aneel", { body: corpo || {} });
+      if (r.error) throw new Error("Não consegui falar com a ANEEL agora.");
+      if (r.data.erro) throw new Error(r.data.erro);
+      return r.data;
+    }
     if (m === "GET" && p[0] === "geracao-local") {
       const perdas = Number(q.perdas) || 14;
       const r = await sb.functions.invoke("geracao-local", { body: { local: q.local, perdas } });
