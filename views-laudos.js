@@ -179,7 +179,7 @@
         + bloco("Payback e conclusão", `${campo("investimento", "Investimento do sistema (R$)", "num")}${campo("data_instalacao", "Data da instalação", "date")}${campo("conclusao", "Conclusão", "area", 4)}<p class="muted wide" id="ltCalc" style="margin:0;font-size:12.5px;white-space:pre-line"></p>`)
       : bloco("Sistema", `${campo("kwp", "Potência (kWp)", "num")}${campo("modulos", "Módulos", "num")}${campo("inversor", "Inversor")}${campo("resumo", "Resumo da visita (opcional)", "area", 3)}`)
         + bloco("Seções", `<div class="wide" id="ltSecoes"></div>`)
-        + bloco("Conclusão e fotos", `${campo("conclusao", "Conclusão", "area", 4)}<div class="wide" id="ltFotos"></div>`);
+        + bloco("Conclusão e fotos", `${campo("conclusao", "Conclusão", "area", 4)}<div class="wide"><label class="btn sm primary" for="ltVarias">Adicionar várias fotos</label><input type="file" id="ltVarias" accept="image/*" multiple hidden> <span class="muted" id="ltVariasMsg" style="font-size:12.5px">Selecione várias de uma vez; as que já têm espaço com legenda caem no lugar certo pelo nome do arquivo.</span></div><div class="wide" id="ltFotos"></div>`);
     main.innerHTML = `
       <div class="head"><div><p class="kicker"><a href="#/laudos">Relatórios técnicos</a> · ${esc(TIPOS[l.tipo])}</p><h1>${esc(l.numero || "Novo relatório")}</h1></div>
         <div class="actions"><select id="ltStatus" aria-label="Situação">${opts(Object.entries(STATUS).map(([k, [s]]) => [k, s]), l.status)}</select><button class="btn" id="ltPdf">Gerar PDF</button><button class="btn primary" id="ltSalvar">Salvar</button></div></div>
@@ -227,7 +227,23 @@
       d.secoes = d.secoes || []; d.fotos = d.fotos || [];
       lista("#ltSecoes", d.secoes, [["titulo", "Título da seção"], ["itens", "O que foi feito (uma linha por item)", "area"], ["observacao", "Observação técnica (opcional)", "area"], ["recomendacao", "Recomendação (opcional)", "area"]],
         () => ({ titulo: "", itens: "", observacao: "", recomendacao: "" }), "Seção");
-      lista("#ltFotos", d.fotos, [["img", "Foto", "img"], ["legenda", "Legenda (ex.: antes / depois)"]], () => ({ img: "", legenda: "" }), "Foto");
+      const fotosLista = () => lista("#ltFotos", d.fotos, [["img", "Foto", "img"], ["legenda", "Legenda (ex.: antes / depois)"]], () => ({ img: "", legenda: "" }), "Foto");
+      fotosLista();
+      // Várias fotos de uma vez: preenche os espaços que esperam aquele arquivo (pelo nome); sem espaços esperando, acrescenta.
+      const varias = $("#ltVarias", main);
+      if (varias) varias.onchange = async e => {
+        const arqs = [...e.target.files]; e.target.value = ""; if (!arqs.length) return;
+        const msg = $("#ltVariasMsg", main), esperando = d.fotos.some(x => x.arquivo);
+        let usadas = 0, ignoradas = 0;
+        for (const [i, a] of arqs.entries()) {
+          msg.textContent = `Preparando ${i + 1} de ${arqs.length}…`;
+          const lugar = d.fotos.find(x => x.arquivo && x.arquivo.toLowerCase() === a.name.toLowerCase());
+          if (!lugar && esperando) { ignoradas++; continue; }
+          try { const img = await v.imagem(a, 1400); if (lugar) lugar.img = img; else d.fotos.push({ img, legenda: "" }); usadas++; } catch (err) { ignoradas++; }
+        }
+        msg.textContent = `${usadas} foto(s) adicionada(s)${ignoradas ? ` · ${ignoradas} não usada(s)` : ""}. Salve o relatório.`;
+        sujo = true; fotosLista(); atualizar();
+      };
     }
 
     const salvar = async () => {
