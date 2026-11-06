@@ -82,7 +82,7 @@
           <label class="f">Incluir na projeção<select data-p="cuIncluir">${opts([["sim", "Sim"], ["nao", "Não"]], p.cuIncluir || "sim")}</select></label>
           ${(p.cuIncluir || "sim") === "sim" ? `
           <label class="f">Ligação da usina<select data-p="cuFase">${opts([["trifasico", "Trifásica · 100 kWh"], ["bifasico", "Bifásica · 50 kWh"], ["monofasico", "Monofásica · 30 kWh"]], p.cuFase || "trifasico")}</select><small>mínimo cobrado na tarifa com bandeira</small></label>
-          <label class="f">Iluminação pública da usina (R$/mês)<input data-p="cuIP" inputmode="decimal" value="${esc(p.cuIP ?? "")}" placeholder="0,00"><small>taxa do município da usina</small></label>
+          <label class="f">Iluminação pública da UC geradora (R$/mês)<input data-p="cuIP" inputmode="decimal" value="${esc(p.cuIP ?? "")}" placeholder="0,00"><small>só a da usina; a do cliente vem da fatura dele</small></label>
           <label class="f">Outros custos (R$/mês)<input data-p="cuOutros" inputmode="decimal" value="${esc(p.cuOutros ?? "")}" placeholder="0,00"></label>
           <label class="f">Quem paga<select data-p="cuQuem">${opts(p.imAtivo === "sim" ? [["cliente", "Cliente (entra no custo dele)"], ["p3", "P3"], ["dono", "Dono da usina"]] : [["cliente", "Cliente (entra no custo dele)"], ["p3", "P3 / dono (fora da conta do cliente)"]], p.imAtivo !== "sim" && p.cuQuem === "dono" ? "p3" : (p.cuQuem || "cliente"))}</select></label>` : ""}
         </div>
@@ -197,7 +197,7 @@
             <tr><td>Valor efetivo do crédito GD II</td><td class="n"><b>R$ ${n6(t.credito)}</b><small>${fmt.pctN(t.pctFioB * 100)} do Fio B não compensado</small></td></tr>
             <tr><td>Fio B integral efetivo</td><td class="n">R$ ${n6(t.fioB)}<small>sem tributos ${n6(t.fioBBase)} × PIS/COFINS ${fmt.num(t.fatorPC, 4)}</small></td></tr>
             <tr><td>Bandeira</td><td class="n">${t.bandeira ? `R$ ${n6(t.bandeira)}` : "verde"}</td></tr>
-            <tr><td>Iluminação pública (encargo fixo)</td><td class="n">${fmt.brl(t.iluminacao)}/mês</td></tr>
+            <tr><td>Iluminação pública do cliente (da fatura)<small>continua na conta dele com ou sem usina</small></td><td class="n">${fmt.brl(t.iluminacao)}/mês</td></tr>
             ${t.creditosAtuaisKwh ? `<tr><td>Créditos que a UC já recebe</td><td class="n">${fmt.kwh(t.creditosAtuaisKwh)}/mês<small>R$ ${n6(t.creditosAtuaisRate)}/kWh</small></td></tr>` : ""}
           </tbody></table></div>
         <div class="card"><h2>Ano a ano</h2><p class="sub">${A.geracao != null ? "O saldo que sobra num ano passa para o seguinte · " : ""}Fio B: 60% → 75% → 90% (Lei 14.300)${pc.reajusteTarifa ? ` · tarifa corrigida ${fmt.pctN(pc.reajusteTarifa)} ao ano` : ""}</p>
