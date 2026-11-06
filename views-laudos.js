@@ -60,8 +60,8 @@
     const total = String(pgs.length).padStart(2, "0");
     return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${esc(TIPOS[l.tipo])} ${esc(d.cliente)}</title><style>${v.CSS}
       .sec-n{display:inline-grid;place-items:center;width:44px;height:44px;border-radius:50%;background:var(--lim);color:var(--esc);font-weight:800;font-size:20px;margin-right:12px;vertical-align:middle}
-      .fotos{display:grid;grid-template-columns:1fr 1fr;gap:18px} .foto-c{background:#fff;border:1px solid var(--lin);border-radius:8px;overflow:hidden} .foto-c div{height:230px;background:#eee center/cover no-repeat} .foto-c p{font-size:15px;margin:8px 12px}
-    </style></head><body>${pgs.map((pg, i) => pg.replace("{{PG}}", `${String(i + 1).padStart(2, "0")} / ${total}`)).join("")}</body></html>`;
+      .fotos{display:grid;grid-template-columns:1fr 1fr;gap:18px} .foto-c{background:#fff;border:1px solid var(--lin);border-radius:8px;overflow:hidden} .foto-c div{height:212px;background:#1d2617 center/contain no-repeat} .foto-c p{font-size:15px;margin:8px 12px}
+    </style></head><body>${pgs.map((pg, i) => pg.replace("{{PG}}", `${String(i + 1).padStart(2, "0")} / ${total}`)).join("").replace(/Proposta válida por [^<]*/g, `Relatório emitido em ${v.dataLonga(hoje())}.`)}</body></html>`;
   }
   const pDados = l => ({ numero: l.numero });
 
