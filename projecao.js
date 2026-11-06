@@ -86,6 +86,7 @@
   /*
     contas: [{ campos (fatura lida), apelido }]
     p: { acordo: "fixo"|"kwh"|"desconto", valorFixo, valorKwh, desconto (%), cobertura (%), geracaoUsina (kWh/mês),
+       intermediacao: { ativo, modo: "kwh"|"fixo", valorKwh, valorFixo, impostoPct } (a P3 arrenda a usina do dono),
          ano, fioBBase, bandeira ("fatura"|"verde"|R$/kWh), manterCreditosAtuais, consumoFixo }
   */
   function projetar(contas, p) {
@@ -119,7 +120,12 @@
     const cu = p.custosUsina || {};
     const t0 = cs[0].t;
     const custoUsinaMes = cu.incluir === false ? 0 : r2((MINIMO[cu.fase || "trifasico"] || 100) * (t0.tarifa + t0.bandeira) + n(cu.iluminacao) + n(cu.outros));
-    const custoUsinaCliente = cu.quemPaga !== "p3";
+    const quemPagaCu = cu.quemPaga === "p3" || cu.quemPaga === "dono" ? cu.quemPaga : "cliente";
+    const custoUsinaCliente = quemPagaCu === "cliente";
+    // Intermediação: a P3 arrenda a usina do dono (R$/kWh compensado ou fixo/mês) e repassa ao cliente pelo acordo acima.
+    //   dono recebe = kWh compensado × valor ao dono (ou o fixo)       dono líquido = recebe − custos da UC geradora (se ele paga)
+    //   P3 lucro    = arrendamento do cliente − dono recebe − custos da UC (se a P3 paga) − imposto da P3 sobre o arrendamento
+    const im = p.intermediacao && p.intermediacao.ativo ? p.intermediacao : null;
     let saldo = n(p.saldoInicial);
     const meses = [];
     for (let i = 0; i < nMeses; i++) {
@@ -158,7 +164,15 @@
         l.economia = r2(l.hoje - l.total);
       });
       const S = k => r2(linhas.reduce((s, l) => s + n(l[k]), 0));
-      meses.push({ mes: linhas[0].mes, consumo: linhas.reduce((s, l) => s + l.C, 0), compensado: compMes, creditosAtuais: linhas.reduce((s, l) => s + l.atuais, 0),
+      let op = {};
+      if (im) {
+        const arrMes = S("arrendamento"), cuMes = S("custosUsina");
+        const donoRecebe = im.modo === "fixo" ? r2(n(im.valorFixo)) : r2(compMes * n(im.valorKwh));
+        const donoCustos = quemPagaCu === "dono" ? cuMes : 0, p3Custos = quemPagaCu === "p3" ? cuMes : 0;
+        const p3Imposto = r2(arrMes * n(im.impostoPct) / 100);
+        op = { donoRecebe, donoCustos, donoLiquido: r2(donoRecebe - donoCustos), p3Recebe: arrMes, p3Custos, p3Imposto, p3Lucro: r2(arrMes - donoRecebe - p3Custos - p3Imposto) };
+      }
+      meses.push({ ...op, mes: linhas[0].mes, consumo: linhas.reduce((s, l) => s + l.C, 0), compensado: compMes, creditosAtuais: linhas.reduce((s, l) => s + l.atuais, 0),
         mesHistorico: linhas[0].mesHistorico, pctFioB: linhas[0].pct,
         geracao: ger, saldoInicial: ger != null ? saldoAntes : null, saldo: ger != null ? saldo : null, faltou: Math.max(0, Math.round(totalComp - compMes)),
         hoje: S("hoje"), valorCredito: S("valorCredito"), comUsina: S("comUsina"), arrendamento: S("arrendamento"), custosUsina: S("custosUsina"), total: S("total"), economia: S("economia"), contas: linhas.map(l => ({ uc: l.c.uc, consumo: l.C, compensado: l.comp, hoje: l.hoje, comUsina: l.comUsina, arrendamento: l.arrendamento, economia: l.economia })) });
@@ -166,6 +180,12 @@
     const A = k => r2(meses.reduce((s, m) => s + n(m[k]), 0));
     const anual = { consumo: A("consumo"), compensado: A("compensado"), hoje: A("hoje"), valorCredito: A("valorCredito"), comUsina: A("comUsina"), arrendamento: A("arrendamento"), custosUsina: A("custosUsina"), total: A("total"), economia: A("economia") };
     anual.custosUsinaCliente = custoUsinaCliente ? anual.custosUsina : 0;
+    anual.quemPagaCustos = quemPagaCu;
+    if (im) {
+      for (const k of ["donoRecebe", "donoCustos", "donoLiquido", "p3Recebe", "p3Custos", "p3Imposto", "p3Lucro"]) anual[k] = A(k);
+      anual.intermediacao = true;
+      anual.margemKwh = anual.compensado ? anual.p3Lucro / anual.compensado : 0;
+    }
     anual.custoUsinaMes = custoUsinaMes;
     anual.ajusteGeracao = Math.round((ajusteGer - 1) * 100);
     anual.economiaPct = anual.hoje > 0 ? anual.economia / anual.hoje : 0;
@@ -181,6 +201,24 @@
       meses, anual, media, faixas: [0, 0.1, 0.15, 0.2, 0.25, 0.3].map(x => ({ economiaPct: x, arrendamentoFixo: fixoPara(x) })),
       piorMes: meses.reduce((a, m) => (!a || m.economia < a.economia ? m : a), null), melhorMes: meses.reduce((a, m) => (!a || m.economia > a.economia ? m : a), null)
     };
+  }
+
+  // Composição do custo de 1 kWh compensado para o cliente (tarifas do 1º mês projetado):
+  //   tarifa cheia − crédito = o que continua na conta da Copel por kWh compensado
+  //     = Fio B não compensado (pct × Fio B sem tributos)
+  //     + impostos que não compensam: PIS/COFINS sobre esse Fio B + ICMS da TUSD (o crédito GD II não devolve)
+  //   + arrendamento por kWh (dono + margem da P3, quando a P3 intermedia). A bandeira compensa junto e se anula.
+  function custoKwh(r) {
+    const t = r.contas[0].tarifas, A = r.anual;
+    const fioB = t.pctFioB * t.fioBBase;
+    const pisCofins = fioB * (t.fatorPC - 1);
+    const icmsTusd = t.tusd - t.tusdBase * t.fatorPC;
+    const copel = t.tarifa - t.credito;
+    const arrend = A.compensado ? A.arrendamento / A.compensado : 0;
+    const usina = A.intermediacao ? (A.compensado ? A.donoRecebe / A.compensado : 0) : arrend;
+    const total = arrend + copel;
+    return { pctFioB: t.pctFioB, tarifaCheia: t.tarifa, fioB, pisCofins, icmsTusd, impostos: pisCofins + icmsTusd, copel, arrendamento: arrend,
+      usina, margemP3: A.intermediacao ? arrend - usina : 0, total, semMargem: usina + copel, economia: t.tarifa - total, economiaPct: t.tarifa ? (t.tarifa - total) / t.tarifa : 0 };
   }
 
   // Mesma projeção nos anos da transição do Fio B (a economia cai conforme o % não compensado sobe).
@@ -206,7 +244,8 @@
       const pcts = [...new Set(r.meses.map(m => m.pctFioB))];
       out.push({ n: k + 1, ano: Number(inicio.slice(0, 4)), inicio, fim, periodo: `${motor.monthLabel(inicio)} a ${motor.monthLabel(fim)}`,
         pctFioB: pcts[pcts.length - 1], pctsFioB: pcts, fatorTarifa, saldoInicio: r.anual.geracao != null ? saldo : null, saldoFim: r.anual.saldoFinal,
-        hoje: r.anual.hoje, economia: r.anual.economia, economiaMes: r.anual.economia / nM, economiaPct: r.anual.economiaPct, faltou: r.anual.faltou, compensado: r.anual.compensado, arrendamento: r.anual.arrendamento });
+        hoje: r.anual.hoje, economia: r.anual.economia, economiaMes: r.anual.economia / nM, economiaPct: r.anual.economiaPct, faltou: r.anual.faltou, compensado: r.anual.compensado, arrendamento: r.anual.arrendamento,
+        donoLiquido: r.anual.donoLiquido, donoRecebe: r.anual.donoRecebe, p3Lucro: r.anual.p3Lucro });
       if (r.anual.saldoFinal != null) saldo = r.anual.saldoFinal;
     }
     return out;
@@ -229,5 +268,5 @@
     return { meses: Array.from({ length: 12 }, (_, i) => Math.round(ultimo.has(i + 1) ? ultimo.get(i + 1).kwh : media)), conhecidos: ultimo.size, media: Math.round(media) };
   }
 
-  return { projetar, porAno, porAnos, tarifas, fioBDaBase, pctFioB, FIOB_PADRAO, MINIMO, FATOR_PR, porPotencia, historicoUsina };
+  return { projetar, porAno, porAnos, custoKwh, tarifas, fioBDaBase, pctFioB, FIOB_PADRAO, MINIMO, FATOR_PR, porPotencia, historicoUsina };
 });

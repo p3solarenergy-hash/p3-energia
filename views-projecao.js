@@ -7,6 +7,9 @@
   const ui = { lista: null, atual: novo(), lendo: 0 };
   const num = v => { const s = String(v ?? "").trim(); return s === "" ? "" : Number(/,/.test(s) ? s.replace(/\./g, "").replace(",", ".") : s); };
   const n6 = v => fmt.num(v, 6);
+  // Número da lista de projeções salvas, conforme a visão salva.
+  const resumoTxt = s => !s ? "" : s.visao === "dono" && s.donoLiquido != null ? `dono ${fmt.brl(s.donoLiquido)}/ano`
+    : s.visao === "todos" && s.p3Lucro != null ? `P3 ${fmt.brl(s.p3Lucro)}/ano` : s.economia != null ? fmt.brl(s.economia) + "/ano" : "";
 
   async function render(main, params) {
     ui.lista = await api("projecoes");
@@ -22,7 +25,7 @@
       <div class="split wide-right">
         <div class="stack">
           <div class="card"><h2>Projeções salvas</h2><p class="sub">${ui.lista.length} projeção(ões)</p>
-            ${ui.lista.map(p => `<a href="#/projecao/${encodeURIComponent(p.id)}" class="btn ${ui.atual.id === p.id ? "primary" : "ghost"}" style="width:100%;justify-content:space-between;margin-bottom:4px"><span>${esc(p.nome)}</span><small>${p.resumo && p.resumo.economia != null ? fmt.brl(p.resumo.economia) + "/ano" : ""}</small></a>`).join("") || `<p class="muted" style="margin:0">Nenhuma ainda.</p>`}</div>
+            ${ui.lista.map(p => `<a href="#/projecao/${encodeURIComponent(p.id)}" class="btn ${ui.atual.id === p.id ? "primary" : "ghost"}" style="width:100%;justify-content:space-between;margin-bottom:4px"><span>${esc(p.nome)}</span><small>${resumoTxt(p.resumo)}</small></a>`).join("") || `<p class="muted" style="margin:0">Nenhuma ainda.</p>`}</div>
         </div>
         <div class="stack" id="pjEditor"></div>
       </div>`;
@@ -81,7 +84,17 @@
           <label class="f">Ligação da usina<select data-p="cuFase">${opts([["trifasico", "Trifásica · 100 kWh"], ["bifasico", "Bifásica · 50 kWh"], ["monofasico", "Monofásica · 30 kWh"]], p.cuFase || "trifasico")}</select><small>mínimo cobrado na tarifa com bandeira</small></label>
           <label class="f">Iluminação pública da usina (R$/mês)<input data-p="cuIP" inputmode="decimal" value="${esc(p.cuIP ?? "")}" placeholder="0,00"><small>taxa do município da usina</small></label>
           <label class="f">Outros custos (R$/mês)<input data-p="cuOutros" inputmode="decimal" value="${esc(p.cuOutros ?? "")}" placeholder="0,00"></label>
-          <label class="f">Quem paga<select data-p="cuQuem">${opts([["cliente", "Cliente (entra no custo dele)"], ["p3", "P3 / dono (fora da conta do cliente)"]], p.cuQuem || "cliente")}</select></label>` : ""}
+          <label class="f">Quem paga<select data-p="cuQuem">${opts(p.imAtivo === "sim" ? [["cliente", "Cliente (entra no custo dele)"], ["p3", "P3"], ["dono", "Dono da usina"]] : [["cliente", "Cliente (entra no custo dele)"], ["p3", "P3 / dono (fora da conta do cliente)"]], p.imAtivo !== "sim" && p.cuQuem === "dono" ? "p3" : (p.cuQuem || "cliente"))}</select></label>` : ""}
+        </div>
+        <hr class="sep"><b style="font-size:13px">Usina arrendada de terceiro</b><p class="muted" style="font-size:12.5px;margin:2px 0 8px">Quando a P3 arrenda a usina de um dono e repassa ao cliente pelo acordo acima: mostra a economia do cliente, o resultado do dono e o lucro da P3.</p>
+        <div class="grid-form">
+          <label class="f">A P3 arrenda a usina de um dono?<select data-p="imAtivo">${opts([["nao", "Não"], ["sim", "Sim"]], p.imAtivo || "nao")}</select></label>
+          ${p.imAtivo === "sim" ? `
+          <label class="f">Dono / usina<input data-p="imDono" value="${esc(p.imDono || "")}" placeholder="Nome do dono ou da usina"></label>
+          <label class="f">Pagamento ao dono<select data-p="imModo">${opts([["kwh", "R$ por kWh compensado"], ["fixo", "Valor fixo por mês"]], p.imModo || "kwh")}</select></label>
+          ${(p.imModo || "kwh") === "kwh" ? `<label class="f">Valor ao dono (R$/kWh)<input data-p="imKwh" inputmode="decimal" value="${esc(p.imKwh ?? "")}" placeholder="0,40"></label>` : `<label class="f">Valor ao dono (R$/mês)<input data-p="imFixo" inputmode="decimal" value="${esc(p.imFixo ?? "")}"></label>`}
+          <label class="f">Imposto da P3 (%)<input data-p="imImposto" inputmode="decimal" value="${esc(p.imImposto ?? "")}" placeholder="0"><small>sobre o arrendamento que o cliente paga à P3</small></label>
+          <label class="f">Salvar e gerar PDF com<select data-p="visao">${opts([["todos", "Tudo (cliente, dono e P3) · interno"], ["cliente", "Só o resultado do cliente"], ["dono", "Só o resultado do dono"]], p.visao || "todos")}</select><small>a projeção salva e o PDF mostram só essa parte</small></label>` : ""}
         </div>
         <div class="inline" style="margin-top:14px"><button class="btn primary" id="pjSalvar">${a.id ? "Salvar alterações" : "Salvar projeção"}</button><button class="btn" id="pjPdf" ${a.id ? "" : "disabled title='Salve antes'"}>Gerar PDF</button>${a.id ? `<button class="btn ghost danger" id="pjExcluir">Excluir</button>` : ""}<span id="pjPdfLink"></span></div>
       </div>
@@ -100,7 +113,7 @@
       const ev = i.tagName === "SELECT" || i.type === "checkbox" ? "change" : "input";
       i.addEventListener(ev, () => {
         p[i.dataset.p] = i.dataset.p === "manterCreditosAtuais" ? i.value !== "nao" : i.type === "checkbox" ? i.checked : i.value;
-        if (["acordo", "geracaoModo", "usinaRef", "saldoModo", "cuIncluir"].includes(i.dataset.p)) return editor(el, fioB);
+        if (["acordo", "geracaoModo", "usinaRef", "saldoModo", "cuIncluir", "imAtivo", "imModo", "visao"].includes(i.dataset.p)) return editor(el, fioB);
         resultado($("#pjRes"), fioB);
       });
     });
@@ -130,7 +143,9 @@
       acordo: p.acordo, valorFixo: num(p.valorFixo) || 0, valorKwh: num(p.valorKwh) || 0, desconto: num(p.desconto) || 0,
       cobertura: num(p.cobertura) === "" ? 100 : num(p.cobertura), ano: num(p.ano) || "", inicio: p.inicio || "",
       ajusteGeracao: num(p.ajusteGeracao) === "" ? -10 : num(p.ajusteGeracao), reajusteTarifa: num(p.reajusteTarifa) || 0,
-      custosUsina: { incluir: (p.cuIncluir || "sim") === "sim", fase: p.cuFase || "trifasico", iluminacao: num(p.cuIP) || 0, outros: num(p.cuOutros) || 0, quemPaga: p.cuQuem || "cliente" },
+      custosUsina: { incluir: (p.cuIncluir || "sim") === "sim", fase: p.cuFase || "trifasico", iluminacao: num(p.cuIP) || 0, outros: num(p.cuOutros) || 0, quemPaga: p.imAtivo !== "sim" && p.cuQuem === "dono" ? "p3" : (p.cuQuem || "cliente") },
+      intermediacao: { ativo: p.imAtivo === "sim", dono: p.imDono || "", modo: p.imModo || "kwh", valorKwh: num(p.imKwh) || 0, valorFixo: num(p.imFixo) || 0, impostoPct: num(p.imImposto) || 0 },
+      visao: p.imAtivo === "sim" ? (p.visao || "todos") : "cliente",
       geracaoModo: p.geracaoModo || "", kwp: num(p.kwp) || "", usinaRef: p.usinaRef || "", saldoModo: p.saldoModo || "nova", saldoInicial: num(p.saldoInicial) || 0,
       geracaoUsina: p.geracaoModo === "fixa" ? num(p.geracaoUsina) || 0 : 0,
       local: p.local || null, perdas: num(p.perdas) || 14,
@@ -148,7 +163,9 @@
     ui.ultimo = r;
     const A = r.anual, t = r.contas[0].tarifas;
     const semValor = (pc.acordo === "fixo" && !pc.valorFixo) || (pc.acordo === "kwh" && !pc.valorKwh);
-    el.innerHTML = `
+    const op = A.intermediacao ? operacao(r, anos, pc) : "";
+    if (pc.visao === "dono") { el.innerHTML = op; return; }
+    el.innerHTML = (pc.visao === "todos" ? op : "") + (A.compensado ? custoCard(r, pc) : "") + `
       ${semValor ? `<div class="note warn">Informe o valor do arrendamento para ver a economia. Abaixo, quanto cobrar para cada nível de economia.</div>` : ""}
       <div class="kpis" style="margin-top:4px">
         ${kpi("Conta Copel hoje · 12 meses", fmt.brl(A.hoje), `média ${fmt.brl(A.hoje / r.meses.length)}/mês`)}
@@ -156,7 +173,7 @@
         ${kpi("Economia projetada", fmt.brl(A.economia), `${fmt.pct(A.economiaPct)} · ${fmt.brl(r.media.economia)}/mês`, "lead")}
         ${kpi("Valor dos créditos", fmt.brl(A.valorCredito), `${fmt.kwh(A.compensado)} compensados`)}
         ${kpi("Pior mês", r.piorMes ? fmt.brl(r.piorMes.economia) : "—", r.piorMes ? `${fmt.mes(r.piorMes.mes)} · ${fmt.kwh(r.piorMes.consumo)}` : "")}
-        ${A.custoUsinaMes ? kpi("Custos da UC geradora", fmt.brl(A.custoUsinaMes) + "/mês", pc.custosUsina.quemPaga === "p3" ? "pagos pela P3/dono" : "pagos pelo cliente (já no total)") : ""}
+        ${A.custoUsinaMes ? kpi("Custos da UC geradora", fmt.brl(A.custoUsinaMes) + "/mês", ({ p3: A.intermediacao ? "pagos pela P3" : "pagos pela P3/dono", dono: "pagos pelo dono da usina" })[pc.custosUsina.quemPaga] || "pagos pelo cliente (já no total)") : ""}
         ${A.geracao != null ? kpi("Geração da usina · 12 meses", fmt.kwh(A.geracao), `já com ${A.ajusteGeracao}% · compensado ${fmt.pct(A.geracao ? A.compensado / A.geracao : 0)} da geração · saldo ${fmt.kwh(A.saldoFinal)}${r.regime ? " (em regime)" : ""}`) : ""}
       </div>
       ${A.faltou > 0 ? `<div class="note warn" style="margin-top:10px">A geração não cobre todo o consumo: faltaram ${fmt.kwh(A.faltou)} no ano (o cliente paga esse consumo cheio na Copel).</div>` : ""}
@@ -189,6 +206,61 @@
       </div>`;
   }
 
+  // Usina arrendada de terceiro: economia do cliente, resultado do dono e lucro da P3 (ou só o do dono).
+  function operacao(r, anos, pc) {
+    const A = r.anual, nM = r.meses.length, so = pc.visao === "dono", im = pc.intermediacao;
+    const quem = { cliente: "cliente", p3: "P3", dono: "dono" }[A.quemPagaCustos];
+    const valorDono = im.modo === "fixo" ? `${fmt.brl(im.valorFixo)}/mês` : `R$ ${fmt.num(im.valorKwh, 2)}/kWh compensado`;
+    const kpis = so
+      ? kpi("Dono recebe · 12 meses", fmt.brl(A.donoRecebe), `${valorDono} · ${fmt.kwh(A.compensado)}`, "lead")
+        + kpi("Líquido do dono por mês", fmt.brl(A.donoLiquido / nM), A.donoCustos ? `já sem ${fmt.brl(A.donoCustos / nM)}/mês da UC geradora` : "média do 1º ano")
+        + kpi("Líquido em 5 anos", fmt.brl(anos.reduce((s, x) => s + n(x.donoLiquido), 0)), "com a transição do Fio B")
+      : kpi("Economia do cliente", fmt.brl(A.economia), `${fmt.pct(A.economiaPct)} · ${fmt.brl(A.economia / nM)}/mês`)
+        + kpi("Dono da usina", fmt.brl(A.donoLiquido), `${valorDono}${A.donoCustos ? ` · menos custos da UC` : ""} · ${fmt.brl(A.donoLiquido / nM)}/mês`)
+        + kpi("Lucro da P3", fmt.brl(A.p3Lucro), `${fmt.brl(A.p3Lucro / nM)}/mês · R$ ${fmt.num(A.margemKwh, 4)}/kWh`, "lead");
+    const cols = so ? ["Compensado", "Dono recebe", ...(A.donoCustos ? ["Custos da UC"] : []), "Líquido do dono"]
+      : ["Compensado", "Economia do cliente", "Cliente paga à P3", "P3 paga ao dono", ...(A.p3Custos || A.donoCustos ? [`Custos da UC (${quem})`] : []), ...(A.p3Imposto ? ["Imposto P3"] : []), "Lucro da P3"];
+    const linha = m => so
+      ? [fmt.kwh(m.compensado), fmt.brl(m.donoRecebe), ...(A.donoCustos ? [fmt.brl(m.donoCustos)] : []), `<b>${fmt.brl(m.donoLiquido)}</b>`]
+      : [fmt.kwh(m.compensado), fmt.brl(m.economia), fmt.brl(m.p3Recebe), fmt.brl(m.donoRecebe), ...(A.p3Custos || A.donoCustos ? [fmt.brl(m.p3Custos || m.donoCustos)] : []), ...(A.p3Imposto ? [fmt.brl(m.p3Imposto)] : []), `<b class="${m.p3Lucro >= 0 ? "pos" : "neg"}">${fmt.brl(m.p3Lucro)}</b>`];
+    return `
+      <div class="card"><h2>${so ? `Resultado do dono${im.dono ? ` · ${esc(im.dono)}` : ""}` : "Resultado da operação"}</h2>
+        <p class="sub">${so ? `A P3 arrenda a usina e paga ao dono ${valorDono}` : `Cliente paga à P3 pelo acordo · P3 paga ao dono ${valorDono}${im.dono ? ` (${esc(im.dono)})` : ""}`}</p>
+        ${A.compensado ? "" : `<div class="note warn">Sem kWh compensado: confira o consumo e a geração.</div>`}
+        ${!so && A.p3Lucro < 0 ? `<div class="note bad">Com estes valores a P3 tem prejuízo.</div>` : ""}
+        <div class="kpis" style="margin-top:4px">${kpis}</div>
+        <div class="table-wrap section" style="box-shadow:none"><table><thead><tr><th>Mês</th>${cols.map(c => `<th class="n">${c}</th>`).join("")}</tr></thead>
+          <tbody>${r.meses.map(m => `<tr><td><b>${esc(fmt.mes(m.mes))}</b></td>${linha(m).map(v => `<td class="n">${v}</td>`).join("")}</tr>`).join("")}</tbody>
+          <tfoot><tr><td>12 meses</td>${linha(A).map(v => `<td class="n">${v}</td>`).join("")}</tr></tfoot></table></div>
+        <h3 style="margin:14px 0 6px;font-size:13px">Ano a ano</h3>
+        <div style="overflow-x:auto"><table><thead><tr><th>Ano</th><th class="n">Compensado</th>${so ? "" : `<th class="n">Economia do cliente</th>`}<th class="n">Líquido do dono</th>${so ? "" : `<th class="n">Lucro da P3</th>`}</tr></thead>
+          <tbody>${anos.map(x => `<tr><td><b>${x.n}º</b> <small style="display:inline">${esc(x.periodo)}</small></td><td class="n">${fmt.kwh(x.compensado)}</td>${so ? "" : `<td class="n">${fmt.brl(x.economia)}</td>`}<td class="n">${fmt.brl(x.donoLiquido)}</td>${so ? "" : `<td class="n"><b>${fmt.brl(x.p3Lucro)}</b></td>`}</tr>`).join("")}</tbody>
+          <tfoot><tr><td>5 anos</td><td class="n">${fmt.kwh(anos.reduce((s, x) => s + n(x.compensado), 0))}</td>${so ? "" : `<td class="n">${fmt.brl(anos.reduce((s, x) => s + n(x.economia), 0))}</td>`}<td class="n">${fmt.brl(anos.reduce((s, x) => s + n(x.donoLiquido), 0))}</td>${so ? "" : `<td class="n">${fmt.brl(anos.reduce((s, x) => s + n(x.p3Lucro), 0))}</td>`}</tr></tfoot></table></div>
+        ${so ? `<p class="muted" style="font-size:12px;margin:8px 0 0">Visão do dono: a projeção salva e o PDF mostram só o resultado dele. Para ver o cliente e a P3, troque em "Salvar e gerar PDF com".</p>` : ""}
+      </div>`;
+  }
+  const n = v => Number(v) || 0;
+
+  // Quanto custa, no total, cada kWh compensado para o cliente: usina + Fio B + impostos (× tarifa cheia).
+  function custoCard(r, pc) {
+    const c = PJ.custoKwh(r), interno = r.anual.intermediacao && pc.visao === "todos";
+    const R = v => `R$ ${fmt.num(v, 4)}`;
+    const linha = (rot, v, sub, cls) => `<tr class="${cls || ""}"><td>${rot}${sub ? `<small>${sub}</small>` : ""}</td><td class="n">${cls === "tot" ? `<b>${R(v)}</b>` : R(v)}</td></tr>`;
+    return `
+      <div class="card section"><h2>Custo do kWh</h2><p class="sub">Por kWh compensado, com as tarifas do 1º mês · Fio B não compensado ${fmt.pctN(c.pctFioB * 100)}</p>
+        <table><tbody>
+          ${interno ? linha("Usina (pago ao dono)", c.usina) + linha("Margem da P3", c.margemP3, "o cliente paga " + R(c.arrendamento) + " à P3") : linha("Usina (arrendamento)", c.arrendamento)}
+          ${linha("Fio B não compensado", c.fioB, "sem tributos, pago à Copel")}
+          ${linha("Impostos que não compensam", c.impostos, `ICMS da TUSD ${R(c.icmsTusd)} + PIS/COFINS do Fio B ${R(c.pisCofins)}`)}
+          ${interno ? linha("Total sem a margem da P3", c.semMargem, "usina + Fio B + impostos") : ""}
+          ${linha("Total por kWh", c.total, interno ? "o que o cliente paga" : "", "tot")}
+          ${linha("Tarifa cheia da Copel (hoje)", c.tarifaCheia, "energia + distribuição, com tributos")}
+          <tr><td><b>Economia por kWh</b></td><td class="n pos"><b>${R(c.economia)}</b><small>${fmt.pct(c.economiaPct)}</small></td></tr>
+        </tbody></table>
+        <p class="muted" style="font-size:12px;margin:6px 0 0">Não entram aqui o mínimo da ligação e a iluminação pública, que são fixos por mês. A bandeira compensa junto com o crédito. O Fio B sobe para 75% em 2027 e 90% em 2028.</p>
+      </div>`;
+  }
+
   async function ler(files) {
     files = files.filter(f => /pdf$/i.test(f.type) || /\.pdf$/i.test(f.name));
     if (!files.length) return toast("Nenhum PDF nesses arquivos.", "bad");
@@ -216,7 +288,8 @@
     if (!a.nome.trim()) return toast("Dê um nome para a projeção.", "bad");
     const r = ui.ultimo;
     // Grava os parâmetros já normalizados (números), para o PDF calcular igual à tela.
-    const dados = { nome: a.nome, cliente: a.cliente, params: { ...a.params, ...paramsCalc(ui.fioB || PJ.FIOB_PADRAO) }, contas: a.contas, resumo: r ? { economia: r.anual.economia, economiaPct: r.anual.economiaPct, arrendamento: r.anual.arrendamento, hoje: r.anual.hoje } : {} };
+    const dados = { nome: a.nome, cliente: a.cliente, params: { ...a.params, ...paramsCalc(ui.fioB || PJ.FIOB_PADRAO) }, contas: a.contas, resumo: r ? { economia: r.anual.economia, economiaPct: r.anual.economiaPct, arrendamento: r.anual.arrendamento, hoje: r.anual.hoje,
+      visao: paramsCalc(ui.fioB || PJ.FIOB_PADRAO).visao, donoLiquido: r.anual.donoLiquido ?? null, p3Lucro: r.anual.p3Lucro ?? null } : {} };
     try {
       const s = await P3.save("projecoes", dados, a.id);
       a.id = s.id; toast("Projeção salva.", "ok");

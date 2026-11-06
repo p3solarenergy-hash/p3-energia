@@ -432,8 +432,39 @@ function projecao(pj) {
 <li style="font-size:7.5pt;margin:0">O arrendamento é de ${esc(arrendTxt)}${custoUsina ? `, mais os custos da UC geradora (previstos em ${brl(custoUsina)}/mês), cobrados à parte desde que se mantenham dentro do previsto, com pequenas diferenças` : ""}.</li>
 <li style="font-size:7.5pt;margin:0">Se houver problemas de compensação (como falta de geração), grande diferença no consumo da UC geradora ou custos da geradora diferentes do projetado, a diferença será ajustada na cobrança do próximo ciclo.</li></ul></div>`;
 
-  const pag2 = `
+  const visao = A.intermediacao ? (p.visao || "todos") : "cliente";
+  if (visao === "dono") return projecaoDono(pj, P, r, anosSeq);
+  const ck = P.custoKwh(r), interno = visao === "todos";
+  const R4 = v => `R$ ${(Number(v) || 0).toLocaleString("pt-BR", { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`;
+  const custoKwhHtml = !A.compensado ? "" : `
+<h2>Custo do kWh <small>por kWh compensado · Fio B não compensado ${fmtPct(ck.pctFioB * 100)}</small></h2>
+<table class="mini" style="width:60%"><tbody>
+${interno ? `<tr><td>Usina (pago ao dono)</td><td class="n">${R4(ck.usina)}</td></tr><tr><td>Margem da P3</td><td class="n">${R4(ck.margemP3)}</td></tr>` : `<tr><td>Usina (arrendamento)</td><td class="n">${R4(ck.arrendamento)}</td></tr>`}
+<tr><td>Fio B não compensado (Copel)</td><td class="n">${R4(ck.fioB)}</td></tr>
+<tr><td>Impostos que não compensam (ICMS da TUSD + PIS/COFINS do Fio B)</td><td class="n">${R4(ck.impostos)}</td></tr>
+<tr><td><b>Total por kWh</b></td><td class="n"><b>${R4(ck.total)}</b></td></tr>
+<tr><td>Tarifa cheia da Copel hoje</td><td class="n">${R4(ck.tarifaCheia)}</td></tr>
+<tr><td><b>Economia por kWh</b></td><td class="n"><b>${R4(ck.economia)}</b> (${pct(ck.economiaPct)})</td></tr>
+</tbody></table>
+<p style="color:#6b7a70;font-size:7.6pt;margin:3px 0 8px">Mínimo da ligação e iluminação pública são fixos por mês e não entram no custo por kWh.</p>`;
+  const opHtml = !interno ? "" : `
 <div class="pb"></div>
+<h2>Resultado da operação <small>uso interno · cliente, dono da usina e P3</small></h2>
+<div class="hero">
+  <div><small>Economia do cliente · 1º ano</small><b>${brl(A.economia)}</b><span>${pct(A.economiaPct)} da conta</span></div>
+  <div><small>Dono da usina · 1º ano</small><b>${brl(A.donoLiquido)}</b><span>${brl(A.donoLiquido / nM)}/mês</span></div>
+  <div class="main"><small>Lucro da P3 · 1º ano</small><b>${brl(A.p3Lucro)}</b><span>${brl(A.p3Lucro / nM)}/mês · ${R4(A.margemKwh)}/kWh</span></div>
+</div>
+<table class="proj"><thead><tr><th>Mês</th><th class="n">Compensado</th><th class="n">Economia cliente</th><th class="n">Cliente paga à P3</th><th class="n">P3 paga ao dono</th>${A.p3Custos || A.donoCustos ? `<th class="n">Custos UC</th>` : ""}${A.p3Imposto ? `<th class="n">Imposto P3</th>` : ""}<th class="n">Lucro P3</th></tr></thead>
+<tbody>${M.map(m => `<tr><td><b>${esc(motor.monthLabel(m.mes))}</b></td><td class="n">${kwh(m.compensado)}</td><td class="n">${brl(m.economia)}</td><td class="n">${brl(m.p3Recebe)}</td><td class="n">${brl(m.donoRecebe)}</td>${A.p3Custos || A.donoCustos ? `<td class="n">${brl(m.p3Custos || m.donoCustos)}</td>` : ""}${A.p3Imposto ? `<td class="n">${brl(m.p3Imposto)}</td>` : ""}<td class="n eco">${brl(m.p3Lucro)}</td></tr>`).join("")}</tbody>
+<tfoot><tr><td>Total</td><td class="n">${kwh(A.compensado)}</td><td class="n">${brl(A.economia)}</td><td class="n">${brl(A.p3Recebe)}</td><td class="n">${brl(A.donoRecebe)}</td>${A.p3Custos || A.donoCustos ? `<td class="n">${brl(A.p3Custos || A.donoCustos)}</td>` : ""}${A.p3Imposto ? `<td class="n">${brl(A.p3Imposto)}</td>` : ""}<td class="n">${brl(A.p3Lucro)}</td></tr></tfoot></table>
+<h2>Ano a ano</h2>
+<table class="proj"><thead><tr><th>Ano</th><th class="n">Compensado</th><th class="n">Economia cliente</th><th class="n">Líquido do dono</th><th class="n">Lucro P3</th></tr></thead>
+<tbody>${anosSeq.map(a => `<tr><td><b>${a.n}º ano</b> <span style="color:#6b7a70">${esc(a.periodo)}</span></td><td class="n">${kwh(a.compensado)}</td><td class="n">${brl(a.economia)}</td><td class="n">${brl(a.donoLiquido)}</td><td class="n eco">${brl(a.p3Lucro)}</td></tr>`).join("")}</tbody>
+<tfoot><tr><td>5 anos</td><td class="n">${kwh(anosSeq.reduce((s, a) => s + a.compensado, 0))}</td><td class="n">${brl(anosSeq.reduce((s, a) => s + a.economia, 0))}</td><td class="n">${brl(anosSeq.reduce((s, a) => s + num(a.donoLiquido), 0))}</td><td class="n">${brl(anosSeq.reduce((s, a) => s + num(a.p3Lucro), 0))}</td></tr></tfoot></table>`;
+
+  const pag2 = `
+<div class="pb"></div>${custoKwhHtml}
 <h2>Ano a ano <small>${G ? "o saldo de créditos que sobra num ano passa para o seguinte" : "com a transição do Fio B"}${num(p.reajusteTarifa) ? ` · tarifa Copel corrigida ${fmtPct(p.reajusteTarifa)} ao ano` : ""}</small></h2>
 <table class="proj"><thead><tr><th>Ano</th><th class="n">Fio B não comp.</th>${G ? `<th class="n">Saldo no início</th>` : ""}<th class="n">Economia/mês</th><th class="n">%</th><th class="n">Economia no ano</th>${G ? `<th class="n">Saldo no fim</th>` : ""}</tr></thead>
 <tbody>${anosSeq.map(a => `<tr><td style="white-space:nowrap"><b>${a.n}º ano</b> <span style="color:#6b7a70">${esc(a.periodo)}</span></td><td class="n">${a.pctsFioB.map(x => fmtPct(x * 100)).join(" → ")}</td>${G ? `<td class="n">${kwh(a.saldoInicio)}</td>` : ""}<td class="n eco pos">${brl(a.economiaMes)}</td><td class="n"><span class="pill">${pct(a.economiaPct)}</span></td><td class="n">${brl(a.economia)}${a.faltou ? `<small class="neg">faltam ${kwh(a.faltou)}</small>` : ""}</td>${G ? `<td class="n">${kwh(a.saldoFim)}</td>` : ""}</tr>`).join("")}</tbody>
@@ -459,14 +490,47 @@ ${A.faltou ? `<p style="color:#a1302a;font-size:8.4pt;margin:4px 0 0">A geraçã
 <li style="font-size:7.3pt;margin:0">Consumo: o mesmo mês do ano no histórico da fatura da Copel (ex.: out/26 usa out/25). Tarifas, tributos e bandeira: os da fatura mais recente.</li>
 <li style="font-size:7.3pt;margin:0">Conta de hoje = consumo × (energia + distribuição + bandeira) + iluminação pública${(pj.contas || []).some(c => num((c.campos || c).compensadoKwh)) ? (p.manterCreditosAtuais === false ? "; os créditos que a UC já recebe hoje foram desconsiderados (a projeção mostra só a usina P3)" : " − créditos que a UC já recebe hoje (mantidos; a usina P3 cobre o restante)") : ""}.</li>
 <li style="font-size:7.3pt;margin:0">Com a usina P3 = conta de hoje − valor dos créditos da usina + arrendamento (${esc(acordoTxt)}). Cobertura: ${fmtPct(p.cobertura ?? 100)} do consumo compensável.</li>
-${A.custoUsinaMes ? `<li style="font-size:7.3pt;margin:0">Custos da UC geradora (ANEEL): mínimo da ligação ${esc({ monofasico: "monofásica", bifasico: "bifásica", trifasico: "trifásica" }[(p.custosUsina || {}).fase || "trifasico"])} + iluminação pública${num((p.custosUsina || {}).outros) ? " + outros" : ""} = ${brl(A.custoUsinaMes)}/mês, ${(p.custosUsina || {}).quemPaga === "p3" ? "pagos pela P3/dono" : "cobrados à parte, além do arrendamento"}.</li>` : ""}
+${A.custoUsinaMes ? `<li style="font-size:7.3pt;margin:0">Custos da UC geradora (ANEEL): mínimo da ligação ${esc({ monofasico: "monofásica", bifasico: "bifásica", trifasico: "trifásica" }[(p.custosUsina || {}).fase || "trifasico"])} + iluminação pública${num((p.custosUsina || {}).outros) ? " + outros" : ""} = ${brl(A.custoUsinaMes)}/mês, ${{ p3: A.intermediacao ? "pagos pela P3" : "pagos pela P3/dono", dono: "pagos pelo dono da usina" }[(p.custosUsina || {}).quemPaga] || "cobrados à parte, além do arrendamento"}.</li>` : ""}
 ${num(p.reajusteTarifa) ? `<li style="font-size:7.3pt;margin:0">Tarifa da Copel corrigida em ${fmtPct(p.reajusteTarifa)} ao ano a partir do 2º ano (energia, distribuição e crédito); arrendamento e iluminação pública sem correção.</li>` : ""}
 ${G ? `<li style="font-size:7.3pt;margin:0">Geração: ${p.geracaoModo === "kwp" && p.local && p.local.meses ? `${num(p.local.anual).toLocaleString("pt-BR")} kWh/kWp/ano no local (PVGIS)` : esc(usinaTxt)}, com margem de ${A.ajusteGeracao}%; ${esc(cenarioTxt)}.</li>` : ""}
 <li style="font-size:7.3pt;margin:0">É uma projeção: reajustes da Copel, bandeiras, mudanças de consumo e de geração alteram o resultado.</li></ul></div></div>
 </div>
 
 `;
-  return shell("Projeção de economia", cliente, `<style>${CSS_PROJ}</style>${pag1}${pag2}`, `Projeção · ${pj.nome}`, "projeção calculada a partir das faturas da Copel do cliente.");
+  return shell("Projeção de economia", cliente, `<style>${CSS_PROJ}</style>${pag1}${pag2}${opHtml}`, `Projeção · ${pj.nome}`, "projeção calculada a partir das faturas da Copel do cliente.");
+}
+
+// PDF para o dono da usina: quanto ele recebe da P3 pelo arrendamento (sem os números do cliente).
+function projecaoDono(pj, P, r, anosSeq) {
+  const p = pj.params || {}, im = p.intermediacao || {}, A = r.anual, M = r.meses, nM = M.length;
+  const valorTxt = im.modo === "fixo" ? `${brl(im.valorFixo)} por mês` : `${brl(im.valorKwh)} por kWh compensado`;
+  const dono = im.dono || "Proprietário da usina";
+  const custos = A.donoCustos > 0;
+  const total5 = anosSeq.reduce((s, a) => s + num(a.donoLiquido), 0);
+  const corpo = `
+<div class="who who3">
+  <div><small>Proprietário</small><b>${esc(dono)}</b></div>
+  <div><small>Arrendamento à P3</small><b>${esc(valorTxt)}</b></div>
+  <div><small>Período projetado</small><b>${esc(motor.monthLabel(M[0].mes))} a ${esc(motor.monthLabel(M[nM - 1].mes))}</b></div>
+</div>
+<div class="hero">
+  <div class="main"><small>Recebimento médio por mês · 1º ano</small><b>${brl(A.donoLiquido / nM)}</b><span>${custos ? "já descontados os custos da UC geradora" : "líquido para o proprietário"}</span></div>
+  <div><small>No 1º ano</small><b>${brl(A.donoLiquido)}</b><span>${kwh(A.compensado)} compensados</span></div>
+  <div><small>Em 5 anos</small><b>${brl(total5)}</b><span>média de ${brl(total5 / anosSeq.length)}/ano</span></div>
+</div>
+<h2>Mês a mês</h2>
+<table class="proj"><thead><tr><th>Mês</th><th class="n">Energia compensada</th><th class="n">Arrendamento</th>${custos ? `<th class="n">Custos da UC geradora</th>` : ""}<th class="n">Líquido</th></tr></thead>
+<tbody>${M.map(m => `<tr><td><b>${esc(motor.monthLabel(m.mes))}</b></td><td class="n">${kwh(m.compensado)}</td><td class="n">${brl(m.donoRecebe)}</td>${custos ? `<td class="n">${brl(m.donoCustos)}</td>` : ""}<td class="n eco">${brl(m.donoLiquido)}</td></tr>`).join("")}</tbody>
+<tfoot><tr><td>Total ${nM} meses</td><td class="n">${kwh(A.compensado)}</td><td class="n">${brl(A.donoRecebe)}</td>${custos ? `<td class="n">${brl(A.donoCustos)}</td>` : ""}<td class="n">${brl(A.donoLiquido)}</td></tr></tfoot></table>
+<h2>Ano a ano</h2>
+<table class="proj"><thead><tr><th>Ano</th><th class="n">Energia compensada</th><th class="n">Recebimento no ano</th><th class="n">Por mês</th></tr></thead>
+<tbody>${anosSeq.map(a => `<tr><td><b>${a.n}º ano</b> <span style="color:#6b7a70">${esc(a.periodo)}</span></td><td class="n">${kwh(a.compensado)}</td><td class="n eco">${brl(a.donoLiquido)}</td><td class="n">${brl(num(a.donoLiquido) / 12)}</td></tr>`).join("")}</tbody>
+<tfoot><tr><td>5 anos</td><td class="n">${kwh(anosSeq.reduce((s, a) => s + a.compensado, 0))}</td><td class="n">${brl(total5)}</td><td></td></tr></tfoot></table>
+<div class="box" style="margin-top:10px"><h3>Premissas</h3><ul>
+<li style="font-size:7.5pt;margin:0">A P3 arrenda a usina e paga ${esc(valorTxt)}${im.modo === "fixo" ? "" : " pela energia efetivamente compensada nas unidades atendidas"}.</li>
+${custos ? `<li style="font-size:7.5pt;margin:0">Os custos da UC geradora (mínimo da ligação e iluminação pública, ${brl(A.custoUsinaMes)}/mês) ficam com o proprietário.</li>` : `<li style="font-size:7.5pt;margin:0">Os custos da UC geradora não ficam com o proprietário.</li>`}
+<li style="font-size:7.5pt;margin:0">Energia compensada projetada pelo consumo real das unidades atendidas${A.geracao != null ? " e pela geração estimada da usina" : ""}. É uma projeção: geração e consumo reais alteram o resultado.</li></ul></div>`;
+  return shell("Projeção de arrendamento", dono, `<style>${CSS_PROJ}</style>${corpo}`, `Projeção · ${pj.nome}`, "projeção do arrendamento da usina à P3 Energy.");
 }
 const num = v => Number(v) || 0;
 const num6 = v => (Number(v) || 0).toLocaleString("pt-BR", { minimumFractionDigits: 6, maximumFractionDigits: 6 });
