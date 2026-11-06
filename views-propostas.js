@@ -32,6 +32,11 @@
       qtd_modulos: 16, modulo_w: 620, modulo_marca: "Canadian", inversor: "1 inversor Canadian 7 kW", fator_kwh_kwp: 105, estrutura: "Telhado",
       garantia_modulo: "12 anos contra defeito de fabricação e 25 anos de garantia de performance", garantia_inversor: "10 anos contra defeito de fabricação",
       valor_equip: 0, valor_impl: 0, avista: "", parcelas: "3, 6, 12", juros_parcela: 3, prazo: "2 meses",
+      // Pagamento separado (como na proposta da Multicampo): cada parte com seu à vista e seu parcelado, e tudo junto.
+      pag_separado: true, pag_junto: true,
+      avista_equip: "", parcelas_equip: "3, 6, 12", juros_equip: 3,
+      avista_bat: "", parcelas_bat: "3, 6, 12", juros_bat: 3,
+      avista_impl: "", parcelas_impl: "3", juros_impl: 0,
       pagamento_obs: "Sujeito à validação da estrutura do telhado.", reajuste: 5, degradacao: 0.5, anos: 25,
       // Custo da obra pela planilha de obra solar (o mesmo modelo da tela Obras). Não aparece no PDF.
       c_instalacao: "telhado", c_km: 0, c_viagens_eng: 1, c_viagens_equipe: 1, c_pessoas: 4, c_dias: 5, c_margem_kwp: 620, c_faturamento: "p3", c_imp_total: 5.93, c_imp_servico: 16.33,
@@ -46,6 +51,7 @@
         { descricao: "Engenharia e implantação", detalhe: "Conexão e proteções · configuração, testes e comissionamento", valor: 0 }
       ],
       software_mensal: 30, manutencao_mensal: 100, manutencao_opcional: true,
+      pag_separado: false, pag_junto: true, avista: "", parcelas: "", juros_parcela: 0,
       variaveis: "8 a 10% sobre o faturamento — software e gateway de cobrança\n10% sobre o faturamento — gestão operacional da P3",
       pagamento: "40% na assinatura do contrato\n40% na entrega dos materiais para início das obras\n20% na ligação do carregador",
       resp_p3: "Fornecimento e instalação dos carregadores\nQuadro dedicado, proteção e botoeiras de emergência\nInfraestrutura elétrica a partir do ponto de espera\nConfiguração, testes e comissionamento\nManutenção preventiva P3",
@@ -280,7 +286,15 @@
       <ul class="lista" style="margin-top:28px"><li>Backup automático das cargas essenciais em quedas de energia</li><li>Guarda a sobra do dia para usar à noite e no horário de ponta</li><li>O inversor híbrido gerencia solar, bateria e rede de forma automática</li></ul>
       <p class="nota" style="color:#b9c1ae">Autonomia estimada com 90% da capacidade útil das baterias; varia conforme o consumo real no momento da falta.</p>${pe(d)}</section>`);
     const itens = [["Equipamentos", "Módulos, inversor, estrutura e materiais", n(d.valor_equip)], ...(bat ? [["Baterias", `${d.bat_modelo} · ${d.inv_hibrido}`, n(d.valor_bateria)]] : []), ["Projeto e implantação", "Engenharia, homologação, instalação e materiais complementares", n(d.valor_impl)]].filter(x => x[2]);
-    pgs.push(`<section class="slide">${topo("Investimento", "Condições comerciais")}
+    const fp = formasPagamento(p, d, c);
+    if (fp.separado) pgs.push(`<section class="slide">${topo("Investimento", "Condições comerciais")}
+      <table style="font-size:18px"><tbody>
+        ${itens.map(([a, b, x]) => `<tr><td style="padding:10px 16px"><b>${esc(a)}</b><small>${esc(b)}</small></td><td class="n" style="padding:10px 16px">${brl(x)}</td></tr>`).join("")}
+        <tr class="tot"><td style="padding:11px 16px">Valor total do projeto</td><td class="n" style="padding:11px 16px">${brl(c.investimento)}</td></tr></tbody></table>
+      <h3 style="margin:20px 0 10px;font-size:14px;letter-spacing:.16em;color:var(--mut)">Formas de pagamento · cada parte separada${fp.mostrarJunto ? " ou tudo junto" : ""}</h3>
+      ${cardsPagamento(fp)}
+      <p class="nota" style="margin-top:10px">Tempo de execução: <b>${esc(d.prazo)}</b>. ${esc(d.pagamento_obs || "")} Parcelamento sujeito à aprovação.</p>${pe(d)}</section>`);
+    else pgs.push(`<section class="slide">${topo("Investimento", "Condições comerciais")}
       <div class="grid" style="grid-template-columns:1.3fr 1fr;gap:44px">
         <div><table><thead><tr><th>Item</th><th class="n">Valor</th></tr></thead><tbody>
           ${itens.map(([a, b, x]) => `<tr><td><b>${esc(a)}</b><small>${esc(b)}</small></td><td class="n">${brl(x)}</td></tr>`).join("") || `<tr><td class="mut">Preencha os valores do projeto.</td><td></td></tr>`}
@@ -295,6 +309,26 @@
     pgs.push(contato(d, v, ["Validação do projeto executivo", "Assinatura do contrato", "Homologação na concessionária", "Aquisição dos equipamentos", "Instalação e comissionamento", "Vistoria e conexão à rede"], "Estamos prontos para dar início ao seu projeto de energia."));
     return pgs;
   }
+
+  // ───────── formas de pagamento ─────────
+  // Por parte (solar: equipamentos, baterias e implantação; EV: cada linha do investimento), cada uma com seu
+  // à vista (vazio = o valor) e seu parcelado (acréscimo % sobre o valor), e também tudo junto.
+  const listaParcelas = (base, txt, juros) => String(txt || "").split(/[,;\s]+/).map(Number).filter(x => x > 1).map(q => ({ q, valor: r2(base * (1 + n(juros) / 100) / q) }));
+  const vazioOu = (v, padrao) => v === "" || v == null ? padrao : n(v);
+  function formasPagamento(p, d, c) {
+    const grupos = p.tipo === "ev"
+      ? (d.investimento || []).filter(l => n(l.valor)).map(l => ({ nome: l.descricao || "Item", valor: n(l.valor), avista: vazioOu(l.avista, n(l.valor)), parcelas: listaParcelas(n(l.valor), l.parcelas, l.juros) }))
+      : [["Equipamentos", n(d.valor_equip), d.avista_equip, d.parcelas_equip, d.juros_equip], ...(p.tipo === "bateria" ? [["Baterias", n(d.valor_bateria), d.avista_bat, d.parcelas_bat, d.juros_bat]] : []), ["Implantação", n(d.valor_impl), d.avista_impl, d.parcelas_impl, d.juros_impl]]
+        .filter(g => g[1]).map(([nome, valor, av, par, j]) => ({ nome, valor, avista: vazioOu(av, valor), parcelas: listaParcelas(valor, par, j) }));
+    const junto = { nome: "Tudo junto", valor: c.investimento, avista: vazioOu(d.avista, c.investimento), parcelas: listaParcelas(c.investimento, d.parcelas, d.juros_parcela) };
+    const separado = !!d.pag_separado && grupos.length > 1;
+    return { grupos, junto, separado, mostrarJunto: !separado || d.pag_junto !== false };
+  }
+  const cardPagamento = (g, destaque) => `<div class="card ${destaque ? "lim" : ""}" style="padding:20px 22px"><small>${esc(g.nome)}${g.nome !== "Tudo junto" ? ` · ${brl(g.valor)}` : ""}</small>
+    <b class="big" style="font-size:30px;white-space:nowrap">${brl(g.avista)}</b><span ${destaque ? "" : 'class="mut"'} style="font-size:15px">à vista${g.avista < g.valor ? ` · desconto de ${brl(g.valor - g.avista)}` : ""}</span>
+    ${g.parcelas.length ? `<div style="margin-top:10px;font-size:18px;line-height:1.55">${g.parcelas.map(x => `ou ${x.q}× <b>${brl(x.valor)}</b>`).join("<br>")}</div>` : ""}</div>`;
+  const cardsPagamento = fp => { const cards = [...(fp.separado ? fp.grupos.map(g => cardPagamento(g, false)) : []), ...(fp.mostrarJunto ? [cardPagamento(fp.junto, true)] : [])]; return `<div class="grid" style="grid-template-columns:repeat(${cards.length},1fr);gap:16px">${cards.join("")}</div>`; };
+  const textoForma = g => `${g.nome}${g.nome !== "Tudo junto" ? ` (${brl(g.valor)})` : ""}: ${brl(g.avista)} à vista${g.parcelas.length ? ` ou ${g.parcelas.map(x => `${x.q}× de ${brl(x.valor)}`).join(", ")}` : ""}`;
 
   function paginasEv(p, d, c, v) {
     const q = c.qtd, pl = (x, s, pp) => `${x} ${x > 1 ? pp : s}`;
@@ -337,6 +371,12 @@
           ${n(d.manutencao_mensal) && d.manutencao_opcional ? `<p class="nota">Sem a manutenção preventiva: ${brl(c.fixoSem)} por mês.</p>` : ""}
           ${linhas(d.variaveis).length ? `<h3 style="margin-top:20px">Custos variáveis</h3>${linhas(d.variaveis).map(l => `<div style="font-size:17px;padding:4px 0">• ${esc(l)}</div>`).join("")}` : ""}` : ""}</div>
       </div>${pe(d)}</section>`);
+    // Formas de pagamento: página própria quando há pagamento por linha ou parcelado no total.
+    const fp = formasPagamento(p, d, c);
+    if (fp.separado || fp.junto.parcelas.length || fp.junto.avista < fp.junto.valor) pgs.push(`<section class="slide">${topo("Investimento", "Formas de pagamento")}
+      ${cardsPagamento(fp)}
+      ${linhas(d.pagamento).length ? `<h3 style="margin:26px 0 8px">Condições</h3>${linhas(d.pagamento).map(l => `<div style="font-size:18px;padding:4px 0">• ${esc(l)}</div>`).join("")}` : ""}
+      <p class="nota">Parcelamento sujeito à aprovação.</p>${pe(d)}</section>`);
     // Manutenção só aparece nas responsabilidades quando está nos valores.
     const respP3 = linhas(d.resp_p3).filter(l => !(/manuten/i.test(l) && (!d.operacao || !n(d.manutencao_mensal))));
     pgs.push(`<section class="slide">${topo("Responsabilidades", "Papéis de implantação")}
@@ -431,7 +471,7 @@
       if (d.prazo) msg.push(`• Prazo de execução: ${d.prazo}`);
       msg.push("", `*Economia e investimento*`,
         `• Conta de luz de ${brl(c.conta)} para cerca de ${brl(c.comSolar)} por mês: economia de ${brl(c.mensal)} (${Math.round(c.pct * 100)}%)`,
-        `• Investimento de ${brl(c.investimento)}${c.avista < c.investimento ? ` (à vista ${brl(c.avista)})` : ""}${parc ? `, ou em até ${parc.q}× de ${brl(parc.valor)}` : ""}`);
+        ...(() => { const fp = formasPagamento(p, d, c); return fp.separado ? [`• Investimento total de ${brl(c.investimento)}. Formas de pagamento:`, ...fp.grupos.map(g => `  – ${textoForma(g)}`), ...(fp.mostrarJunto ? [`  – ${textoForma(fp.junto)}`] : [])] : [`• Investimento de ${brl(c.investimento)}${c.avista < c.investimento ? ` (à vista ${brl(c.avista)})` : ""}${parc ? `, ou em até ${parc.q}× de ${brl(parc.valor)}` : ""}`]; })());
       if (c.payback != null) msg.push(`• O sistema se paga em cerca de ${num(c.payback, 1)} anos, e em ${c.anos} anos a economia passa de ${brl(c.total)}`);
     } else if (p.tipo === "ev") {
       const q = c.qtd, escopo = [`${q} ${q > 1 ? "carregadores" : "carregador"} ${d.corrente} de ${num(d.potencia_kw)} kW${d.modelo ? ` (${d.modelo})` : ""}`];
@@ -448,6 +488,7 @@
         `• Custo fixo de ${brl(c.fixoSem)} por mês (software)${n(d.manutencao_mensal) ? ` + ${brl(c.manut)} de manutenção preventiva${d.manutencao_opcional ? " (opcional)" : ""}` : ""}`);
       if (d.operacao && linhas(d.variaveis).length) msg.push(...linhas(d.variaveis).map(x => `• ${x}`));
       msg.push("", `*Investimento*`, `• ${brl(c.investimento)} na implantação`);
+      { const fp = formasPagamento(p, d, c); if (fp.separado || fp.junto.parcelas.length) msg.push(...[...(fp.separado ? fp.grupos : []), ...(fp.mostrarJunto ? [fp.junto] : [])].map(g => `• ${textoForma(g)}`)); }
       if (linhas(d.pagamento).length) msg.push(...linhas(d.pagamento).map(x => `• ${x}`));
     } else if (p.tipo === "manutencao") {
       msg.push(`Segue em anexo a proposta${nr} de manutenção${para}, para o sistema de ${numx(c.kwp)} kWp (${Math.round(c.mod)} módulos) 🔧`, "");
@@ -578,7 +619,7 @@
         <div class="wide"><button type="button" class="btn sm primary" id="prCustos">Calcular preço pela planilha</button><p class="muted" id="prLucro" style="margin:8px 0 0;font-size:12.5px;white-space:pre-line"></p></div>`)
       + bloco("Investimento e condições", `
         ${campo("valor_equip", "Equipamentos (R$)", "num")}${campo("valor_impl", "Projeto e implantação (R$)", "num")}
-        ${campo("avista", "À vista (R$) — vazio = valor total", "num")}${campo("parcelas", "Parcelas (ex.: 3, 6, 12)")}${campo("juros_parcela", "Acréscimo no parcelado (%)", "num")}
+        ${campo("pag_separado", "Pagamento separado (cada parte à vista ou parcelada)", "check")}${campo("pag_junto", "Mostrar também tudo junto", "check")}<p class="muted wide" style="margin:4px 0 0;font-size:12px;font-weight:600">Equipamentos</p>${campo("avista_equip", "À vista (R$) — vazio = valor", "num")}${campo("parcelas_equip", "Parcelas (ex.: 3, 6, 12)")}${campo("juros_equip", "Acréscimo no parcelado (%)", "num")}${p.tipo === "bateria" ? `<p class="muted wide" style="margin:4px 0 0;font-size:12px;font-weight:600">Baterias</p>${campo("avista_bat", "À vista (R$) — vazio = valor", "num")}${campo("parcelas_bat", "Parcelas")}${campo("juros_bat", "Acréscimo no parcelado (%)", "num")}` : ""}<p class="muted wide" style="margin:4px 0 0;font-size:12px;font-weight:600">Implantação</p>${campo("avista_impl", "À vista (R$) — vazio = valor", "num")}${campo("parcelas_impl", "Parcelas (ex.: 3)")}${campo("juros_impl", "Acréscimo no parcelado (%)", "num")}<p class="muted wide" style="margin:4px 0 0;font-size:12px;font-weight:600">Tudo junto</p>${campo("avista", "À vista (R$) — vazio = valor total", "num")}${campo("parcelas", "Parcelas (ex.: 3, 6, 12)")}${campo("juros_parcela", "Acréscimo no parcelado (%)", "num")}
         ${campo("prazo", "Tempo de execução")}${campo("pagamento_obs", "Observação das condições", "area", 2)}
         ${campo("reajuste", "Reajuste da tarifa ao ano (%)", "num")}${campo("degradacao", "Perda dos módulos ao ano (%)", "num")}${campo("anos", "Anos da projeção", "num")}`);
     const manut = () => bloco("Sistema do cliente", `
@@ -603,7 +644,7 @@
       + bloco("Solução técnica (opcional)", `${campo("justificativa_titulo", "Título")}${campo("justificativa", "Texto (uma ideia por linha; comece com - para tópico)", "area", 6)}`, !!d.justificativa)
       + bloco("Valores", `<div class="wide" id="prInv"></div>
         ${campo("software_mensal", "Software por carregador (R$/mês)", "num")}${campo("manutencao_mensal", "Manutenção preventiva por carregador (R$/mês)", "num")}${campo("manutencao_opcional", "Manutenção é opcional", "check")}
-        ${campo("variaveis", "Custos variáveis (um por linha)", "area", 2)}${campo("pagamento", "Condições de pagamento (uma por linha)", "area", 3)}`)
+        ${campo("variaveis", "Custos variáveis (um por linha)", "area", 2)}${campo("pagamento", "Condições de pagamento (uma por linha)", "area", 3)}${campo("pag_separado", "Pagamento separado por linha (à vista ou parcelado)", "check")}${campo("pag_junto", "Mostrar também tudo junto", "check")}<p class="muted wide" style="margin:4px 0 0;font-size:12px;font-weight:600">Tudo junto</p>${campo("avista", "À vista (R$) — vazio = valor total", "num")}${campo("parcelas", "Parcelas (ex.: 3, 6, 12) — vazio = sem parcelado")}${campo("juros_parcela", "Acréscimo no parcelado (%)", "num")}`)
       + bloco("Responsabilidades", `${campo("resp_p3", "P3 Energy (uma por linha)", "area", 5)}${campo("resp_cliente", "Cliente (uma por linha)", "area", 4)}`, false);
 
     main.innerHTML = `
@@ -650,13 +691,14 @@
     };
     const NUMS = new Set(["validade_dias", "consumo_kwh", "conta_atual", "fio_b_pct", "qtd_modulos", "modulo_w", "fator_kwh_kwp", "valor_equip", "valor_impl", "juros_parcela", "reajuste", "degradacao", "anos", "bat_qtd", "bat_kwh", "carga_critica_kw", "valor_bateria", "qtd", "potencia_kw", "software_mensal", "manutencao_mensal",
       "c_km", "c_viagens_eng", "c_viagens_equipe", "c_pessoas", "c_dias", "c_margem_kwp", "c_imp_total", "c_imp_servico", "c_kit", "c_bateria", "c_estrutura", "c_transformador", "c_padrao", "c_descarregamento", "c_conexao", "c_comissao", "c_terrenista",
-      "kwp", "km", "beneficiarias", "garantia_meses", "fiscal_pct", "markup_3x", "markup_anual", "markup_avulso", "tarifa_kwh"]);
-    const OPCIONAL = new Set(["avista", "custo_com_solar", "modulos"]);
+      "kwp", "km", "beneficiarias", "juros_equip", "juros_bat", "juros_impl", "garantia_meses", "fiscal_pct", "markup_3x", "markup_anual", "markup_avulso", "tarifa_kwh"]);
+    const OPCIONAL = new Set(["avista", "custo_com_solar", "modulos", "avista_equip", "avista_bat", "avista_impl"]);
     $$("[data-k]", main).forEach(el => {
       el.oninput = el.onchange = () => {
         const k = el.dataset.k;
         d[k] = el.type === "checkbox" ? el.checked : NUMS.has(k) ? n(el.value) : OPCIONAL.has(k) ? (el.value.trim() === "" ? "" : n(el.value)) : el.value;
         sujo = true; atualizar();
+        if (k === "pag_separado" && p.tipo === "ev") desenharInv();
       };
     });
     $$("[data-img]", main).forEach(el => el.onchange = async () => {
@@ -671,9 +713,9 @@
     // Linhas do investimento (EV): descrição, detalhe e valor.
     const desenharInv = () => {
       const box = $("#prInv", main); if (!box) return;
-      box.innerHTML = `<div class="pr-inv-t">Investimento</div>${d.investimento.map((l, i) => `<div class="pr-inv"><input data-i="${i}" data-c="descricao" value="${esc(l.descricao)}" placeholder="Item" aria-label="Item"><input data-i="${i}" data-c="detalhe" value="${esc(l.detalhe)}" placeholder="Detalhe (opcional)" aria-label="Detalhe"><input data-i="${i}" data-c="valor" inputmode="decimal" value="${esc(String(l.valor || "").replace(".", ","))}" placeholder="R$" aria-label="Valor"><button type="button" class="btn ghost sm" data-del="${i}" aria-label="Tirar linha">✕</button></div>`).join("")}
+      box.innerHTML = `<div class="pr-inv-t">Investimento</div>${d.investimento.map((l, i) => `<div class="pr-inv"><input data-i="${i}" data-c="descricao" value="${esc(l.descricao)}" placeholder="Item" aria-label="Item"><input data-i="${i}" data-c="detalhe" value="${esc(l.detalhe)}" placeholder="Detalhe (opcional)" aria-label="Detalhe"><input data-i="${i}" data-c="valor" inputmode="decimal" value="${esc(String(l.valor || "").replace(".", ","))}" placeholder="R$" aria-label="Valor"><button type="button" class="btn ghost sm" data-del="${i}" aria-label="Tirar linha">✕</button></div>${d.pag_separado ? `<div class="pr-inv pr-inv2"><input data-i="${i}" data-c="avista" inputmode="decimal" value="${esc(String(l.avista ?? "").replace(".", ","))}" placeholder="À vista (vazio = valor)" aria-label="À vista"><input data-i="${i}" data-c="parcelas" value="${esc(l.parcelas || "")}" placeholder="Parcelas (ex.: 3, 6)" aria-label="Parcelas"><input data-i="${i}" data-c="juros" inputmode="decimal" value="${esc(String(l.juros ?? "").replace(".", ","))}" placeholder="Acréscimo %" aria-label="Acréscimo"><span></span></div>` : ""}`).join("")}
         <button type="button" class="btn sm" id="prInvMais">+ Linha</button> <b style="margin-left:8px">Total: <span id="prInvTot">${brl(calcEv(d).investimento)}</span></b>`;
-      $$("[data-i]", box).forEach(el => el.oninput = () => { const l = d.investimento[Number(el.dataset.i)]; l[el.dataset.c] = el.dataset.c === "valor" ? n(el.value) : el.value; $("#prInvTot", box).textContent = brl(calcEv(d).investimento); sujo = true; atualizar(); });
+      $$("[data-i]", box).forEach(el => el.oninput = () => { const l = d.investimento[Number(el.dataset.i)]; l[el.dataset.c] = el.dataset.c === "valor" || el.dataset.c === "juros" ? n(el.value) : el.dataset.c === "avista" ? (el.value.trim() === "" ? "" : n(el.value)) : el.value; $("#prInvTot", box).textContent = brl(calcEv(d).investimento); sujo = true; atualizar(); });
       $$("[data-del]", box).forEach(b => b.onclick = () => { d.investimento.splice(Number(b.dataset.del), 1); desenharInv(); sujo = true; atualizar(); });
       $("#prInvMais", box).onclick = () => { d.investimento.push({ descricao: "", detalhe: "", valor: 0 }); desenharInv(); };
     };

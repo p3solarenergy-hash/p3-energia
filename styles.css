@@ -289,3 +289,5 @@ td small.ob-uby { color: var(--brand-2); font-weight: 600; }
 .cal-dias .d small { font-size: 9.5px; margin-left: 3px; }
 .cal .d i.ag { display: block; font-style: normal; font-size: 10px; color: var(--brand-2); line-height: 1.15; }
 .cal .d.forte i.ag { color: #fff; }
+.pr-inv2 { margin-top: -2px; padding-left: 10px; border-left: 2px solid var(--line); }
+.pr-inv2 input { font-size: 12px; }
