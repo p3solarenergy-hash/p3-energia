@@ -49,8 +49,8 @@
   function desenhar(main) {
     const h = hoje(), mes = h.slice(0, 7), em30 = M.addMonths(mes, 1) + h.slice(7);
     const abertas = contas.filter(c => c.status === "aberto");
-    const pagar = abertas.filter(c => c.tipo !== "receber"), receber = abertas.filter(c => c.tipo === "receber");
-    const vencidas = pagar.filter(c => c.vencimento && c.vencimento < h);
+    const aPagar = abertas.filter(c => c.tipo !== "receber"), receber = abertas.filter(c => c.tipo === "receber");
+    const vencidas = aPagar.filter(c => c.vencimento && c.vencimento < h);
     const pagos = contas.filter(c => c.status === "pago" && c.tipo !== "receber");
     const terceiros = contas.filter(c => c.tipo !== "receber" && c.por_conta && c.por_conta !== "p3" && c.status !== "cancelado");
     const aCobrar = terceiros.filter(c => c.status === "pago" && c.reembolso === "a_cobrar");
@@ -73,7 +73,7 @@
           <button class="btn" id="fpRec">+ A receber</button><button class="btn primary" id="fpNova">+ Conta a pagar</button></div></div>
       <div class="kpis">
         ${kpi("Vencido", fmt.brl(somar(vencidas)), vencidas.length ? `${vencidas.length} conta(s) em atraso` : "nada em atraso", vencidas.length ? "bad" : "")}
-        ${kpi("A pagar · 30 dias", fmt.brl(somar(pagar.filter(c => c.vencimento && c.vencimento >= h && c.vencimento <= em30))), `${fmt.brl(somar(pagar))} em aberto no total`)}
+        ${kpi("A pagar · 30 dias", fmt.brl(somar(aPagar.filter(c => c.vencimento && c.vencimento >= h && c.vencimento <= em30))), `${fmt.brl(somar(aPagar))} em aberto no total`)}
         ${kpi("A receber · 30 dias", fmt.brl(somar(receber.filter(c => !c.vencimento || c.vencimento <= em30))), `${fmt.brl(somar(receber))} em aberto no total`)}
         ${kpi(`Pago em ${fmt.mes(mes)}`, fmt.brl(somar(pagos.filter(c => String(c.pago_em || "").startsWith(mes)))), `recebido ${fmt.brl(somar(contas.filter(c => c.tipo === "receber" && c.status === "pago" && String(c.pago_em || "").startsWith(mes))))}`)}
         ${terceiros.length ? kpi("Pago por conta de outros", fmt.brl(somar(terceiros.filter(c => c.status === "pago"))), `${fmt.brl(somar(terceiros.filter(c => c.status === "aberto")))} ainda a pagar${aCobrar.length ? ` · ${fmt.brl(somar(aCobrar))} a cobrar` : ""}`, "lead") : ""}
