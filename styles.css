@@ -42,7 +42,7 @@ nav em { margin-left: auto; font-style: normal; background: var(--bad); color: #
 .nav-sep { margin: 12px 10px 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
 .side-foot { margin-top: auto; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; padding: 8px 6px 0; border-top: 1px solid var(--line-2); }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px var(--ok-bg); flex: none; }
-.mobile-top, .tabs, .fundo-menu { display: none; }
+.mobile-top, .abas-app, .fundo-menu { display: none; }
 
 main { padding: 26px 30px 60px; min-width: 0; outline: none; }
 .loading, .empty { color: var(--muted); padding: 30px 0; text-align: center; }
@@ -197,16 +197,17 @@ hr.sep { border: 0; border-top: 1px solid var(--line-2); margin: 14px 0; }
   /* Celular: abas fixas embaixo, como app; "Mais" abre o menu completo. */
   .mobile-top { padding: calc(10px + env(safe-area-inset-top)) 16px 10px; }
   .mobile-top .logo-p3 { height: 26px; }
-  .tabs { display: grid; grid-template-columns: repeat(5, 1fr); position: fixed; left: 0; right: 0; bottom: 0; z-index: 35; background: var(--panel); border-top: 1px solid var(--line); padding: 4px 4px calc(4px + env(safe-area-inset-bottom)); box-shadow: 0 -2px 12px rgba(0,0,0,.06); }
-  .tabs a, .tabs button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 2px; border: 0; background: none; color: var(--muted); font: inherit; font-size: 11px; font-weight: 600; text-decoration: none; border-radius: 10px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
-  .tabs .ic { font-size: 19px; line-height: 1.1; }
-  .tabs a.on { color: var(--brand); background: var(--panel-2); } .tabs a.on .ic { color: var(--brand); }
+  .abas-app { display: grid; grid-template-columns: repeat(5, 1fr); position: fixed; left: 0; right: 0; bottom: 0; z-index: 35; background: var(--panel); border-top: 1px solid var(--line); padding: 4px 4px calc(4px + env(safe-area-inset-bottom)); box-shadow: 0 -2px 12px rgba(0,0,0,.06); }
+  .abas-app a, .abas-app button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 2px; border: 0; background: none; color: var(--muted); font: inherit; font-size: 11px; font-weight: 600; text-decoration: none; border-radius: 10px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .abas-app .ic { font-size: 19px; line-height: 1.1; }
+  .abas-app a.on { color: var(--brand); background: var(--panel-2); } .abas-app a.on .ic { color: var(--brand); }
+  .modal-bg { padding: 10px; place-items: end center; } .modal { max-height: calc(100dvh - 20px); }
   .side.open + .fundo-menu { display: block; position: fixed; inset: 0; z-index: 39; background: rgba(0,0,0,.35); }
   #toasts { bottom: calc(76px + env(safe-area-inset-bottom)) !important; }
   .achado { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
-@media print { .side, .mobile-top, .tabs, .fundo-menu, .actions, #toasts { display: none !important; } .app { display: block; } main { padding: 0; } }
+@media print { .side, .mobile-top, .abas-app, .fundo-menu, .actions, #toasts { display: none !important; } .app { display: block; } main { padding: 0; } }
 
 /* Obras */
 .ob-filtros { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 14px; }
