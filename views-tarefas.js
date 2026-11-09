@@ -143,7 +143,7 @@
     const resp = [...new Set([...RESPONSAVEIS, ...tarefas.map(t => t.responsavel).filter(Boolean)])];
     main.innerHTML = `
       <div class="head"><div><p class="kicker">Rotina</p><h1>Tarefas</h1><p>O que está em aberto, com prazo e responsável. Cada tarefa com prazo vai para o Google Agenda com um toque.</p></div>
-        <div class="actions"><button class="btn" id="tfAgendas">Agendas do Google${agendasInfo.some(a => a.ics) ? ` · ${agendasInfo.filter(a => a.ics).length}` : ""}</button><a class="btn" href="https://calendar.google.com/calendar/r" target="_blank" rel="noopener">Abrir Google Agenda</a><button class="btn primary" id="tfNova">+ Nova tarefa</button></div></div>
+        <div class="actions"><button class="btn" id="tfGravar">Gravar no Google</button><button class="btn" id="tfAgendas">Agendas do Google${agendasInfo.some(a => a.ics) ? ` · ${agendasInfo.filter(a => a.ics).length}` : ""}</button><a class="btn" href="https://calendar.google.com/calendar/r" target="_blank" rel="noopener">Abrir Google Agenda</a><button class="btn primary" id="tfNova">+ Nova tarefa</button></div></div>
       <form class="inline" id="tfRapida" style="margin-bottom:14px;align-items:flex-end;flex-wrap:wrap">
         <label class="f" style="flex:1 1 260px">Anotar rápido<input name="titulo" placeholder="Ex.: Ligar para o Denison sobre a manutenção" autocomplete="off"></label>
         <label class="f">Responsável<select name="responsavel">${opts(resp.map(r => [r, r]), "Eduardo")}</select></label>
@@ -156,6 +156,7 @@
     $$(".tabs button", main).forEach(b => b.onclick = () => { ui.aba = b.dataset.aba; desenhar(main); });
     $("#tfNova", main).onclick = () => editar(main, { responsavel: "Eduardo", prioridade: "media", status: "aberta" });
     $("#tfAgendas", main).onclick = () => agendas(main);
+    $("#tfGravar", main).onclick = () => conectarGoogle();
     $("#tfRapida", main).onsubmit = async e => {
       e.preventDefault();
       const f = formData(e.target);
@@ -288,6 +289,29 @@
     if (await salvo) { toast("Agenda ligada. Lendo os compromissos…", "ok"); await carregarAgenda(true); desenhar(main); }
   }
 
+  // Conectar para GRAVAR no Google: o usuário publica o script (com o segredo gerado aqui) e cola o endereço.
+  async function conectarGoogle() {
+    const est = await api("google-ponte").catch(() => ({}));
+    const segredo = [...crypto.getRandomValues(new Uint8Array(24))].map(b => b.toString(16).padStart(2, "0")).join("");
+    const codigo = window.P3_PONTE_GOOGLE(segredo);
+    const html = `${est.conectado ? `<div class="note" style="margin-bottom:10px">Conectado${est.conta ? ` a <b>${esc(est.conta)}</b>` : ""}. Para trocar, refaça os passos.</div>` : ""}
+      <ol style="font-size:13.5px;padding-left:18px;margin:0 0 10px">
+        <li>Abra <b>script.google.com</b> → <b>Novo projeto</b>. Apague o que tiver e cole o código abaixo.</li>
+        <li>À esquerda, em <b>Serviços +</b>, adicione <b>Google Tasks API</b>.</li>
+        <li><b>Implantar → Nova implantação → App da Web</b>. Executar como: <b>Eu</b>. Quem pode acessar: <b>Qualquer pessoa</b>. Autorize.</li>
+        <li>Copie o <b>URL do app da Web</b> (termina em /exec) e cole aqui.</li></ol>
+      <button type="button" class="btn sm" id="gpCopiar">Copiar o código</button>
+      <textarea readonly rows="5" style="width:100%;font:12px monospace;margin-top:6px">${esc(codigo)}</textarea>
+      <label class="f wide" style="margin-top:8px">URL do app da Web<input name="url" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off"></label>`;
+    const p = modal("Gravar no Google automaticamente", html, {
+      saveLabel: "Testar e conectar",
+      onSave: async el => { const f = formData(el); return api("google-ponte", { method: "POST", body: { url: f.url.trim(), segredo } }); }
+    });
+    $("#gpCopiar").onclick = async () => { try { await navigator.clipboard.writeText(codigo); toast("Código copiado.", "ok"); } catch (_) { toast("Não consegui copiar.", "bad"); } };
+    const r = await p;
+    if (r) toast(`Google conectado${r.conta ? ` (${r.conta})` : ""}. Tarefas e eventos vão sozinhos para lá.`, "ok");
+  }
+
   // ───────── Todas as tarefas (com filtros) ─────────
   function lista(el, main) {
     const resp = [...new Set(tarefas.map(t => t.responsavel).filter(Boolean))];
@@ -317,7 +341,7 @@
       ${lst.map(t => `<tr>
         <td><input type="checkbox" data-feito="${esc(t.id)}" ${t.status === "concluida" ? "checked" : ""} aria-label="Concluir ${esc(t.titulo)}" style="width:18px;height:18px"></td>
         <td style="white-space:nowrap">${t.prazo ? `${fmt.data(t.prazo)}${t.hora ? ` ${esc(t.hora)}` : ""}` : `<span class="muted">sem prazo</span>`}${atrasada(t) ? `<small class="neg">atrasada</small>` : t.prazo === hoje() && aberta(t) ? `<small class="neg">hoje</small>` : ""}</td>
-        <td><b style="${t.status === "concluida" ? "text-decoration:line-through;opacity:.6" : ""}">${esc(t.titulo)}</b><small>${esc([t.categoria, t.descricao].filter(Boolean).join(" · "))}${t.status === "concluida" && t.concluida_em ? ` · concluída em ${fmt.data(t.concluida_em)}` : ""}</small></td>
+        <td><b style="${t.status === "concluida" ? "text-decoration:line-through;opacity:.6" : ""}">${esc(t.titulo)}</b><small>${esc([t.categoria, t.descricao].filter(Boolean).join(" · "))}${t.status === "concluida" && t.concluida_em ? ` · concluída em ${fmt.data(t.concluida_em)}` : ""}${t.tipo === "evento" ? " · evento" : ""}</small>${t.google_erro ? `<small class="neg" title="${esc(t.google_erro)}">não foi para o Google</small>` : ""}</td>
         <td>${esc(t.responsavel || "—")}</td>
         <td>${badge(...(PRIORIDADE[t.prioridade] || PRIORIDADE.media))}</td>
         <td>${badge(...(SITUACAO[t.status] || SITUACAO.aberta))}</td>
@@ -335,18 +359,22 @@
 
   async function editar(main, orig) {
     const t = { ...orig };
+    const ponteOk = await api("google-ponte").then(r => r.conectado).catch(() => false);
     const resp = [...new Set([...RESPONSAVEIS, ...tarefas.map(x => x.responsavel).filter(Boolean)])];
     const html = `<div class="grid-form">
+        <label class="f wide">Lançar como<select name="tipo" id="tfTipo">${opts([["tarefa", "Tarefa (Google Tarefas)"], ["evento", "Evento (Google Agenda)"]], t.tipo || "tarefa")}</select></label>
         <label class="f wide">Tarefa<input name="titulo" value="${esc(t.titulo || "")}" autocomplete="off"></label>
         <label class="f">Responsável<input name="responsavel" list="tfResps" value="${esc(t.responsavel || "")}"><datalist id="tfResps">${resp.map(r => `<option value="${esc(r)}">`).join("")}</datalist></label>
         <label class="f">Categoria<select name="categoria">${opts([...new Set([...CATEGORIAS, ...(t.categoria ? [t.categoria] : [])])].map(c => [c, c]), t.categoria, "—")}</select></label>
         <label class="f">Prazo<input type="date" name="prazo" value="${esc(t.prazo || "")}"></label>
         <label class="f">Hora (opcional)<input type="time" name="hora" value="${esc(t.hora || "")}"></label>
+        <label class="f" id="tfDurBox">Duração<select name="duracao">${opts([[30, "30 min"], [60, "1 hora"], [90, "1h30"], [120, "2 horas"], [180, "3 horas"], [240, "4 horas"], [480, "8 horas"]], t.duracao || 60)}</select></label>
         <label class="f">Prioridade<select name="prioridade">${opts(Object.entries(PRIORIDADE).map(([k, [l]]) => [k, l]), t.prioridade || "media")}</select></label>
         <label class="f">Situação<select name="status">${opts(Object.entries(SITUACAO).map(([k, [l]]) => [k, l]), t.status || "aberta")}</select></label>
         <label class="f wide">Detalhes<textarea name="descricao" rows="3" style="width:100%;font:inherit">${esc(t.descricao || "")}</textarea></label>
       </div>
-      <p style="margin:12px 0 0;display:flex;gap:8px;flex-wrap:wrap"><a class="btn sm" id="tfAgenda" target="_blank" rel="noopener">📅 Adicionar ao Google Agenda</a>${t.id ? `<button type="button" class="btn ghost sm danger" id="tfExcluir">Excluir</button>` : ""}</p>`;
+      ${t.google_erro ? `<div class="note bad" style="margin-top:10px;font-size:13px">Não foi para o Google: ${esc(t.google_erro)}. Salvar de novo tenta outra vez.</div>` : t.google_id ? `<p class="muted" style="margin:10px 0 0;font-size:12.5px">✓ Já está no Google ${t.google_tipo === "evento" ? "Agenda" : "Tarefas"}; o que mudar aqui muda lá.</p>` : ""}
+      <p style="margin:12px 0 0;display:flex;gap:8px;flex-wrap:wrap">${ponteOk ? "" : `<a class="btn sm" id="tfAgenda" target="_blank" rel="noopener">📅 Adicionar ao Google Agenda</a>`}${t.id ? `<button type="button" class="btn ghost sm danger" id="tfExcluir">Excluir</button>` : ""}</p>`;
     const salvo = modal(t.id ? "Tarefa" : "Nova tarefa", html, {
       onSave: async el => {
         const f = formData(el);
@@ -358,10 +386,16 @@
     });
     const bgs = document.querySelectorAll(".modal-bg"), bg = bgs[bgs.length - 1];
     // O link da agenda acompanha o que está no formulário.
+    // Com o Google conectado, tudo vai sozinho ao salvar; sem ele, fica o link para criar à mão.
     const ag = $("#tfAgenda", bg);
-    const atualizar = () => { const l = linkAgenda(formData(bg)); ag.href = l || "#"; ag.style.opacity = l ? "" : ".45"; ag.title = l ? "Abre o evento já preenchido no Google Agenda" : "Coloque um prazo para mandar para a agenda"; };
-    ag.onclick = e => { if (!$('[name="prazo"]', bg).value) { e.preventDefault(); toast("Coloque um prazo para mandar para a agenda.", "bad"); } };
-    $$("[name]", bg).forEach(i => i.addEventListener("input", atualizar)); atualizar();
+    const atualizar = () => {
+      const f = formData(bg);
+      $("#tfDurBox", bg).style.display = f.tipo === "evento" && f.hora ? "" : "none";
+      if (!ag) return;
+      const l = linkAgenda(f); ag.href = l || "#"; ag.style.opacity = l ? "" : ".45"; ag.title = l ? "Abre o evento já preenchido no Google Agenda" : "Coloque um prazo para mandar para a agenda";
+    };
+    if (ag) ag.onclick = e => { if (!$('[name="prazo"]', bg).value) { e.preventDefault(); toast("Coloque um prazo para mandar para a agenda.", "bad"); } };
+    $$("[name]", bg).forEach(i => { i.addEventListener("input", atualizar); i.addEventListener("change", atualizar); }); atualizar();
     const exc = $("#tfExcluir", bg);
     if (exc) exc.onclick = async () => {
       if (!await confirmar("Excluir tarefa", `Excluir "${esc(t.titulo)}"?`, "Excluir")) return;

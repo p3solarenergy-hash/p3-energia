@@ -23,6 +23,40 @@
     if (!p) location.replace("login.html"); else if (p.papel !== "admin") location.replace("portal.html");
   });
 
+  // Tarefas vão sozinhas para o Google (evento na Agenda ou item no Google Tarefas) quando a ponte está ligada.
+  // Roda depois de salvar, sem segurar a tela; se falhar, a tarefa fica salva e o erro aparece nela.
+  let ponteGoogle = null;
+  const ponteLigada = async () => {
+    if (ponteGoogle === null) { const r = await sb.from("google_ponte").select("id").eq("id", "principal").maybeSingle(); ponteGoogle = !!(r.data); }
+    return ponteGoogle;
+  };
+  window.P3_PONTE_MUDOU = () => { ponteGoogle = null; };
+  const enviarGoogle = async corpo => {
+    const r = await sb.functions.invoke("google-gravar", { body: corpo });
+    if (r.error) { let msg = r.error.message; try { msg = (await r.error.context.json()).erro || msg; } catch (_) { } throw new Error(msg); }
+    return r.data;
+  };
+  async function googleTarefa(t, antes) {
+    try {
+      if (!await ponteLigada()) return;
+      const marcar = campos => sb.from("tarefas").update(campos).eq("id", (t || antes).id);
+      // Excluída na P3: some do Google também.
+      if (!t) { await enviarGoogle({ acao: "excluir", tipo: antes.google_tipo || "tarefa", id: antes.google_id }); return; }
+      const tipo = t.tipo === "evento" ? "evento" : "tarefa";
+      let gid = antes && antes.google_tipo === tipo ? antes.google_id : null;
+      // Mudou de tarefa para evento (ou o contrário): apaga o item antigo do outro lado.
+      if (antes && antes.google_id && antes.google_tipo && antes.google_tipo !== tipo) await enviarGoogle({ acao: "excluir", tipo: antes.google_tipo, id: antes.google_id });
+      if (tipo === "evento" && !t.prazo) { await marcar({ google_erro: "Evento precisa de data para ir à Agenda." }); return; }
+      const descricao = [t.descricao, t.responsavel && `Responsável: ${t.responsavel}`, t.categoria && `Categoria: ${t.categoria}`, "Plataforma P3 Energy"].filter(Boolean).join("\n");
+      const r = await enviarGoogle({ acao: "gravar", tipo, id: gid, titulo: t.titulo, descricao, data: t.prazo, hora: t.hora, duracao: t.duracao, concluida: t.status === "concluida" });
+      await marcar({ google_id: r.id || gid, google_tipo: tipo, google_erro: null });
+    } catch (e) {
+      if (t) await sb.from("tarefas").update({ google_erro: String(e.message || e).slice(0, 300) }).eq("id", t.id);
+      if (window.P3) window.P3.toast(`Salvo na P3, mas não foi para o Google: ${e.message}`, "bad");
+    }
+  }
+  window.P3_GOOGLE = { enviar: enviarGoogle, tarefa: googleTarefa };
+
   async function garantirUcGeradora(u) {
     if (!u.uc_geradora && !u.uc_geradora_conces) return;
     const uc = await base.findUc(u.uc_geradora, u.uc_geradora_conces);
@@ -189,6 +223,20 @@
       if (r.error) { let msg = r.error.message; try { msg = (await r.error.context.json()).erro || msg; } catch (_) { } throw new Error(msg); }
       return r.data;
     }
+    // Ponte com o Google (gravar tarefas e eventos): ver se está ligada, testar e guardar o endereço do script.
+    if (p[0] === "google-ponte") {
+      if (m === "GET") { const r = await sb.from("google_ponte").select("conta, atualizado_em").eq("id", "principal").maybeSingle(); return { conectado: !!r.data, conta: r.data && r.data.conta }; }
+      if (m === "POST") {
+        const url = String(corpo.url || "").trim(), segredo = String(corpo.segredo || "");
+        const t = await enviarGoogle({ acao: "testar", url, segredo });
+        const r = await sb.from("google_ponte").upsert({ id: "principal", url, segredo, conta: t.conta || null, atualizado_em: new Date().toISOString() });
+        if (r.error) throw new Error(r.error.message);
+        window.P3_PONTE_MUDOU();
+        await base.audit("alterar", "google_ponte", "principal", `Google conectado (${t.conta || "conta"}): tarefas e eventos vão sozinhos para lá`);
+        return { conectado: true, conta: t.conta };
+      }
+      if (m === "DELETE") { await sb.from("google_ponte").delete().eq("id", "principal"); window.P3_PONTE_MUDOU(); await base.audit("excluir", "google_ponte", "principal", "Google desconectado"); return { conectado: false }; }
+    }
     if (m === "POST" && p[0] === "abrir-pasta") throw new Error("Na versão online não há pasta para abrir: os PDFs e os backups ficam guardados na nuvem.");
     if (CRUD.has(p[0])) {
       const t = p[0], id = p[1];
@@ -201,6 +249,7 @@
         if (t === "faturas" && !b.origem) b.origem = "manual";
         const r = await base.insert(t, b);
         if (t === "usinas") await garantirUcGeradora(r);
+        if (t === "tarefas") googleTarefa(r, null);
         return r;
       }
       if (m === "PUT" && id) {
@@ -209,8 +258,16 @@
           const cur = await base.get("faturas", id);
           b.sem_usina = r2(num(b.total != null ? b.total : cur.total) + num(b.valor_creditos != null ? b.valor_creditos : cur.valor_creditos));
         }
+        const antes = t === "tarefas" ? await base.get(t, id) : null;
         const r = await base.update(t, id, b);
         if (t === "usinas") await garantirUcGeradora(r);
+        if (t === "tarefas") googleTarefa(r, antes);
+        return r;
+      }
+      if (m === "DELETE" && id && t === "tarefas") {
+        const antes = await base.get(t, id);
+        const r = await base.remove(t, id);
+        if (antes && antes.google_id) googleTarefa(null, antes);
         return r;
       }
       if (m === "DELETE" && id) return base.remove(t, id);
