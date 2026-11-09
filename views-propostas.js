@@ -710,6 +710,10 @@
       <div class="section"><div class="table-wrap"><table><thead><tr><th>Nº</th><th>Cliente</th><th>Tipo</th><th>Cidade</th><th>Data</th><th class="n">Valor</th><th>Situação</th></tr></thead><tbody>
         ${lista.map(p => { const [l, k] = STATUS[p.status] || [p.status, ""]; const d = dadosDe(p); return `<tr class="clickable" data-go="#/propostas/${encodeURIComponent(p.id)}"><td>${esc(p.numero || "—")}</td><td><b>${esc(p.cliente || "(sem nome)")}</b></td><td>${esc(TIPOS[p.tipo])}</td><td>${esc(p.cidade || "")}</td><td>${fmt.data(d.data)}</td><td class="n">${brl(p.valor_total)}</td><td>${window.P3.badge(l, k)}${p.obra_id ? " " + window.P3.badge("Virou obra", "ok") : ""}</td></tr>`; }).join("") || `<tr><td colspan="7" class="empty">Nenhuma proposta ainda. Comece por um dos botões acima.</td></tr>`}</tbody></table></div></div>`;
     $$("[data-go]", main).forEach(tr => tr.onclick = () => window.P3.go(tr.dataset.go));
+    // Agendar a execução: abre a tarefa já ligada a esta proposta (vira cobrança quando for concluída).
+    $$("thead tr", main).forEach(tr => tr.insertAdjacentHTML("beforeend", "<th></th>"));
+    $$("tr[data-go]", main).forEach(tr => tr.insertAdjacentHTML("beforeend", `<td class="right"><button type="button" class="btn ghost sm" data-agendar="${esc(decodeURIComponent(tr.dataset.go.split("/").pop()))}">📅 Agendar</button></td>`));
+    $$("[data-agendar]", main).forEach(b => b.onclick = e => { e.stopPropagation(); window.P3_TAREFAS.agendar("proposta", b.dataset.agendar); });
   }
 
   async function numeroNovo() {

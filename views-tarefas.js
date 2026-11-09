@@ -415,6 +415,7 @@
       if (!val.value && o[2].valor_total) val.value = fmt.num(o[2].valor_total, 2);
       if (!tit.value) tit.value = `${e.target.value.startsWith("laudo") ? "Executar serviço do relatório" : "Executar proposta"} ${o[2].numero || ""} · ${o[2].cliente || ""}`.trim();
     };
+    if (t._preencher) $("#tfOrigem", bg).onchange({ target: $("#tfOrigem", bg) });
     if (ag) ag.onclick = e => { if (!$('[name="prazo"]', bg).value) { e.preventDefault(); toast("Coloque um prazo para mandar para a agenda.", "bad"); } };
     $$("[name]", bg).forEach(i => { i.addEventListener("input", atualizar); i.addEventListener("change", atualizar); }); atualizar();
     const exc = $("#tfExcluir", bg);
@@ -426,7 +427,13 @@
     if (await salvo) { toast("Tarefa salva.", "ok"); await recarregar(main); }
   }
 
-  window.P3_TAREFAS = { linkAgenda, carregar, lerIcs, ocorrencias, montarEventos };
+  // Vindo do relatório técnico ou da proposta: abre Tarefas e a nova tarefa já ligada ao item.
+  async function agendar(origemTipo, origemId) {
+    window.P3.go("#/tarefas");
+    await new Promise(r => setTimeout(r, 400));
+    editar(document.getElementById("main"), { origem_tipo: origemTipo, origem_id: origemId, tipo: "evento", responsavel: "Eduardo", prioridade: "media", status: "aberta", cobrar_dias: 7, _preencher: true });
+  }
+  window.P3_TAREFAS = { linkAgenda, carregar, lerIcs, ocorrencias, montarEventos, agendar };
   window.P3.register("tarefas", { render });
   // Conta para o menu (atrasadas + vencendo hoje) quando o sistema abre.
   setTimeout(() => { if (window.P3.state.db) carregar().catch(() => {}); }, 2500);

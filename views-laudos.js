@@ -150,6 +150,10 @@
       <div class="section"><div class="table-wrap"><table><thead><tr><th>Nº</th><th>Cliente</th><th>Tipo</th><th>Local</th><th>Data</th><th>Situação</th></tr></thead><tbody>
         ${lista.map(x => { const [s, k] = STATUS[x.status] || [x.status, ""]; return `<tr class="clickable" data-go="#/laudos/${encodeURIComponent(x.id)}"><td>${esc(x.numero || "—")}</td><td><b>${esc(x.cliente || "(sem nome)")}</b></td><td>${esc(TIPOS[x.tipo])}</td><td>${esc(x.cidade || "")}</td><td>${fmt.data(x.data)}</td><td>${window.P3.badge(s, k)}</td></tr>`; }).join("") || `<tr><td colspan="6" class="empty">Nenhum relatório ainda.</td></tr>`}</tbody></table></div></div>`;
     $$("[data-go]", main).forEach(tr => tr.onclick = () => window.P3.go(tr.dataset.go));
+    // Agendar a execução: abre a tarefa já ligada a este relatório (vira cobrança quando for concluída).
+    $$("thead tr", main).forEach(tr => tr.insertAdjacentHTML("beforeend", "<th></th>"));
+    $$("tr[data-go]", main).forEach(tr => tr.insertAdjacentHTML("beforeend", `<td class="right"><button type="button" class="btn ghost sm" data-agendar="${esc(decodeURIComponent(tr.dataset.go.split("/").pop()))}">📅 Agendar</button></td>`));
+    $$("[data-agendar]", main).forEach(b => b.onclick = e => { e.stopPropagation(); window.P3_TAREFAS.agendar("laudo", b.dataset.agendar); });
   }
   async function numeroNovo() {
     const ano = new Date().getFullYear(), todas = await api("laudos");
