@@ -125,6 +125,7 @@
       <div class="f wide"><span><label class="btn sm" for="crFat">Ler fatura Copel da UC de destino</label><input type="file" id="crFat" accept="application/pdf,.pdf" hidden> <span class="muted" id="crFatMsg" style="font-size:12.5px">Puxa o kWh compensado e confere a UC.</span></span></div>
       ${campo("kwh_fatura", "kWh compensado na fatura Copel", 'inputmode="decimal"')}
       ${campo("kwh_uby", "kWh registrado na plataforma da Uby", 'inputmode="decimal"')}
+      <div class="f"><span><button type="button" class="btn sm" id="crUby">Buscar na Uby</button> <span class="muted" id="crUbyMsg" style="font-size:12.5px"></span></span></div>
       ${campo("fatura_ref", "Referência da fatura")}
       ${campo("valor_uby", "Uby paga (R$) — vazio = kWh × preço", 'inputmode="decimal"')}
       ${campo("valor_dono", "Dono recebe (R$) — vazio = kWh × preço", 'inputmode="decimal"')}
@@ -161,6 +162,18 @@
         conta();
         msg.textContent = `Compensado ${num(f.compensadoKwh)} kWh na referência ${f.referencia || "?"} (UC ${uc}).${outra ? " ATENÇÃO: não é a UC de destino deste lote." : ""}`;
         msg.style.color = outra ? "var(--bad)" : "";
+      } catch (err) { msg.textContent = err.message; }
+    };
+    $("#crUby", bg).onclick = async () => {
+      const msg = $("#crUbyMsg", bg), comp = sel("competencia").value;
+      if (!l.uc_destino) return toast("Preencha a UC de destino no lote.", "bad");
+      msg.textContent = "Lendo na Uby…";
+      try {
+        const r = await api("ponte-uby-creditos", { method: "POST", body: { uc: l.uc_destino } });
+        if (!r.ativa) throw new Error(r.erro || "Leitura da Uby desligada.");
+        const x = (r.meses || []).find(y => y.competencia === comp);
+        if (!x) { msg.textContent = `A Uby não tem registro de ${fmt.mes(comp)} para a UC ${l.uc_destino}.`; return; }
+        sel("kwh_uby").value = String(x.kwh); conta(); msg.textContent = `Uby: ${num(x.kwh)} kWh em ${fmt.mes(comp)}.`;
       } catch (err) { msg.textContent = err.message; }
     };
     const exc = $("#cmExc", bg);
