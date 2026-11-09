@@ -295,3 +295,15 @@ td small.ob-uby { color: var(--brand-2); font-weight: 600; }
 
 /* Financeiro P3: linha de mês na lista de contas */
 tr.grupo td { background: var(--panel-2); font-size: 13px; padding-top: 10px; }
+
+/* Abertura: logo centralizada enquanto a base carrega; some quando a primeira tela fica pronta. */
+#abertura { position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: var(--bg); transition: opacity .35s ease; }
+#abertura .logo-p3 { height: 76px; width: auto; animation: abrir .7s ease-out both; }
+#abertura p { margin: 0; color: var(--muted); font-size: 13px; letter-spacing: .14em; text-transform: uppercase; animation: abrir .7s .15s ease-out both; }
+#abertura .barra { width: 120px; height: 3px; border-radius: 3px; background: var(--line); overflow: hidden; margin-top: 10px; }
+#abertura .barra i { display: block; width: 40%; height: 100%; border-radius: 3px; background: var(--logo-b, var(--brand)); animation: correr 1.1s ease-in-out infinite; }
+#abertura.saindo { opacity: 0; pointer-events: none; }
+@keyframes abrir { from { opacity: 0; transform: translateY(6px) scale(.97); } to { opacity: 1; transform: none; } }
+@keyframes correr { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+@media (max-width: 900px) { .app { align-content: start; } }
+@media print { #abertura { display: none; } }

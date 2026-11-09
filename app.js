@@ -148,8 +148,15 @@
     $("#menuBtn").onclick = () => $("#side").classList.toggle("open");
     $("#fundoMenu").onclick = () => $("#side").classList.remove("open");
     window.addEventListener("hashchange", render);
-    try { await load(); } catch (e) { $("#main").innerHTML = `<div class="note bad">Não consegui abrir a base (${esc(e.message)}). Confira a internet e recarregue a página.</div>`; return; }
-    render();
+    try { await load(); } catch (e) { $("#main").innerHTML = `<div class="note bad">Não consegui abrir a base (${esc(e.message)}). Confira a internet e recarregue a página.</div>`; fecharAbertura(); return; }
+    await render();
+    fecharAbertura();
+  }
+  // Tela de abertura (logo) some quando a primeira tela fica pronta.
+  function fecharAbertura() {
+    const a = $("#abertura"); if (!a) return;
+    a.classList.add("saindo");
+    setTimeout(() => a.remove(), 400);
   }
 
   window.P3 = {
