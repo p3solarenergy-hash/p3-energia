@@ -218,7 +218,7 @@
       }
       if (table === "agendas_google" && !/^https:\/\/calendar\.google\.com\/calendar\/ical\/\S+\.ics$/.test(String(row.url || ""))) throw new Error("Cole o \"Endereço secreto no formato iCal\" do Google Agenda (começa com https://calendar.google.com/calendar/ical/ e termina em .ics).");
       if (table === "p3_contas") {
-        const dia = v => !v || /^d{4}-d{2}-d{2}$/.test(String(v));
+        const dia = v => !v || /^\d{4}-\d{2}-\d{2}$/.test(String(v));
         if (!["pagar", "receber"].includes(row.tipo || "pagar")) throw new Error("Tipo: a pagar ou a receber.");
         if (row.status && !["aberto", "pago", "cancelado"].includes(row.status)) throw new Error("Situação inválida.");
         if (row.reembolso && !["nao", "a_cobrar", "cobrado", "recebido"].includes(row.reembolso)) throw new Error("Reembolso inválido.");
