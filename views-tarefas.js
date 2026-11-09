@@ -360,6 +360,12 @@
   async function editar(main, orig) {
     const t = { ...orig };
     const ponteOk = await api("google-ponte").then(r => r.conectado).catch(() => false);
+    // Pipeline: de qual relatório técnico ou proposta esta tarefa saiu (para virar cobrança quando concluir).
+    const [laudos, propostas] = await Promise.all([api("laudos").catch(() => []), api("propostas").catch(() => [])]);
+    const origens = [...propostas.map(p => [`proposta:${p.id}`, `Proposta ${p.numero || ""} · ${p.cliente || ""}${p.valor_total ? ` · ${fmt.brl(p.valor_total)}` : ""}`, p]),
+      ...laudos.map(l => [`laudo:${l.id}`, `Relatório ${l.numero || ""} · ${l.cliente || ""}`, l])];
+    const origemAtual = t.origem_tipo && t.origem_id ? `${t.origem_tipo}:${t.origem_id}` : "";
+    if (origemAtual && !origens.some(o => o[0] === origemAtual)) origens.push([origemAtual, "Origem apagada", {}]);
     const resp = [...new Set([...RESPONSAVEIS, ...tarefas.map(x => x.responsavel).filter(Boolean)])];
     const html = `<div class="grid-form">
         <label class="f wide">Lançar como<select name="tipo" id="tfTipo">${opts([["tarefa", "Tarefa (Google Tarefas)"], ["evento", "Evento (Google Agenda)"]], t.tipo || "tarefa")}</select></label>
@@ -371,6 +377,11 @@
         <label class="f" id="tfDurBox">Duração<select name="duracao">${opts([[30, "30 min"], [60, "1 hora"], [90, "1h30"], [120, "2 horas"], [180, "3 horas"], [240, "4 horas"], [480, "8 horas"]], t.duracao || 60)}</select></label>
         <label class="f">Prioridade<select name="prioridade">${opts(Object.entries(PRIORIDADE).map(([k, [l]]) => [k, l]), t.prioridade || "media")}</select></label>
         <label class="f">Situação<select name="status">${opts(Object.entries(SITUACAO).map(([k, [l]]) => [k, l]), t.status || "aberta")}</select></label>
+        <label class="f wide">Vinculado a<select name="origem" id="tfOrigem">${opts(origens.map(o => [o[0], o[1]]), origemAtual, "Nada (tarefa avulsa)")}</select><small>relatório técnico ou proposta de onde saiu este serviço</small></label>
+        <label class="f">Cliente<input name="cliente" value="${esc(t.cliente || "")}"></label>
+        <label class="f">Cobrar ao concluir (R$)<input name="cobrar_valor" inputmode="decimal" value="${t.cobrar_valor ? esc(fmt.num(t.cobrar_valor, 2)) : ""}" placeholder="vazio = não cobra"></label>
+        <label class="f">Vence em (dias)<input name="cobrar_dias" inputmode="numeric" value="${esc(t.cobrar_dias || 7)}"></label>
+        ${t.cobranca_id ? `<p class="f wide muted" style="margin:0;font-size:12.5px">✓ Cobrança já criada no Financeiro P3.</p>` : ""}
         <label class="f wide">Detalhes<textarea name="descricao" rows="3" style="width:100%;font:inherit">${esc(t.descricao || "")}</textarea></label>
       </div>
       ${t.google_erro ? `<div class="note bad" style="margin-top:10px;font-size:13px">Não foi para o Google: ${esc(t.google_erro)}. Salvar de novo tenta outra vez.</div>` : t.google_id ? `<p class="muted" style="margin:10px 0 0;font-size:12.5px">✓ Já está no Google ${t.google_tipo === "evento" ? "Agenda" : "Tarefas"}; o que mudar aqui muda lá.</p>` : ""}
@@ -379,7 +390,9 @@
       onSave: async el => {
         const f = formData(el);
         if (!f.titulo.trim()) throw new Error("Escreva a tarefa.");
-        for (const k of ["prazo", "hora", "categoria", "responsavel", "descricao"]) if (!f[k]) f[k] = null;
+        for (const k of ["prazo", "hora", "categoria", "responsavel", "descricao", "cliente", "cobrar_valor", "cobrar_dias"]) if (!f[k]) f[k] = null;
+        const [ot, oid] = String(f.origem || "").split(":");
+        f.origem_tipo = oid ? ot : null; f.origem_id = oid || null; delete f.origem;
         f.concluida_em = f.status === "concluida" ? (t.status === "concluida" && t.concluida_em ? t.concluida_em : hoje()) : null;
         return t.id ? api(`tarefas/${encodeURIComponent(t.id)}`, { method: "PUT", body: f }) : api("tarefas", { method: "POST", body: f });
       }
@@ -393,6 +406,14 @@
       $("#tfDurBox", bg).style.display = f.tipo === "evento" && f.hora ? "" : "none";
       if (!ag) return;
       const l = linkAgenda(f); ag.href = l || "#"; ag.style.opacity = l ? "" : ".45"; ag.title = l ? "Abre o evento já preenchido no Google Agenda" : "Coloque um prazo para mandar para a agenda";
+    };
+    // Ao escolher a origem, traz cliente e valor da proposta (só preenche o que estiver vazio).
+    $("#tfOrigem", bg).onchange = e => {
+      const o = origens.find(x => x[0] === e.target.value); if (!o) return;
+      const cli = $('[name="cliente"]', bg), val = $('[name="cobrar_valor"]', bg), tit = $('[name="titulo"]', bg);
+      if (!cli.value && o[2].cliente) cli.value = o[2].cliente;
+      if (!val.value && o[2].valor_total) val.value = fmt.num(o[2].valor_total, 2);
+      if (!tit.value) tit.value = `${e.target.value.startsWith("laudo") ? "Executar serviço do relatório" : "Executar proposta"} ${o[2].numero || ""} · ${o[2].cliente || ""}`.trim();
     };
     if (ag) ag.onclick = e => { if (!$('[name="prazo"]', bg).value) { e.preventDefault(); toast("Coloque um prazo para mandar para a agenda.", "bad"); } };
     $$("[name]", bg).forEach(i => { i.addEventListener("input", atualizar); i.addEventListener("change", atualizar); }); atualizar();

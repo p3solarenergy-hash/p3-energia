@@ -57,6 +57,22 @@
   }
   window.P3_GOOGLE = { enviar: enviarGoogle, tarefa: googleTarefa };
 
+  // Pipeline: relatório/proposta → tarefa ou evento → executado → cobrança. Ao concluir uma tarefa com valor a
+  // cobrar, nasce a conta a receber no Financeiro P3 (uma só: reabrir e concluir de novo não duplica).
+  async function cobrarTarefa(t) {
+    if (!t || t.status !== "concluida" || !(Number(t.cobrar_valor) > 0) || t.cobranca_id) return;
+    const d = new Date(Date.now() - 3 * 3600 * 1000); d.setUTCDate(d.getUTCDate() + (Number(t.cobrar_dias) || 7));
+    let origem = "";
+    if (t.origem_tipo && t.origem_id) { const o = await base.get(t.origem_tipo === "laudo" ? "laudos" : "propostas", t.origem_id).catch(() => null); if (o) origem = `${t.origem_tipo === "laudo" ? "Relatório técnico" : "Proposta"} ${o.numero || ""}`.trim(); }
+    const conta = await base.insert("p3_contas", {
+      tipo: "receber", descricao: `Cobrança: ${t.titulo}`, categoria: t.origem_tipo === "proposta" ? "Obras" : "Serviços",
+      contraparte: t.cliente || null, por_conta: "p3", valor: t.cobrar_valor, vencimento: d.toISOString().slice(0, 10), status: "aberto",
+      documento: origem || null, tarefa_id: t.id, obs: `Gerada ao concluir a tarefa "${t.titulo}"${origem ? ` (${origem})` : ""}.`
+    }, `Cobrança gerada pela tarefa concluída: ${t.titulo}`);
+    await sb.from("tarefas").update({ cobranca_id: conta.id }).eq("id", t.id);
+    if (window.P3) window.P3.toast(`Cobrança de ${Number(t.cobrar_valor).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} criada no Financeiro P3.`, "ok");
+  }
+
   async function garantirUcGeradora(u) {
     if (!u.uc_geradora && !u.uc_geradora_conces) return;
     const uc = await base.findUc(u.uc_geradora, u.uc_geradora_conces);
@@ -249,7 +265,7 @@
         if (t === "faturas" && !b.origem) b.origem = "manual";
         const r = await base.insert(t, b);
         if (t === "usinas") await garantirUcGeradora(r);
-        if (t === "tarefas") googleTarefa(r, null);
+        if (t === "tarefas") { googleTarefa(r, null); await cobrarTarefa(r); }
         return r;
       }
       if (m === "PUT" && id) {
@@ -261,7 +277,7 @@
         const antes = t === "tarefas" ? await base.get(t, id) : null;
         const r = await base.update(t, id, b);
         if (t === "usinas") await garantirUcGeradora(r);
-        if (t === "tarefas") googleTarefa(r, antes);
+        if (t === "tarefas") { googleTarefa(r, antes); await cobrarTarefa(r); }
         return r;
       }
       if (m === "DELETE" && id && t === "tarefas") {

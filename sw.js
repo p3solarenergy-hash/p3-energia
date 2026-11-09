@@ -1,7 +1,7 @@
 // Deixa a P3 instalável como app. Sempre busca a versão nova na internet (sem esperar o cache de 10 min do GitHub);
 // a cópia guardada só abre a tela se a rede cair. Os dados (Supabase) nunca passam por aqui: só os arquivos do próprio site.
 // Também recebe o "Compartilhar" do celular (comprovantes do WhatsApp): guarda os arquivos e abre a tela de lançamento.
-const CACHE = "p3-site-v40xg";
+const CACHE = "p3-site-v40xgp";
 const RECEBIDOS = "p3-compartilhado";
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", e => e.waitUntil(
