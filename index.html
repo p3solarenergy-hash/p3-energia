@@ -24,9 +24,10 @@
       <nav id="nav">
         <a href="#/" data-r="painel"><span class="ic">◧</span>Painel</a>
         <a href="#/tarefas" data-r="tarefas"><span class="ic">☑</span>Tarefas <em id="tfAlert" hidden></em></a>
+        <a href="#/financeiro-p3" data-r="financeiro-p3"><span class="ic">▣</span>Financeiro P3 <em id="fpAlert" hidden></em></a>
         <a href="#/faturas" data-r="faturas"><span class="ic">⇪</span>Faturas Copel</a>
         <a href="#/fechamento" data-r="fechamento"><span class="ic">▤</span>Fechamento do mês</a>
-        <a href="#/financeiro" data-r="financeiro"><span class="ic">$</span>Financeiro</a>
+        <a href="#/financeiro" data-r="financeiro"><span class="ic">$</span>Financeiro usinas</a>
         <a href="#/notas" data-r="notas"><span class="ic">§</span>NFs e cobranças <em id="nfAlert" hidden></em></a>
         <a href="#/energia" data-r="energia"><span class="ic">ϟ</span>Energia e créditos</a>
         <a href="#/relatorios" data-r="relatorios"><span class="ic">⎙</span>Relatórios</a>
@@ -53,7 +54,6 @@
     <main id="main" tabindex="-1"><div class="loading">Carregando a base…</div></main>
     <nav class="tabs" id="tabs" aria-label="Abas">
       <a href="#/" data-r="painel"><span class="ic">◧</span>Painel</a>
-        <a href="#/tarefas" data-r="tarefas"><span class="ic">☑</span>Tarefas <em id="tfAlert" hidden></em></a>
       <a href="#/faturas" data-r="faturas"><span class="ic">⇪</span>Faturas</a>
       <a href="#/fechamento" data-r="fechamento"><span class="ic">▤</span>Fechamento</a>
       <a href="#/relatorios" data-r="relatorios"><span class="ic">⎙</span>Relatórios</a>
@@ -88,6 +88,8 @@
   <script src="views-propostas.js"></script>
   <script src="views-tarefas.js"></script>
   <script src="views-laudos.js"></script>
+  <script src="boleto.js"></script>
+  <script src="views-financeiro-p3.js"></script>
   <script>P3.start();</script>
   <script>if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});</script>
 </body>

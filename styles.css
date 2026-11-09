@@ -291,3 +291,6 @@ td small.ob-uby { color: var(--brand-2); font-weight: 600; }
 .cal .d.forte i.ag { color: #fff; }
 .pr-inv2 { margin-top: -2px; padding-left: 10px; border-left: 2px solid var(--line); }
 .pr-inv2 input { font-size: 12px; }
+
+/* Financeiro P3: linha de mês na lista de contas */
+tr.grupo td { background: var(--panel-2); font-size: 13px; padding-top: 10px; }
