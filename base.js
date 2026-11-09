@@ -22,13 +22,15 @@
     propostas: { prefix: "pr", required: ["tipo"], json: ["dados"], fields: ["numero", "tipo", "cliente", "cidade", "vendedor", "status", "valor_total", "dados", "obra_id", "obs"] },
     laudos: { prefix: "lt", required: ["tipo"], json: ["dados"], fields: ["numero", "tipo", "cliente", "cidade", "data", "status", "dados", "obs"] },
     p3_contas: { prefix: "pc", required: ["descricao"], fields: ["tipo", "descricao", "categoria", "por_conta", "contraparte", "valor", "vencimento", "status", "pago_em", "forma", "reembolso", "reembolsado_em", "grupo", "parcela", "documento", "codigo_barras", "pix", "anexo", "comprovante", "obs"] },
+    creditos_lotes: { prefix: "cl", required: ["nome"], fields: ["nome", "dono_id", "dono_nome", "uc_origem", "uc_destino", "destino_nome", "arrendatario", "kwh_transferidos", "data_transferencia", "preco_uby_kwh", "preco_dono_kwh", "uby_ref", "status", "obs"] },
+    creditos_mov: { prefix: "cm", required: ["lote_id", "competencia"], fields: ["lote_id", "competencia", "kwh_fatura", "kwh_uby", "fatura_ref", "valor_uby", "valor_dono", "recebido_uby", "pago_dono", "obs"] },
     tarefas: { prefix: "tf", required: ["titulo"], fields: ["titulo", "descricao", "responsavel", "categoria", "prioridade", "status", "prazo", "hora", "concluida_em"] },
     // Endereço secreto da agenda do Google (só admin; fica fora das cópias de segurança de propósito).
     agendas_google: { prefix: "ag", required: ["nome", "url"], fields: ["nome", "url", "cor", "ativo"] },
     scee: { prefix: "sc", required: ["referencia"], fields: ["uc", "uc_conces", "papel", "geradora", "geradora_conces", "referencia", "saldo_anterior", "cred_recebido", "energia_injetada", "energia_ativa", "credito_utilizado", "percentual", "saldo_final", "documento_id", "emitido_em"] }
   };
   const NUMERIC = new Set(["potencia_kwp", "valor_investido", "arrendamento_mensal", "gestao_pct", "gestao_valor", "defasagem", "ativa", "percentual", "dias", "total", "valor_creditos", "sem_usina", "consumo_kwh", "compensado_kwh", "iluminacao_publica", "encargos", "bandeira_valor", "saldo_creditos_kwh", "arrendamento", "geracao_kwh", "saldo_anterior", "cred_recebido", "energia_injetada", "energia_ativa", "credito_utilizado", "saldo_final", "valor", "dia_vencimento", "kwp", "carregadores_dc", "carregadores_ac", "potencia_kw", "venda", "custo", "custo_material", "custo_mao_obra", "custo_outros", "imposto_pct", "admin_pct", "gestao_pct", "desconto", "valor_contratado", "dia", "valor_padrao", "repasse", "repasse_valor", "custo_pct", "geradora_valor", "custos_valor", "valor_total", "incluir_uc"]);
-  const TODAS = ["config", "donos", "clientes", "usinas", "ucs", "vinculos", "documentos", "faturas", "usina_mes", "scee", "projecoes", "custos_fixos", "custos", "obras", "nf_regras", "notas_fiscais", "propostas", "tarefas", "laudos", "p3_contas"];
+  const TODAS = ["config", "donos", "clientes", "usinas", "ucs", "vinculos", "documentos", "faturas", "usina_mes", "scee", "projecoes", "custos_fixos", "custos", "obras", "nf_regras", "notas_fiscais", "propostas", "tarefas", "laudos", "p3_contas", "creditos_lotes", "creditos_mov"];
 
   const now = () => new Date().toISOString();
   const newId = prefix => `${prefix}_${[...crypto.getRandomValues(new Uint8Array(5))].map(b => b.toString(16).padStart(2, "0")).join("")}`;
