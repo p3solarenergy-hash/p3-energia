@@ -11,6 +11,7 @@ function doPost(e) {
     const p = JSON.parse(e.postData.contents);
     if (p.segredo !== SEGREDO) return saida({ erro: "Segredo inválido." });
     if (p.acao === "testar") return saida({ ok: true, conta: Session.getEffectiveUser().getEmail() });
+    if (p.acao === "listar") return saida(listar(p));
     return saida(p.tipo === "evento" ? evento(p) : tarefa(p));
   } catch (err) {
     return saida({ erro: String(err && err.message || err) });
@@ -37,6 +38,20 @@ function evento(p) {
   ev.setTitle(titulo);
   ev.setDescription(p.descricao || "");
   return { ok: true, id: ev.getId() };
+}
+
+// Tarefas em aberto do Google Tarefas (todas as listas), para aparecerem no calendário da plataforma.
+function listar(p) {
+  const out = [];
+  for (const l of (Tasks.Tasklists.list({ maxResults: 50 }).items || [])) {
+    let token;
+    do {
+      const r = Tasks.Tasks.list(l.id, { showCompleted: false, showHidden: false, maxResults: 100, pageToken: token, dueMin: p.de ? p.de + "T00:00:00.000Z" : undefined, dueMax: p.ate ? p.ate + "T23:59:59.000Z" : undefined });
+      for (const t of (r.items || [])) if (t.due && t.title) out.push({ id: t.id, lista: l.title, titulo: t.title, dia: t.due.slice(0, 10), notas: t.notes || "" });
+      token = r.nextPageToken;
+    } while (token);
+  }
+  return { ok: true, tarefas: out };
 }
 
 // Tarefa no Google Tarefas (lista padrão). O Google Tarefas guarda só a data, sem hora.

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; worker-src 'self' blob: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://viqgsvfvbzmpbuhsqisa.supabase.co wss://viqgsvfvbzmpbuhsqisa.supabase.co https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; frame-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; worker-src 'self' blob: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://viqgsvfvbzmpbuhsqisa.supabase.co wss://viqgsvfvbzmpbuhsqisa.supabase.co https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; frame-src 'self' blob: https://my.solarview.com.br; object-src 'none'; base-uri 'self'; form-action 'self'">
   <meta name="referrer" content="no-referrer">
   <link rel="manifest" href="manifest.webmanifest">
   <meta name="theme-color" content="#53663a">
@@ -35,6 +35,7 @@
         <a href="#/financeiro" data-r="financeiro"><span class="ic">$</span>Financeiro usinas</a>
         <a href="#/notas" data-r="notas"><span class="ic">§</span>NFs e cobranças <em id="nfAlert" hidden></em></a>
         <a href="#/energia" data-r="energia"><span class="ic">ϟ</span>Energia e créditos</a>
+        <a href="#/monitoramento" data-r="monitoramento"><span class="ic">☼</span>Monitoramento</a>
         <a href="#/relatorios" data-r="relatorios"><span class="ic">⎙</span>Relatórios</a>
         <a href="#/projecao" data-r="projecao"><span class="ic">↗</span>Projeção</a>
         <a href="#/creditos" data-r="creditos"><span class="ic">⇄</span>Créditos arrendados</a>
@@ -86,6 +87,7 @@
   <script src="views-cadastros.js"></script>
   <script src="views-projecao.js"></script>
   <script src="views-energia.js"></script>
+  <script src="views-monitoramento.js"></script>
   <script src="views-financeiro.js"></script>
   <script src="views-acessos.js"></script>
   <script src="views-obras.js"></script>
