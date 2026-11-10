@@ -120,6 +120,14 @@
     if (!forcar && Date.now() - eventosEm < 5 * 60 * 1000) return;
     try { const r = await api("agenda-google"); agendasInfo = r.agendas || []; eventos = montarEventos(agendasInfo); eventosEm = Date.now(); }
     catch (e) { agendasInfo = [{ nome: "Agenda do Google", erro: e.message }]; }
+    // Google Tarefas não vem no endereço iCal: lê pela ponte (quando conectada), sem repetir as que nasceram aqui.
+    try {
+      if (!(await api("google-ponte")).conectado) return;
+      const r = await window.P3_GOOGLE.enviar({ acao: "listar", de: somaDias(hoje(), -60), ate: somaDias(hoje(), 180) });
+      const daqui = new Set(tarefas.map(t => t.google_id).filter(Boolean));
+      for (const g of r.tarefas || []) if (!daqui.has(g.id)) eventos.push({ agenda: `Google Tarefas · ${g.lista}`, titulo: `○ ${g.titulo}`, dia: g.dia, hora: null, horaFim: null, ateDia: null, local: "", descricao: g.notas });
+      eventos.sort((a, b) => (a.dia + (a.hora || "00:00")).localeCompare(b.dia + (b.hora || "00:00")));
+    } catch (e) { console.warn("Google Tarefas:", e.message); }
   }
   const eventosDoDia = d => eventos.filter(e => e.dia === d);
 
