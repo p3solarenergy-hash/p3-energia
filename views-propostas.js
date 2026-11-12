@@ -16,7 +16,7 @@
   const mesAno = iso => { const [a, m] = String(iso || hoje()).split("-").map(Number); return `${MESES[m - 1]} ${a}`; };
 
   const TIPOS = { solar: "Energia solar", bateria: "Solar com bateria", ev: "Carregador EV", manutencao: "Manutenção" };
-  const STATUS = { rascunho: ["Rascunho", ""], enviada: ["Enviada", "info"], aceita: ["Aceita", "ok"], recusada: ["Recusada", "bad"] };
+  const STATUS = { rascunho: ["Rascunho", ""], enviada: ["Enviada", "info"], aceita: ["Aceita", "ok"], executada: ["Executada", "ok"], recusada: ["Recusada", "bad"] };
   const VENDEDORES = {
     eduardo: { nome: "Eduardo Berger Prochet", tel: "(43) 98861-7800", email: "eduardo@p3energy.com.br" },
     rafael: { nome: "Rafael Berger Prochet", tel: "(43) 99925-8220", email: "rafael@p3energy.com.br" }
@@ -833,7 +833,7 @@
           <button class="btn" id="prWhatsBtn">Texto p/ WhatsApp</button><button class="btn" id="prPdf">Gerar PDF</button><button class="btn primary" id="prSalvar">Salvar</button></div></div>
       <div class="pr-ed">
         <div class="pr-form">${comum}${p.tipo === "ev" ? ev() : p.tipo === "manutencao" ? manut() : solar()}
-          <div class="pr-acoes">${p.id && p.status === "aceita" && !p.obra_id ? `<button class="btn" id="prObra">Virar obra</button>` : ""}${p.obra_id ? `<a class="btn ghost" href="#/obras">Ver em Obras</a>` : ""}${p.id ? `<button class="btn ghost" id="prCopia">Duplicar</button><button class="btn ghost danger" id="prExcluir">Excluir</button>` : ""}</div></div>
+          <div class="pr-acoes">${p.id && p.status === "aceita" && !p.obra_id ? `<button class="btn" id="prObra">Virar obra</button>` : ""}${p.obra_id ? `<a class="btn ghost" href="#/obras">Ver em Obras</a>` : ""}${p.id && ["aceita", "executada"].includes(p.status) ? `<a class="btn" href="#/laudos/proposta/${encodeURIComponent(p.id)}">Relatório técnico</a>` : ""}${p.id ? `<button class="btn ghost" id="prCopia">Duplicar</button><button class="btn ghost danger" id="prExcluir">Excluir</button>` : ""}</div></div>
         <div class="pr-prev"><iframe id="prFrame" title="Prévia da proposta"></iframe></div>
       </div>`;
 

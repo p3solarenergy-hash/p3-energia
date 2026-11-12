@@ -69,7 +69,7 @@
     const v = V(), titulo = d.titulo_capa ? esc(d.titulo_capa) : l.tipo === "correcao" ? "Relatório<br>de correção" : "Relatório<br>de manutenção";
     const kick = d.titulo_capa || (l.tipo === "correcao" ? "Relatório de correção" : "Relatório de manutenção");
     const pgs = [];
-    const stats = [d.kwp && [`${v.numx(n(d.kwp))} kWp`, "Potência do sistema"], d.modulos && [`${num(n(d.modulos))}`, "Módulos"], [v.dataLonga(d.data).replace(/ de \d{4}$/, ""), "Data da visita"]].filter(Boolean);
+    const stats = [d.kwp && [`${v.numx(n(d.kwp))} kWp`, "Potência do sistema"], d.modulos && [`${num(n(d.modulos))}`, "Módulos"], [v.dataLonga(d.data).replace(/ de \d{4}$/, ""), "Data da visita"], d.proposta_numero && [d.proposta_numero, "Proposta"]].filter(Boolean);
     pgs.push(v.capa(pDados(l), d, titulo, [d.endereco, d.cidade].filter(Boolean).join(" · ") || "Usina fotovoltaica", stats));
     const secoes = (d.secoes || []).filter(s => s.titulo || linhas(s.itens).length);
     if (d.resumo || d.kwp || d.inversor || d.tecnico) pgs.push(`<section class="slide">${v.topo("Resumo", "Visita técnica")}
@@ -138,6 +138,7 @@
 
   // ───────── lista ─────────
   async function render(main, params) {
+    if (params && params[0] === "proposta") return deProposta(main, params[1]);
     if (params && params[0]) return editor(main, params[0], params[1]);
     main.innerHTML = `<div class="loading">Carregando os relatórios…</div>`;
     let lista;
@@ -148,7 +149,7 @@
       <div class="head"><div><p class="kicker">Obras e vendas</p><h1>Relatórios técnicos</h1><p>Relatórios de manutenção, de correção e de economia e payback, no padrão da P3 Energy.</p></div>
         <div class="actions">${Object.entries(TIPOS).map(([k, t], i) => `<a class="btn ${i ? "" : "primary"}" href="#/laudos/novo/${k}">+ ${esc(t)}</a>`).join("")}</div></div>
       <div class="section"><div class="table-wrap"><table><thead><tr><th>Nº</th><th>Cliente</th><th>Tipo</th><th>Local</th><th>Data</th><th>Situação</th></tr></thead><tbody>
-        ${lista.map(x => { const [s, k] = STATUS[x.status] || [x.status, ""]; return `<tr class="clickable" data-go="#/laudos/${encodeURIComponent(x.id)}"><td>${esc(x.numero || "—")}</td><td><b>${esc(x.cliente || "(sem nome)")}</b></td><td>${esc(TIPOS[x.tipo])}</td><td>${esc(x.cidade || "")}</td><td>${fmt.data(x.data)}</td><td>${window.P3.badge(s, k)}</td></tr>`; }).join("") || `<tr><td colspan="6" class="empty">Nenhum relatório ainda.</td></tr>`}</tbody></table></div></div>`;
+        ${lista.map(x => { const [s, k] = STATUS[x.status] || [x.status, ""], pn = x.dados && x.dados.proposta_numero; return `<tr class="clickable" data-go="#/laudos/${encodeURIComponent(x.id)}"><td>${esc(x.numero || "—")}</td><td><b>${esc(x.cliente || "(sem nome)")}</b>${pn ? `<small>Proposta ${esc(pn)}</small>` : ""}</td><td>${esc(TIPOS[x.tipo])}</td><td>${esc(x.cidade || "")}</td><td>${fmt.data(x.data)}</td><td>${window.P3.badge(s, k)}</td></tr>`; }).join("") || `<tr><td colspan="6" class="empty">Nenhum relatório ainda.</td></tr>`}</tbody></table></div></div>`;
     $$("[data-go]", main).forEach(tr => tr.onclick = () => window.P3.go(tr.dataset.go));
     // Agendar a execução: abre a tarefa já ligada a este relatório (vira cobrança quando for concluída).
     $$("thead tr", main).forEach(tr => tr.insertAdjacentHTML("beforeend", "<th></th>"));
@@ -161,10 +162,31 @@
     return `RT-${ano}-${String(Math.max(0, ...doAno) + 1).padStart(3, "0")}`;
   }
 
+  // Proposta aceita → relatório técnico: abre o que já está ligado a ela ou começa um novo com os dados da proposta.
+  const ligarProposta = (d, p) => {
+    const pd = p.dados || {};
+    Object.assign(d, { proposta_id: p.id, proposta_numero: p.numero || "" });
+    if (!d.cliente) d.cliente = p.cliente || pd.cliente || "";
+    if (!d.cidade) d.cidade = p.cidade || pd.cidade || "";
+    if (!d.endereco && pd.endereco) d.endereco = pd.endereco;
+    if (d.kwp === "" && pd.kwp) d.kwp = n(pd.kwp);
+    if (d.modulos === "" && pd.modulos) d.modulos = n(pd.modulos);
+    if (pd.vendedor) d.vendedor = pd.vendedor;
+  };
+  async function deProposta(main, pid) {
+    main.innerHTML = `<div class="loading">Procurando o relatório da proposta…</div>`;
+    try {
+      const [p, todos] = await Promise.all([api(`propostas/${encodeURIComponent(pid)}`), api("laudos")]);
+      const ja = todos.filter(x => x.dados && x.dados.proposta_id === pid).sort((a, b) => String(b.criado_em).localeCompare(String(a.criado_em)))[0];
+      if (ja) return window.P3.go(`#/laudos/${encodeURIComponent(ja.id)}`);
+      return editor(main, "novo", p.tipo === "manutencao" ? "manutencao" : "correcao", p);
+    } catch (e) { main.innerHTML = `<div class="note bad">${esc(e.message)}</div>`; }
+  }
+
   // ───────── editor ─────────
-  async function editor(main, id, tipoNovo) {
+  async function editor(main, id, tipoNovo, proposta) {
     let l;
-    if (id === "novo") { if (!TIPOS[tipoNovo]) return window.P3.go("#/laudos"); l = { tipo: tipoNovo, status: "rascunho", dados: novos(tipoNovo) }; }
+    if (id === "novo") { if (!TIPOS[tipoNovo]) return window.P3.go("#/laudos"); l = { tipo: tipoNovo, status: "rascunho", dados: novos(tipoNovo) }; if (proposta) ligarProposta(l.dados, proposta); }
     else {
       main.innerHTML = `<div class="loading">Abrindo o relatório…</div>`;
       try { l = await api(`laudos/${encodeURIComponent(id)}`); } catch (e) { main.innerHTML = `<div class="note bad">${esc(e.message)}</div>`; return; }
@@ -176,7 +198,9 @@
     const bloco = (titulo, html, aberto = true) => `<details class="pr-bloco" ${aberto ? "open" : ""}><summary>${titulo}</summary><div class="grid-form">${html}</div></details>`;
     const comum = bloco("Cliente e relatório", `${campo("cliente", "Cliente")}${campo("cidade", "Cidade")}${campo("endereco", "Endereço / local")}${campo("data", "Data", "date")}
       <label class="f">Contato no relatório<select data-k="vendedor">${opts(Object.entries(v.VENDEDORES).map(([k, x]) => [k, x.nome]), d.vendedor)}</select></label>
-      ${l.tipo !== "economia" ? campo("tecnico", "Responsável técnico (vazio = contato)") + campo("titulo_capa", "Título da capa (opcional, ex.: Relatório técnico de sinistro)") : ""}`);
+      ${l.tipo !== "economia" ? campo("tecnico", "Responsável técnico (vazio = contato)") + campo("titulo_capa", "Título da capa (opcional, ex.: Relatório técnico de sinistro)") : ""}
+      <label class="f">Proposta de origem<select id="ltProposta"><option value="">${d.proposta_id ? esc(d.proposta_numero || "Carregando…") : "Nenhuma"}</option></select></label>
+      <p class="muted wide" id="ltPropMsg" style="margin:0;font-size:12.5px">${d.proposta_id ? "Ao salvar como <b>Entregue</b>, a proposta passa para <b>Executada</b>." : "Ligue à proposta aceita deste serviço."}</p>`);
     const corpo = l.tipo === "economia"
       ? bloco("Período e tarifas", `${campo("periodo", "Período (ex.: 31/12/2025 a 06/01/2026)")}${campo("fontes", "Fontes")}${campo("tar_b", "Tarifa Grupo B (R$/kWh)", "num")}${campo("tar_fp", "Grupo A fora de ponta (R$/kWh)", "num")}${campo("tar_p", "Grupo A ponta (R$/kWh)", "num")}`)
         + bloco("Unidades", `<div class="wide" id="ltUnid"></div>`)
@@ -254,8 +278,26 @@
       const corpoL = { tipo: l.tipo, cliente: d.cliente || null, cidade: d.cidade || null, data: d.data || null, status: $("#ltStatus", main).value, dados: d };
       if (!l.id) corpoL.numero = await numeroNovo();
       const r = l.id ? await api(`laudos/${encodeURIComponent(l.id)}`, { method: "PUT", body: corpoL }) : await api("laudos", { method: "POST", body: corpoL });
-      sujo = false; return r;
+      sujo = false;
+      // Relatório entregue fecha o ciclo: a proposta aceita vira executada.
+      if (corpoL.status === "entregue" && d.proposta_id) {
+        try { const p = await api(`propostas/${encodeURIComponent(d.proposta_id)}`); if (p.status === "aceita") { await api(`propostas/${encodeURIComponent(d.proposta_id)}`, { method: "PUT", body: { status: "executada" } }); toast(`Proposta ${p.numero || ""} marcada como executada.`, "ok"); } } catch (_) { }
+      }
+      return r;
     };
+    // Lista das propostas para ligar (aceitas e executadas primeiro).
+    const selP = $("#ltProposta", main);
+    if (selP) api("propostas").then(ps => {
+      const ord = { aceita: 0, executada: 1, enviada: 2 };
+      ps = ps.filter(p => p.status !== "recusada").sort((a, b) => (ord[a.status] ?? 9) - (ord[b.status] ?? 9) || String(b.numero).localeCompare(String(a.numero)));
+      selP.innerHTML = `<option value="">Nenhuma</option>` + ps.map(p => `<option value="${esc(p.id)}" ${p.id === d.proposta_id ? "selected" : ""}>${esc(`${p.numero || ""} · ${p.cliente || ""} (${p.status})`)}</option>`).join("");
+      selP.onchange = () => {
+        const p = ps.find(x => x.id === selP.value);
+        if (p) ligarProposta(d, p); else { d.proposta_id = ""; d.proposta_numero = ""; }
+        $$("[data-k]", main).forEach(el => { if (el.dataset.k in d && document.activeElement !== el) el.value = NUMS.has(el.dataset.k) ? String(d[el.dataset.k] ?? "").replace(".", ",") : d[el.dataset.k] ?? ""; });
+        sujo = true; atualizar();
+      };
+    }).catch(() => { });
     $("#ltSalvar", main).onclick = async e => { const b = e.currentTarget; b.disabled = true; try { const r = await salvar(); toast("Relatório salvo.", "ok"); if (!l.id) return window.P3.go(`#/laudos/${encodeURIComponent(r.id)}`); l.numero = r.numero; } catch (err) { toast(err.message, "bad"); } finally { b.disabled = false; } };
     $("#ltStatus", main).onchange = () => { sujo = true; };
     $("#ltPdf", main).onclick = async () => {

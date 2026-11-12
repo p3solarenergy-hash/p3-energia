@@ -235,7 +235,7 @@
       }
       if (table === "propostas") {
         if (!["ev", "solar", "bateria", "manutencao"].includes(row.tipo)) throw new Error("Tipo de proposta: carregador EV, solar, solar com bateria ou manutenção.");
-        if (row.status && !["rascunho", "enviada", "aceita", "recusada"].includes(row.status)) throw new Error("Situação da proposta inválida.");
+        if (row.status && !["rascunho", "enviada", "aceita", "executada", "recusada"].includes(row.status)) throw new Error("Situação da proposta inválida.");
       }
       if (table === "usina_mes") {
         if (!mes(row.competencia)) throw new Error("Competência deve ser AAAA-MM.");
