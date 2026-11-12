@@ -143,25 +143,26 @@
     const comps = P3.competencias();
     if (!ui.relAte) ui.relAte = P3.mesPadrao();
     if (!ui.relDe) ui.relDe = ui.relAte;
-    const alvos = ui.relTipo === "cliente" ? D.clientes.map(c => [c.id, c.nome]) : ui.relTipo === "dono" ? D.donos.map(d => [d.id, d.nome]) : [];
+    const alvos = ui.relTipo === "cliente" ? D.clientes.map(c => [c.id, c.nome]) : ui.relTipo === "dono" ? D.donos.map(d => [d.id, d.nome])
+      : ui.relTipo === "creditos" ? [["", "Todas as usinas / lotes"], ...D.usinas.filter(u => (D.creditos_lotes || []).some(l => l.usina_id === u.id)).map(u => [u.id, u.nome])] : [];
     if (alvos.length && !alvos.some(a => a[0] === ui.relAlvo)) ui.relAlvo = alvos[0][0];
     const fim = [P3.mesAtual(), ...comps].sort().pop();
     const ini = [comps[0] || M.addMonths(fim, -11), ui.relDe].filter(Boolean).sort()[0];
     const meses = M.monthRange(ini, fim).reverse();
-    const q = () => { const o = { de: ui.relDe, ate: ui.relAte }; if (ui.relTipo === "cliente") o.cliente_id = ui.relAlvo; if (ui.relTipo === "dono") { o.dono_id = ui.relAlvo; if (ui.relAnon) o.anonimo = 1; } return o; };
+    const q = () => { const o = { de: ui.relDe, ate: ui.relAte }; if (ui.relTipo === "cliente") o.cliente_id = ui.relAlvo; if (ui.relTipo === "dono") { o.dono_id = ui.relAlvo; if (ui.relAnon) o.anonimo = 1; } if (ui.relTipo === "creditos" && ui.relAlvo) o.usina_id = ui.relAlvo; return o; };
     const url = () => `/relatorio/${ui.relTipo}?${new URLSearchParams(q())}`;
     main.innerHTML = `
       <div class="head"><div><p class="kicker">PDF pronto para enviar</p><h1>Relatórios</h1><p>Escolha o relatório e o período. A prévia é exatamente o que sai no PDF; ao gerar o PDF, escolha <b>Salvar como PDF</b> na janela de impressão.</p></div></div>
       <div class="split">
         <div class="card stack">
-          <label class="f">Relatório<select id="rTipo">${opts([["cliente", "Extrato do cliente (economia)"], ["dono", "Extrato do dono (repasse)"], ["consolidado", "Consolidado P3"]], ui.relTipo)}</select></label>
-          ${alvos.length ? `<label class="f">${ui.relTipo === "cliente" ? "Cliente" : "Dono"}<select id="rAlvo">${opts(alvos, ui.relAlvo)}</select></label>` : ""}
+          <label class="f">Relatório<select id="rTipo">${opts([["cliente", "Extrato do cliente (economia)"], ["dono", "Extrato do dono (repasse)"], ["consolidado", "Consolidado P3"], ["creditos", "Créditos arrendados (envios, recebimentos e pagamentos)"]], ui.relTipo)}</select></label>
+          ${alvos.length ? `<label class="f">${ui.relTipo === "cliente" ? "Cliente" : ui.relTipo === "creditos" ? "Usina" : "Dono"}<select id="rAlvo">${opts(alvos, ui.relAlvo)}</select></label>` : ""}
           <div class="inline" style="flex-wrap:nowrap"><label class="f" style="flex:1">De<select id="rDe">${meses.map(m => `<option value="${m}"${m === ui.relDe ? " selected" : ""}>${esc(fmt.mes(m))}</option>`).join("")}</select></label>
             <label class="f" style="flex:1">Até<select id="rAte">${meses.map(m => `<option value="${m}"${m === ui.relAte ? " selected" : ""}>${esc(fmt.mes(m))}</option>`).join("")}</select></label></div>
           <div class="inline"><button class="btn sm" data-per="mes">Só o mês</button><button class="btn sm" data-per="ano">No ano</button><button class="btn sm" data-per="12">12 meses</button></div>
           ${ui.relTipo === "dono" ? `<label class="inline" style="font-size:13px"><input type="checkbox" id="rAnon" ${ui.relAnon ? "checked" : ""}> Mostrar clientes só pelas iniciais</label>` : ""}
           <hr class="sep" style="margin:4px 0">
-          <button class="btn primary" id="gerar">Gerar PDF</button>${ui.relTipo !== "consolidado" ? `<button class="btn" id="publicar">Publicar no portal</button>` : ""}
+          <button class="btn primary" id="gerar">Gerar PDF</button>${!["consolidado", "creditos"].includes(ui.relTipo) ? `<button class="btn" id="publicar">Publicar no portal</button>` : ""}
           
           <div id="gerados"></div>
           <hr class="sep" style="margin:4px 0">
