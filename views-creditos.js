@@ -45,7 +45,7 @@
     const div = rs.reduce((s, x) => s + x.r.divergencias, 0);
     main.innerHTML = `
       <div class="head"><div><p class="kicker">Gestão de energia</p><h1>Créditos arrendados</h1><p>Créditos de clientes (e, depois, usinas) que a P3 arrenda para a Uby: saldo, uso mês a mês, conferência Copel × Uby e o que receber e repassar.</p></div>
-        <div class="actions"><button class="btn primary" id="crNovo">+ Lote de créditos</button></div></div>
+        <div class="actions"><a class="btn" href="#/relatorios/creditos">Relatório</a><button class="btn primary" id="crNovo">+ Lote de créditos</button></div></div>
       ${div ? `<div class="note bad" style="margin-bottom:12px">${div} mês(es) com o kWh da fatura Copel diferente do registrado na Uby. Veja abaixo.</div>` : ""}
       <div class="kpis">
         ${kpi("Saldo de créditos", `${num(soma("saldo"))} kWh`, `${lotes.length} lote(s)`, "lead")}
@@ -55,7 +55,7 @@
       </div>
       ${rs.map(({ l, r }) => `<div class="section card">
         <div class="section-head" style="margin:0 0 10px"><div><h2>${esc(l.nome)} ${l.status === "encerrado" ? badge("Encerrado", "") : ""}</h2>
-          <p>${esc(l.dono_nome || (db().by.donos.get(l.dono_id) || {}).nome || "Dono")} → ${esc(l.destino_nome || l.arrendatario || "Uby")}${l.uc_destino ? ` · UC ${esc(l.uc_destino)}` : ""} · Uby paga R$ ${num(l.preco_uby_kwh, 4)}/kWh · dono recebe R$ ${num(l.preco_dono_kwh, 4)}/kWh</p></div>
+          <p>${l.usina_id ? `${esc((db().by.usinas.get(l.usina_id) || {}).nome || "Usina")} · ` : ""}${esc(l.dono_nome || (db().by.donos.get(l.dono_id) || {}).nome || "Dono")} → ${esc(l.destino_nome || l.arrendatario || "Uby")}${l.uc_destino ? ` · UC ${esc(l.uc_destino)}` : ""} · Uby paga R$ ${num(l.preco_uby_kwh, 4)}/kWh · dono recebe R$ ${num(l.preco_dono_kwh, 4)}/kWh</p></div>
           <div class="actions"><button class="btn sm" data-mes="${esc(l.id)}">+ Mês</button><button class="btn ghost sm" data-lote="${esc(l.id)}">Editar</button></div></div>
         <div class="kpis" style="margin-bottom:10px">
           ${kpi("Transferido", `${num(l.kwh_transferidos)} kWh`, l.data_transferencia ? `em ${fmt.data(l.data_transferencia)}` : "")}
@@ -91,6 +91,7 @@
     const campo = (k, rot, extra = "", cls = "") => `<label class="f ${cls}">${rot}<input name="${k}" value="${esc(valorCampo(l[k]))}" ${extra}></label>`;
     const html = `<div class="grid-form">
       ${campo("nome", "Nome do lote", 'placeholder="Ex.: Créditos Fulano → Posto Central DC"', "wide")}
+      <label class="f">Usina<select name="usina_id">${opts(db().usinas.map(u => [u.id, u.nome]), l.usina_id, "— (sem usina)")}</select></label>
       <label class="f">Dono dos créditos<select name="dono_id">${opts(db().donos.map(d => [d.id, d.nome]), l.dono_id, "— (digite ao lado)")}</select></label>
       ${campo("dono_nome", "Ou o nome do dono")}
       ${campo("uc_origem", "UC de origem dos créditos")}${campo("uc_destino", "UC de destino (Uby)")}${campo("destino_nome", "Nome do destino", 'placeholder="Posto Central DC"')}
@@ -104,7 +105,8 @@
       const f = formData(el);
       if (!f.nome.trim()) throw new Error("Dê um nome ao lote.");
       for (const k of ["kwh_transferidos", "preco_uby_kwh", "preco_dono_kwh"]) f[k] = f[k] === "" ? null : n(f[k]);
-      for (const k of ["dono_id", "dono_nome", "uc_origem", "uc_destino", "destino_nome", "uby_ref", "obs", "data_transferencia"]) if (!f[k]) f[k] = null;
+      if (f.usina_id && !f.dono_id) f.dono_id = (db().by.usinas.get(f.usina_id) || {}).dono_id || null;
+      for (const k of ["usina_id", "dono_id", "dono_nome", "uc_origem", "uc_destino", "destino_nome", "uby_ref", "obs", "data_transferencia"]) if (!f[k]) f[k] = null;
       return l.id ? api(`creditos_lotes/${encodeURIComponent(l.id)}`, { method: "PUT", body: f }) : api("creditos_lotes", { method: "POST", body: f });
     } });
     const bgs = document.querySelectorAll(".modal-bg"), bg = bgs[bgs.length - 1];

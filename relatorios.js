@@ -339,6 +339,44 @@ ${erros.length ? `<ul>${erros.map(a => `<li>${esc(a.texto)}</li>`).join("")}</ul
   return shell("Consolidado P3", periodo(q.de, q.ate), corpo, `${M.length} mês(es)`);
 }
 
+// ───────── Créditos arrendados: kWh enviados (injetados na UC de destino), recebido da Uby e pago ao dono ─────────
+function creditos(db, q) {
+  const C = window.P3_CREDITOS;
+  if (!C) throw new Error("Módulo de créditos não carregado.");
+  const lotes = (db.creditos_lotes || []).filter(l => !q.usina_id || l.usina_id === q.usina_id);
+  if (!lotes.length) throw new Error("Nenhum lote de créditos para esta seleção.");
+  const nomeUs = id => ((db.usinas || []).find(u => u.id === id) || {}).nome;
+  const nomeDn = l => l.dono_nome || ((db.donos || []).find(d => d.id === l.dono_id) || {}).nome || "—";
+  const dentro = c => c >= q.de && c <= q.ate;
+  const tot = { kwh: 0, uby: 0, dono: 0, p3: 0, rec: 0, pag: 0 };
+  const secoes = lotes.map(l => {
+    const ms = (db.creditos_mov || []).filter(m => m.lote_id === l.id).sort((a, b) => a.competencia.localeCompare(b.competencia));
+    const ate = ms.filter(m => m.competencia <= q.ate).map(m => ({ m, c: C.calcMov(l, m) }));
+    const per = ate.filter(x => dentro(x.m.competencia));
+    const S = f => sum(per, f);
+    const k = S(x => x.c.kwh), u = S(x => x.c.uby), d = S(x => x.c.dono), p = S(x => x.c.p3);
+    const rec = S(x => x.m.recebido_uby ? x.c.uby : 0), pag = S(x => x.m.pago_dono ? x.c.dono : 0);
+    Object.assign(tot, { kwh: tot.kwh + k, uby: tot.uby + u, dono: tot.dono + d, p3: tot.p3 + p, rec: tot.rec + rec, pag: tot.pag + pag });
+    const saldo = (Number(l.kwh_transferidos) || 0) - sum(ate, x => x.c.kwh);
+    return `<div class="section"><h2>${esc(nomeUs(l.usina_id) || l.nome)} <small>${esc(l.nome)}</small></h2>
+<p class="muted" style="margin:0 0 8px">Dono: <b>${esc(nomeDn(l))}</b> · destino ${esc(l.destino_nome || l.arrendatario || "Uby")}${l.uc_destino ? ` · UC ${esc(ucFmt(l.uc_destino))}` : ""} · Uby paga R$ ${num6(l.preco_uby_kwh).replace(/0+$/, "").replace(/,$/, "")}/kWh · dono recebe R$ ${num6(l.preco_dono_kwh).replace(/0+$/, "").replace(/,$/, "")}/kWh${l.kwh_transferidos ? ` · saldo de créditos ao fim do período: <b>${kwh(saldo)}</b>` : ""}</p>
+<table><thead><tr><th>Mês</th><th>Fatura</th><th class="n">kWh enviados</th><th class="n">kWh Uby</th><th class="n">Uby paga</th><th>Recebido</th><th class="n">Dono recebe</th><th>Pago</th><th class="n">P3</th></tr></thead>
+<tbody>${per.map(({ m, c }) => `<tr><td><b>${esc(motor.monthLabel(m.competencia))}</b></td><td>${esc(m.fatura_ref || "—")}</td><td class="n">${kwh(c.kwh)}</td><td class="n">${m.kwh_uby == null || m.kwh_uby === "" ? "—" : kwh(m.kwh_uby)}</td>
+<td class="n">${brl(c.uby)}</td><td>${m.recebido_uby ? dataBR(m.recebido_uby) : "em aberto"}</td><td class="n">${brl(c.dono)}</td><td>${m.pago_dono ? dataBR(m.pago_dono) : "em aberto"}</td><td class="n">${brl(c.p3)}</td></tr>`).join("") || `<tr><td colspan="9">Nenhum mês no período.</td></tr>`}</tbody>
+<tfoot><tr><td colspan="2">Total</td><td class="n">${kwh(k)}</td><td></td><td class="n">${brl(u)}</td><td>${brl(rec)} recebido</td><td class="n">${brl(d)}</td><td>${brl(pag)} pago</td><td class="n">${brl(p)}</td></tr></tfoot></table></div>`;
+  }).join("");
+  const corpo = `
+<div class="who"><div><small>Período</small><b>${esc(periodo(q.de, q.ate))}</b></div><div><small>Usina</small><b>${esc(q.usina_id ? nomeUs(q.usina_id) || "—" : `${lotes.length} lote(s)`)}</b></div></div>
+<div class="kpis">
+  <div class="kpi lead"><small>kWh enviados</small><b>${kwh(tot.kwh)}</b><span>injetados na UC de destino (fatura Copel)</span></div>
+  <div class="kpi"><small>Recebido da Uby</small><b>${brl(tot.rec)}</b><span>${brl(tot.uby - tot.rec)} em aberto</span></div>
+  <div class="kpi"><small>Pago ao dono</small><b>${brl(tot.pag)}</b><span>${brl(tot.dono - tot.pag)} em aberto</span></div>
+  <div class="kpi"><small>Resultado P3</small><b>${brl(tot.p3)}</b><span>Uby paga − dono recebe</span></div>
+</div>
+${secoes}`;
+  return shell("Créditos arrendados", periodo(q.de, q.ate), corpo, `${lotes.length} lote(s)`, "kWh das faturas da Copel da UC de destino; recebimentos e pagamentos conforme marcados na base P3.");
+}
+
 // ───────── Projeção de economia (proposta para cliente novo) ─────────
 // Página 1: o que o cliente quer ver — economia por mês, % médio e o ano, gráfico e tabela enxuta.
 // Página 2: como chegamos lá — energia/geração, transição do Fio B, tarifas e premissas.
@@ -542,14 +580,16 @@ function render(db, tipo, q) {
   if (tipo === "cliente") return cliente(db, q);
   if (tipo === "dono") return dono(db, q);
   if (tipo === "consolidado") return consolidado(db, q);
+  if (tipo === "creditos") return creditos(db, q);
   throw new Error("Tipo de relatório desconhecido.");
 }
 
 function nomeArquivo(db, tipo, q) {
   const alvo = tipo === "cliente" ? ((db.clientes || []).find(c => c.id === q.cliente_id) || {}).nome
-    : tipo === "dono" ? ((db.donos || []).find(d => d.id === q.dono_id) || {}).nome : "P3";
+    : tipo === "dono" ? ((db.donos || []).find(d => d.id === q.dono_id) || {}).nome
+    : tipo === "creditos" ? (((db.usinas || []).find(u => u.id === q.usina_id) || {}).nome || "todas") : "P3";
   const per = q.de === q.ate ? q.de : `${q.de} a ${q.ate}`;
-  const t = { cliente: "Extrato cliente", dono: "Extrato proprietario", consolidado: "Consolidado" }[tipo] || tipo;
+  const t = { cliente: "Extrato cliente", dono: "Extrato proprietario", consolidado: "Consolidado", creditos: "Creditos arrendados" }[tipo] || tipo;
   return `${t} - ${String(alvo || "").replace(/[\\/:*?"<>|]+/g, " ").trim()} - ${per}.pdf`;
 }
 
