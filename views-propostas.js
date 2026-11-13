@@ -267,8 +267,10 @@
   const soBateria = p => p.tipo === "bateria" && (p.dados || {}).bat_modo === "bateria";
   const autonomiaDe = d => n(d.carga_critica_kw) ? r2(n(d.bat_kwh) * (n(d.bat_qtd) || 1) * UTIL_BAT / n(d.carga_critica_kw)) : 0;
   function calcSoBateria(d) {
-    const investimento = r2(n(d.valor_bateria) + n(d.valor_impl_bat));
-    const avista = d.avista !== "" && d.avista != null ? n(d.avista) : investimento;
+    const temAvista = d.avista !== "" && d.avista != null;
+    // Só o à vista preenchido (sem valor por parte): ele vira o valor do sistema.
+    const investimento = r2(n(d.valor_bateria) + n(d.valor_impl_bat)) || (temAvista ? n(d.avista) : 0);
+    const avista = temAvista ? n(d.avista) : investimento;
     const parcelas = listaParcelas(investimento, d.parcelas, d.juros_parcela);
     return { soBateria: true, kwp: 0, geracao: 0, consumo: 0, conta: 0, mensal: 0, pct: 0, payback: null, investimento, avista, parcelas, autonomia: autonomiaDe(d), capKwh: n(d.bat_kwh) * (n(d.bat_qtd) || 1) };
   }
@@ -487,7 +489,8 @@
     pgs.push(empresa(d));
     pgs.push(...slidesBateria(d, c, false));
     const det = [["Baterias", `${num(n(d.bat_qtd) || 1)} × ${numx(d.bat_kwh)} kWh · ${d.bat_modelo}`], ["Inversor híbrido", d.inv_hibrido], ["Capacidade total", `${numx(c.capKwh)} kWh`], ["Garantia das baterias", d.bat_garantia]];
-    const itens = [["Baterias e inversor híbrido", `${d.bat_modelo} · ${d.inv_hibrido}`, n(d.valor_bateria)], ["Projeto e implantação", "Engenharia, instalação, quadro de cargas essenciais e comissionamento", n(d.valor_impl_bat)]].filter(x => x[2]);
+    let itens = [["Sistema", `${d.bat_modelo} · ${d.inv_hibrido}`, n(d.valor_bateria)], ["Implantação", "Engenharia, instalação, quadro de cargas essenciais e comissionamento", n(d.valor_impl_bat)]].filter(x => x[2]);
+    if (!itens.length && c.investimento) itens = [["Sistema + implantação", `Baterias, ${String(d.inv_hibrido || "inversor híbrido").toLowerCase()}, instalação e comissionamento`, c.investimento]];
     const fp = formasPagamento(p, d, c);
     pgs.push(`<section class="slide">${topo("Investimento", "O sistema e as condições")}
       <div class="grid g2" style="gap:40px">
@@ -546,7 +549,7 @@
       <table style="font-size:18px"><tbody>
         ${itens.map(([a, b, x]) => `<tr><td style="padding:10px 16px"><b>${esc(a)}</b><small>${esc(b)}</small></td><td class="n" style="padding:10px 16px">${brl(x)}</td></tr>`).join("")}
         <tr class="tot"><td style="padding:11px 16px">Valor total do projeto</td><td class="n" style="padding:11px 16px">${brl(c.investimento)}</td></tr></tbody></table>
-      <h3 style="margin:20px 0 10px;font-size:14px;letter-spacing:.16em;color:var(--mut)">Formas de pagamento · cada parte separada${fp.mostrarJunto ? " ou tudo junto" : ""}</h3>
+      <h3 style="margin:20px 0 10px;font-size:14px;letter-spacing:.16em;color:var(--mut)">Formas de pagamento · cada parte separada${fp.mostrarJunto ? " ou o sistema completo" : ""}</h3>
       ${cardsPagamento(fp)}
       <p class="nota" style="margin-top:10px">Tempo de execução: <b>${esc(d.prazo)}</b>. ${esc(d.pagamento_obs || "")} Parcelamento sujeito à aprovação.</p>${pe(d)}</section>`);
     else pgs.push(`<section class="slide">${topo("Investimento", "Condições comerciais")}
@@ -573,18 +576,20 @@
   function formasPagamento(p, d, c) {
     const grupos = p.tipo === "ev"
       ? (d.investimento || []).filter(l => n(l.valor)).map(l => ({ nome: l.descricao || "Item", valor: n(l.valor), avista: vazioOu(l.avista, n(l.valor)), parcelas: listaParcelas(n(l.valor), l.parcelas, l.juros) }))
-      : (c.soBateria ? [["Baterias", n(d.valor_bateria), d.avista_bat, d.parcelas_bat, d.juros_bat], ["Implantação", n(d.valor_impl_bat), d.avista_impl, d.parcelas_impl, d.juros_impl]]
+      : (c.soBateria ? [["Sistema", n(d.valor_bateria), d.avista_bat, d.parcelas_bat, d.juros_bat], ["Implantação", n(d.valor_impl_bat), d.avista_impl, d.parcelas_impl, d.juros_impl]]
         : [["Equipamentos", n(d.valor_equip), d.avista_equip, d.parcelas_equip, d.juros_equip], ...(p.tipo === "bateria" ? [["Baterias", n(d.valor_bateria), d.avista_bat, d.parcelas_bat, d.juros_bat]] : []), ["Implantação", n(d.valor_impl), d.avista_impl, d.parcelas_impl, d.juros_impl]])
         .filter(g => g[1]).map(([nome, valor, av, par, j]) => ({ nome, valor, avista: vazioOu(av, valor), parcelas: listaParcelas(valor, par, j) }));
-    const junto = { nome: "Tudo junto", valor: c.investimento, avista: vazioOu(d.avista, c.investimento), parcelas: listaParcelas(c.investimento, d.parcelas, d.juros_parcela) };
+    // Sem valores por parte, mas com o à vista preenchido: o parcelado sai do à vista (antes saía R$ 0).
+    const baseJunto = c.investimento || vazioOu(d.avista, 0);
+    const junto = { junto: true, nome: p.tipo === "ev" ? "Investimento total" : "Sistema + implantação", valor: baseJunto, avista: vazioOu(d.avista, baseJunto), parcelas: listaParcelas(baseJunto, d.parcelas, d.juros_parcela) };
     const separado = !!d.pag_separado && grupos.length > 1;
     return { grupos, junto, separado, mostrarJunto: !separado || d.pag_junto !== false };
   }
-  const cardPagamento = (g, destaque) => `<div class="card ${destaque ? "lim" : ""}" style="padding:20px 22px"><small>${esc(g.nome)}${g.nome !== "Tudo junto" ? ` · ${brl(g.valor)}` : ""}</small>
+  const cardPagamento = (g, destaque) => `<div class="card ${destaque ? "lim" : ""}" style="padding:20px 22px"><small>${esc(g.nome)}${!g.junto ? ` · ${brl(g.valor)}` : ""}</small>
     <b class="big" style="font-size:30px;white-space:nowrap">${brl(g.avista)}</b><span ${destaque ? "" : 'class="mut"'} style="font-size:15px">à vista${g.avista < g.valor ? ` · desconto de ${brl(g.valor - g.avista)}` : ""}</span>
     ${g.parcelas.length ? `<div style="margin-top:10px;font-size:18px;line-height:1.55">${g.parcelas.map(x => `ou ${x.q}× <b>${brl(x.valor)}</b>`).join("<br>")}</div>` : ""}</div>`;
   const cardsPagamento = fp => { const cards = [...(fp.separado ? fp.grupos.map(g => cardPagamento(g, false)) : []), ...(fp.mostrarJunto ? [cardPagamento(fp.junto, true)] : [])]; return `<div class="grid" style="grid-template-columns:repeat(${cards.length},1fr);gap:16px">${cards.join("")}</div>`; };
-  const textoForma = g => `${g.nome}${g.nome !== "Tudo junto" ? ` (${brl(g.valor)})` : ""}: ${brl(g.avista)} à vista${g.parcelas.length ? ` ou ${g.parcelas.map(x => `${x.q}× de ${brl(x.valor)}`).join(", ")}` : ""}`;
+  const textoForma = g => `${g.nome}${!g.junto ? ` (${brl(g.valor)})` : ""}: ${brl(g.avista)} à vista${g.parcelas.length ? ` ou ${g.parcelas.map(x => `${x.q}× de ${brl(x.valor)}`).join(", ")}` : ""}`;
 
   function paginasEv(p, d, c, v) {
     const q = c.qtd, pl = (x, s, pp) => `${x} ${x > 1 ? pp : s}`;
@@ -875,7 +880,7 @@
         <p class="muted wide" style="margin:0;font-size:12px">Para mandar em propostas separadas: salve esta, toque em Duplicar e troque a opção na cópia.</p>
         ${campo("bat_qtd", "Quantidade de baterias", "num")}${campo("bat_kwh", "Capacidade de cada (kWh)", "num")}${campo("bat_modelo", "Modelo")}
         ${campo("inv_hibrido", "Inversor híbrido")}${campo("carga_critica_kw", "Cargas essenciais no backup (kW)", "num")}${campo("bat_garantia", "Garantia das baterias")}
-        ${campo("valor_bateria", "Valor das baterias e inversor (R$)", "num")}${marca("bat", campo("valor_impl_bat", "Implantação só da bateria (R$)", "num"))}`)
+        <p class="muted wide" style="margin:0;font-size:12px">Os valores ficam em "Investimento e condições".</p>`)
       + bloco("Calculadora de cargas do backup", `<div class="wide" id="prCargas"></div>`);
     const solar = () => blocoBat() + marca("solar", d.eco_v2 ? blocoEco() : bloco("Consumo e conta", `
         <div class="wide note" style="font-size:12.5px">Esta proposta usa o cálculo antigo. <button type="button" class="btn sm" id="prEcoV2">Usar o cálculo da Lei 14.300</button></div>
@@ -899,8 +904,8 @@
         ${campo("c_imp_total", "% imposto · tudo pela P3", "num")}${campo("c_imp_servico", "% imposto · NF de serviço", "num")}
         <div class="wide"><button type="button" class="btn sm primary" id="prCustos">Calcular preço pela planilha</button><p class="muted" id="prLucro" style="margin:8px 0 0;font-size:12.5px;white-space:pre-line"></p></div>`))
       + bloco("Investimento e condições", `
-        ${marca("solar", campo("valor_equip", "Equipamentos (R$)", "num"))}${marca("solar", campo("valor_impl", "Projeto e implantação (R$)", "num"))}
-        ${campo("pag_separado", "Pagamento separado (cada parte à vista ou parcelada)", "check")}${campo("pag_junto", "Mostrar também tudo junto", "check")}${marca("solar", '<p class="muted wide" style="margin:4px 0 0;font-size:12px;font-weight:600">Equipamentos</p>')}${marca("solar", campo("avista_equip", "À vista (R$) — vazio = valor", "num"))}${marca("solar", campo("parcelas_equip", "Parcelas (ex.: 3, 6, 12)"))}${marca("solar", campo("juros_equip", "Acréscimo no parcelado (%)", "num"))}${p.tipo === "bateria" ? `<p class="muted wide" style="margin:4px 0 0;font-size:12px;font-weight:600">Baterias</p>${campo("avista_bat", "À vista (R$) — vazio = valor", "num")}${campo("parcelas_bat", "Parcelas")}${campo("juros_bat", "Acréscimo no parcelado (%)", "num")}` : ""}<p class="muted wide" style="margin:4px 0 0;font-size:12px;font-weight:600">Implantação</p>${campo("avista_impl", "À vista (R$) — vazio = valor", "num")}${campo("parcelas_impl", "Parcelas (ex.: 3)")}${campo("juros_impl", "Acréscimo no parcelado (%)", "num")}<p class="muted wide" style="margin:4px 0 0;font-size:12px;font-weight:600">Tudo junto</p>${campo("avista", "À vista (R$) — vazio = valor total", "num")}${campo("parcelas", "Parcelas (ex.: 3, 6, 12)")}${campo("juros_parcela", "Acréscimo no parcelado (%)", "num")}
+        ${marca("solar", campo("valor_equip", "Equipamentos (R$)", "num"))}${p.tipo === "bateria" ? campo("valor_bateria", "Sistema: baterias e inversor híbrido (R$)", "num") : ""}${marca("solar", campo("valor_impl", p.tipo === "bateria" ? "Implantação com solar (R$)" : "Projeto e implantação (R$)", "num"))}${p.tipo === "bateria" ? marca("bat", campo("valor_impl_bat", "Implantação só da bateria (R$)", "num")) : ""}
+        ${campo("pag_separado", "Pagamento separado (cada parte à vista ou parcelada)", "check")}${campo("pag_junto", "Mostrar também o sistema + implantação", "check")}${marca("solar", '<p class="muted wide" style="margin:4px 0 0;font-size:12px;font-weight:600">Equipamentos</p>')}${marca("solar", campo("avista_equip", "À vista (R$) — vazio = valor", "num"))}${marca("solar", campo("parcelas_equip", "Parcelas (ex.: 3, 6, 12)"))}${marca("solar", campo("juros_equip", "Acréscimo no parcelado (%)", "num"))}${p.tipo === "bateria" ? `<p class="muted wide" style="margin:4px 0 0;font-size:12px;font-weight:600">Sistema (baterias e inversor)</p>${campo("avista_bat", "À vista (R$) — vazio = valor", "num")}${campo("parcelas_bat", "Parcelas")}${campo("juros_bat", "Acréscimo no parcelado (%)", "num")}` : ""}<p class="muted wide" style="margin:4px 0 0;font-size:12px;font-weight:600">Implantação</p>${campo("avista_impl", "À vista (R$) — vazio = valor", "num")}${campo("parcelas_impl", "Parcelas (ex.: 3)")}${campo("juros_impl", "Acréscimo no parcelado (%)", "num")}<p class="muted wide" style="margin:4px 0 0;font-size:12px;font-weight:600">Sistema + implantação (valor total)</p>${campo("avista", "À vista (R$) — vazio = valor total", "num")}${campo("parcelas", "Parcelas (ex.: 3, 6, 12)")}${campo("juros_parcela", "Acréscimo no parcelado (%)", "num")}
         ${campo("prazo", "Tempo de execução")}${campo("pagamento_obs", "Observação das condições", "area", 2)}
         ${marca("solar", campo("reajuste", "Reajuste da tarifa ao ano (%)", "num"))}${marca("solar", campo("degradacao", "Perda dos módulos ao ano (%)", "num"))}${marca("solar", campo("anos", "Anos da projeção", "num"))}`);
     const manut = () => bloco("Sistema do cliente", `
@@ -948,7 +953,7 @@
       + bloco("Solução técnica (opcional)", `${campo("justificativa_titulo", "Título")}${campo("justificativa", "Texto (uma ideia por linha; comece com - para tópico)", "area", 6)}`, !!d.justificativa)
       + bloco("Valores", `<div class="wide" id="prInv"></div>
         ${campo("software_mensal", "Software por carregador (R$/mês)", "num")}${campo("manutencao_mensal", "Manutenção preventiva por carregador (R$/mês)", "num")}${campo("manutencao_opcional", "Manutenção é opcional", "check")}
-        ${campo("variaveis", "Custos variáveis (um por linha)", "area", 2)}${campo("pagamento", "Condições de pagamento (uma por linha)", "area", 3)}${campo("pag_separado", "Pagamento separado por linha (à vista ou parcelado)", "check")}${campo("pag_junto", "Mostrar também tudo junto", "check")}<p class="muted wide" style="margin:4px 0 0;font-size:12px;font-weight:600">Tudo junto</p>${campo("avista", "À vista (R$) — vazio = valor total", "num")}${campo("parcelas", "Parcelas (ex.: 3, 6, 12) — vazio = sem parcelado")}${campo("juros_parcela", "Acréscimo no parcelado (%)", "num")}`)
+        ${campo("variaveis", "Custos variáveis (um por linha)", "area", 2)}${campo("pagamento", "Condições de pagamento (uma por linha)", "area", 3)}${campo("pag_separado", "Pagamento separado por linha (à vista ou parcelado)", "check")}${campo("pag_junto", "Mostrar também o investimento total", "check")}<p class="muted wide" style="margin:4px 0 0;font-size:12px;font-weight:600">Investimento total</p>${campo("avista", "À vista (R$) — vazio = valor total", "num")}${campo("parcelas", "Parcelas (ex.: 3, 6, 12) — vazio = sem parcelado")}${campo("juros_parcela", "Acréscimo no parcelado (%)", "num")}`)
       + bloco("Responsabilidades", `${campo("resp_p3", "P3 Energy (uma por linha)", "area", 5)}${campo("resp_cliente", "Cliente (uma por linha)", "area", 4)}`, false);
 
     main.innerHTML = `
