@@ -230,7 +230,7 @@
     }
     const soma = k => r2(porAno.slice(0, k).reduce((s, x) => s + x.economia, 0));
     const avista = d.avista !== "" && d.avista != null ? n(d.avista) : investimento;
-    const parcelas = String(d.parcelas || "").split(/[,;\s]+/).map(Number).filter(x => x > 1).map(q => ({ q, valor: r2(investimento * (1 + n(d.juros_parcela) / 100) / q) }));
+    const parcelas = listaParcelas(investimento, d.parcelas, d.juros_parcela);
     const autonomia = n(d.carga_critica_kw) ? r2(n(d.bat_kwh) * (n(d.bat_qtd) || 1) * 0.9 / n(d.carga_critica_kw)) : 0;
     return { eco: true, kwp, geracao, consumo, conta, tarifa: d.grupo === "A" ? t.tarFp : t.tar, t, m1, ano0, autoconsumo: Math.round(m1.auto), compensado: Math.round(m1.comp),
       comSolar, estimado: r2(m1.com), mensal, pct: conta ? mensal / conta : 0, investimento, porAno, ano1: soma(1), ano5: soma(5), ano20: soma(Math.min(20, anos)), total: soma(anos), anos, payback, avista, parcelas, autonomia, cobertura: consumo ? geracao / consumo : 0 };
@@ -259,7 +259,7 @@
     }
     const soma = k => r2(porAno.slice(0, k).reduce((s, x) => s + x.economia, 0));
     const avista = d.avista !== "" && d.avista != null ? n(d.avista) : investimento;
-    const parcelas = String(d.parcelas || "").split(/[,;\s]+/).map(Number).filter(x => x > 1).map(q => ({ q, valor: r2(investimento * (1 + n(d.juros_parcela) / 100) / q) }));
+    const parcelas = listaParcelas(investimento, d.parcelas, d.juros_parcela);
     const autonomia = n(d.carga_critica_kw) ? r2(n(d.bat_kwh) * (n(d.bat_qtd) || 1) * 0.9 / n(d.carga_critica_kw)) : 0;
     return { kwp, geracao, consumo, conta, tarifa, autoconsumo, compensado, comSolar, estimado, mensal, pct: conta ? mensal / conta : 0, investimento, porAno, ano1: soma(1), ano5: soma(5), ano20: soma(Math.min(20, anos)), total: soma(anos), anos, payback, avista, parcelas, autonomia, cobertura: consumo ? geracao / consumo : 0 };
   }
@@ -559,8 +559,8 @@
           <tr class="tot"><td>Valor total do projeto</td><td class="n">${brl(c.investimento)}</td></tr></tbody></table>
           <p class="nota">Tempo de execução: <b>${esc(d.prazo)}</b>. ${esc(d.pagamento_obs || "")}</p></div>
         <div class="grid" style="gap:16px;align-content:start">
-          <div class="card lim"><small>À vista</small><b class="big">${brl(c.avista)}</b>${c.avista < c.investimento ? `<span>desconto de ${brl(c.investimento - c.avista)}</span>` : ""}</div>
-          ${c.parcelas.length ? `<div class="card"><small>Parcelado</small>${c.parcelas.map(x => `<div style="font-size:21px;padding:3px 0">${x.q}× <b>${brl(x.valor)}</b></div>`).join("")}<span class="mut" style="font-size:15px">sujeito à aprovação</span></div>` : ""}
+          <div class="card lim"><small>À vista</small><b class="big">${brl(fp.junto.avista)}</b>${fp.junto.avista < fp.junto.valor ? `<span>desconto de ${brl(fp.junto.valor - fp.junto.avista)}</span>` : ""}</div>
+          ${fp.junto.parcelas.length ? `<div class="card"><small>Parcelado</small>${fp.junto.parcelas.map(x => `<div style="font-size:21px;padding:3px 0">${x.q}× <b>${brl(x.valor)}</b></div>`).join("")}<span class="mut" style="font-size:15px">sujeito à aprovação</span></div>` : ""}
         </div>
       </div>${pe(d)}</section>`);
     if (d.layout_img) pgs.push(`<section class="slide">${topo("Implantação", "Layout projetado")}<div style="position:absolute;left:84px;right:84px;top:220px;bottom:70px;background:#fff url('${d.layout_img}') center/contain no-repeat;border:1px solid var(--lin);border-radius:8px"></div>${pe(d)}</section>`);
@@ -571,7 +571,7 @@
   // ───────── formas de pagamento ─────────
   // Por parte (solar: equipamentos, baterias e implantação; EV: cada linha do investimento), cada uma com seu
   // à vista (vazio = o valor) e seu parcelado (acréscimo % sobre o valor), e também tudo junto.
-  const listaParcelas = (base, txt, juros) => String(txt || "").split(/[,;\s]+/).map(Number).filter(x => x > 1).map(q => ({ q, valor: r2(base * (1 + n(juros) / 100) / q) }));
+  const listaParcelas = (base, txt, juros) => !(base > 0) ? [] : String(txt || "").split(/[,;\s]+/).map(Number).filter(x => x > 1).map(q => ({ q, valor: r2(base * (1 + n(juros) / 100) / q) }));
   const vazioOu = (v, padrao) => v === "" || v == null ? padrao : n(v);
   function formasPagamento(p, d, c) {
     const grupos = p.tipo === "ev"
@@ -728,7 +728,6 @@
       { const fp = formasPagamento(p, d, c); msg.push(...[...(fp.separado ? fp.grupos : []), ...(fp.mostrarJunto ? [fp.junto] : [])].map(g => `• ${textoForma(g)}`)); }
     } else if (p.tipo === "solar" || p.tipo === "bateria") {
       const bat = p.tipo === "bateria", capKwh = n(d.bat_kwh) * (n(d.bat_qtd) || 1);
-      const parc = c.parcelas.length ? c.parcelas[c.parcelas.length - 1] : null;
       msg.push(`Segue em anexo a proposta${nr} do sistema de energia solar${bat ? " com baterias" : ""}${para} ☀️`, "",
         `*O sistema*`,
         `• ${num(c.kwp, 2)} kWp: ${num(d.qtd_modulos)} módulos ${d.modulo_marca} de ${num(d.modulo_w)} W e ${bat ? d.inv_hibrido : d.inversor}`,
@@ -743,7 +742,7 @@
       if (d.prazo) msg.push(`• Prazo de execução: ${d.prazo}`);
       msg.push("", d.mostrar_economia === false ? `*Investimento*` : `*Economia e investimento*`,
         ...(d.mostrar_economia === false ? [] : [`• Conta de luz de ${brl(c.conta)} para cerca de ${brl(c.comSolar)} por mês: economia de ${brl(c.mensal)} (${Math.round(c.pct * 100)}%)`]),
-        ...(() => { const fp = formasPagamento(p, d, c); return fp.separado ? [`• Investimento total de ${brl(c.investimento)}. Formas de pagamento:`, ...fp.grupos.map(g => `  – ${textoForma(g)}`), ...(fp.mostrarJunto ? [`  – ${textoForma(fp.junto)}`] : [])] : [`• Investimento de ${brl(c.investimento)}${c.avista < c.investimento ? ` (à vista ${brl(c.avista)})` : ""}${parc ? `, ou em até ${parc.q}× de ${brl(parc.valor)}` : ""}`]; })());
+        ...(() => { const fp = formasPagamento(p, d, c); return fp.separado ? [`• Investimento total de ${brl(c.investimento)}. Formas de pagamento:`, ...fp.grupos.map(g => `  – ${textoForma(g)}`), ...(fp.mostrarJunto ? [`  – ${textoForma(fp.junto)}`] : [])] : (() => { const j = fp.junto, ult = j.parcelas[j.parcelas.length - 1]; return [`• Investimento de ${brl(j.valor)}${j.avista < j.valor ? ` (à vista ${brl(j.avista)})` : ""}${ult ? `, ou em até ${ult.q}× de ${brl(ult.valor)}` : ""}`]; })(); })());
       if (c.payback != null && d.mostrar_economia !== false) msg.push(`• O sistema se paga em cerca de ${num(c.payback, 1)} anos, e em ${c.anos} anos a economia passa de ${brl(c.total)}`);
       if (bat && d.bat_modo === "ambas") { const b = calcSoBateria(d); msg.push("", `*Opção 2: só a bateria (sem solar)*`, `• ${numx(b.capKwh)} kWh de backup, cerca de ${num(b.autonomia, 1)} h, por ${brl(b.investimento)}${b.avista < b.investimento ? ` (à vista ${brl(b.avista)})` : ""}`, `• Não gera energia: protege nas quedas, mas a conta de luz não muda`); }
     } else if (p.tipo === "ev") {
