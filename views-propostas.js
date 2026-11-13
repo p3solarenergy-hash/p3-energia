@@ -15,7 +15,7 @@
   const dataLonga = iso => { const [a, m, d] = String(iso || hoje()).split("-").map(Number); return `${d} de ${MESES[m - 1]} de ${a}`; };
   const mesAno = iso => { const [a, m] = String(iso || hoje()).split("-").map(Number); return `${MESES[m - 1]} ${a}`; };
 
-  const TIPOS = { solar: "Energia solar", bateria: "Solar com bateria", ev: "Carregador EV", manutencao: "Manutenção" };
+  const TIPOS = { solar: "Energia solar", bateria: "Bateria (com ou sem solar)", ev: "Carregador EV", manutencao: "Manutenção" };
   const STATUS = { rascunho: ["Rascunho", ""], enviada: ["Enviada", "info"], aceita: ["Aceita", "ok"], executada: ["Executada", "ok"], recusada: ["Recusada", "bad"] };
   const VENDEDORES = {
     eduardo: { nome: "Eduardo Berger Prochet", tel: "(43) 98861-7800", email: "eduardo@p3energy.com.br" },
@@ -75,7 +75,47 @@
     inclusos: "Visita técnica com check-list completo\nReaperto dos grampos de fixação dos módulos\nRevisão da força mecânica nas estruturas do sistema\nLimpeza e reaperto dos terminais elétricos\nLimpeza da carcaça e dos exaustores do inversor\nLimpeza dos módulos (1 vez ao ano)",
     exclusos: "Substituição de componentes\nHospedagem e alimentação\nLimpeza dos módulos mais de 1 vez ao ano\nDeslocamento mais de 1 vez ao ano"
   };
-  PADRAO.bateria = { ...PADRAO.solar, bat_qtd: 1, bat_kwh: 10, bat_modelo: "Bateria de lítio LiFePO4", inv_hibrido: "Inversor híbrido", carga_critica_kw: 2, valor_bateria: 0, bat_garantia: "10 anos ou 6.000 ciclos" };
+  PADRAO.bateria = { ...PADRAO.solar, bat_qtd: 1, bat_kwh: 10, bat_modelo: "Bateria de lítio LiFePO4", inv_hibrido: "Inversor híbrido", carga_critica_kw: 2, valor_bateria: 0, bat_garantia: "10 anos ou 6.000 ciclos", cargas: [], cargas_pdf: true,
+    // bat_modo: "solar" = solar + bateria; "bateria" = só bateria (sem solar); "ambas" = as duas opções na mesma proposta.
+    bat_modo: "solar", valor_impl_bat: 0 };
+  // Calculadora de cargas do backup: potência típica (W), horas ligado durante a falta, % do tempo que o aparelho
+  // puxa de verdade (compressor de geladeira/freezer/ar liga e desliga) e o pico na partida (motor puxa 3 a 5×).
+  // Ar-condicionado vai em BTU: inverter ~0,09 W por BTU (12.000 BTU ≈ 1.080 W), convencional ~0,10.
+  const APARELHOS = [
+    { nome: "Lâmpada LED", w: 9, h: 6, uso: 100, partida: 1 },
+    { nome: "Geladeira", w: 150, h: 8, uso: 40, partida: 4 },
+    { nome: "Geladeira duplex / frost free", w: 250, h: 8, uso: 40, partida: 4 },
+    { nome: "Freezer", w: 200, h: 8, uso: 45, partida: 4 },
+    { nome: "Ar-condicionado inverter", btu: 12000, fbtu: 0.09, h: 4, uso: 70, partida: 1.3 },
+    { nome: "Ar-condicionado convencional", btu: 12000, fbtu: 0.1, h: 4, uso: 80, partida: 3 },
+    { nome: "Ventilador", w: 80, h: 6, uso: 100, partida: 1 },
+    { nome: "TV", w: 100, h: 4, uso: 100, partida: 1 },
+    { nome: "Internet (roteador e modem)", w: 20, h: 8, uso: 100, partida: 1 },
+    { nome: "Notebook", w: 65, h: 4, uso: 100, partida: 1 },
+    { nome: "Computador de mesa", w: 250, h: 4, uso: 100, partida: 1 },
+    { nome: "Câmeras / alarme", w: 40, h: 8, uso: 100, partida: 1 },
+    { nome: "Portão eletrônico", w: 350, h: 0.2, uso: 100, partida: 3 },
+    { nome: "Bomba d'água 1/2 cv", w: 450, h: 1, uso: 100, partida: 3 },
+    { nome: "Micro-ondas", w: 1200, h: 0.3, uso: 100, partida: 1 },
+    { nome: "Máquina de lavar", w: 500, h: 1, uso: 60, partida: 3 },
+    { nome: "Chuveiro elétrico", w: 5500, h: 0.5, uso: 100, partida: 1 },
+    { nome: "Outro aparelho", w: 100, h: 4, uso: 100, partida: 1 }
+  ];
+  const UTIL_BAT = 0.9; // fração útil da bateria (a mesma da autonomia)
+  const wCarga = c => n(c.btu) && n(c.fbtu) ? n(c.btu) * n(c.fbtu) : n(c.w);
+  function calcCargas(d) {
+    const linhas = (d.cargas || []).filter(c => n(c.qtd) > 0 && wCarga(c) > 0).map(c => {
+      const w = wCarga(c), pot = w * n(c.qtd), uso = c.uso === "" || c.uso == null ? 100 : n(c.uso);
+      return { ...c, wUn: w, pot, kwh: pot * n(c.h) * uso / 100 / 1000, extraPartida: pot * (Math.max(1, n(c.partida) || 1) - 1) };
+    });
+    const potKw = linhas.reduce((a, l) => a + l.pot, 0) / 1000;
+    // Pico: tudo ligado + o maior motor partindo (os motores não partem todos no mesmo segundo).
+    const picoKw = potKw + Math.max(0, ...linhas.map(l => l.extraPartida)) / 1000;
+    const kwh = linhas.reduce((a, l) => a + l.kwh, 0), horas = Math.max(0, ...linhas.map(l => n(l.h)));
+    const mediaKw = horas ? kwh / horas : 0, porBat = n(d.bat_kwh) * UTIL_BAT;
+    const nBat = porBat && kwh ? Math.ceil(kwh / porBat - 1e-9) : 0;
+    return { linhas, potKw, picoKw, kwh, horas, mediaKw, nBat, capAtual: n(d.bat_kwh) * (n(d.bat_qtd) || 1) };
+  }
   const novaDados = tipo => ({ ...COMUM, ...JSON.parse(JSON.stringify(PADRAO[tipo])), data: hoje() });
   const dadosDe = p => ({ ...novaDados(p.tipo), ...(p.dados && !Array.isArray(p.dados) ? p.dados : {}) });
 
@@ -223,6 +263,15 @@
     const autonomia = n(d.carga_critica_kw) ? r2(n(d.bat_kwh) * (n(d.bat_qtd) || 1) * 0.9 / n(d.carga_critica_kw)) : 0;
     return { kwp, geracao, consumo, conta, tarifa, autoconsumo, compensado, comSolar, estimado, mensal, pct: conta ? mensal / conta : 0, investimento, porAno, ano1: soma(1), ano5: soma(5), ano20: soma(Math.min(20, anos)), total: soma(anos), anos, payback, avista, parcelas, autonomia, cobertura: consumo ? geracao / consumo : 0 };
   }
+  // Proposta de bateria sem solar (backup puro): não há geração nem economia, só armazenamento e autonomia.
+  const soBateria = p => p.tipo === "bateria" && (p.dados || {}).bat_modo === "bateria";
+  const autonomiaDe = d => n(d.carga_critica_kw) ? r2(n(d.bat_kwh) * (n(d.bat_qtd) || 1) * UTIL_BAT / n(d.carga_critica_kw)) : 0;
+  function calcSoBateria(d) {
+    const investimento = r2(n(d.valor_bateria) + n(d.valor_impl_bat));
+    const avista = d.avista !== "" && d.avista != null ? n(d.avista) : investimento;
+    const parcelas = listaParcelas(investimento, d.parcelas, d.juros_parcela);
+    return { soBateria: true, kwp: 0, geracao: 0, consumo: 0, conta: 0, mensal: 0, pct: 0, payback: null, investimento, avista, parcelas, autonomia: autonomiaDe(d), capKwh: n(d.bat_kwh) * (n(d.bat_qtd) || 1) };
+  }
   // A obra por trás da proposta solar, pela planilha de custos de obra solar (views-obras.js): itens com cálculo
   // pelos parâmetros + os valores à mão (kit, estrutura…). Dá o preço sugerido (custos + margem por kWp) e o lucro
   // líquido do preço que está na proposta. Também é o orçamento detalhado da obra quando a proposta vira obra.
@@ -276,7 +325,7 @@
     return { kwp, mod, km, limpeza, visita, prev, custo, fiscal, parcela3, parcela12, avista, plano, monitAnual, monitCusto, monitVenda, visitaCusto, visitaPreco, limpezaCusto, limpezaPreco,
       linhas, investimento, custoTotal, lucro: r2(investimento - custoTotal), economiaAnual, pctEconomia: economiaAnual ? plano / economiaAnual : 0 };
   }
-  const calc = p => p.tipo === "ev" ? calcEv(dadosDe(p)) : p.tipo === "manutencao" ? calcManut(dadosDe(p)) : calcSolar(dadosDe(p), p.tipo);
+  const calc = p => p.tipo === "ev" ? calcEv(dadosDe(p)) : p.tipo === "manutencao" ? calcManut(dadosDe(p)) : soBateria(p) ? calcSoBateria(dadosDe(p)) : calcSolar(dadosDe(p), p.tipo);
 
   // ───────── a proposta (HTML das páginas) ─────────
   const LOGO = (cor1, cor2) => `<svg class="logo" viewBox="129 169 1743 757" role="img" aria-label="P3 Energy"><path fill="${cor1}" d="M129 169H993V623H320V461H817V313H287V926H129Z"/><path fill="${cor2}" d="M1052 169H1872V926H1052V771H1731V313H1052Z"/><rect fill="${cor2}" x="1061" y="461" width="636" height="162"/><text fill="${cor1}" x="330" y="923" font-size="206" textLength="690" lengthAdjust="spacingAndGlyphs" font-family="'Arial Narrow','Roboto Condensed',Arial,sans-serif">ENERGY</text></svg>`;
@@ -391,7 +440,69 @@
     const m = c.m1, ag = d.aneel && d.aneel.agente ? `${d.aneel.agente} ${d.aneel.subgrupo}${d.grupo === "A" ? " " + d.aneel.modalidade : ""}` : "";
     return `<p class="nota" style="font-size:13px;line-height:1.4;margin-top:14px">Lei 14.300/2022 e REN ANEEL 1.059/2023${d.regra === "gd1" ? " (GD I: sem Fio B sobre o compensado)" : ": Fio B escalonado sobre a energia compensada"}; o mínimo da ligação não é cobrado em duplicidade.${m.sobra > 1 ? ` Sobram cerca de ${num(m.sobra)} kWh/mês em créditos (válidos por 60 meses).` : ""}${ag ? ` Tarifas: ${esc(ag)} (ANEEL), com ICMS ${num(d.icms_pct)}% e PIS/COFINS ${num(d.pis_cofins_pct)}%.` : ""}</p>`;
   }
+  // Páginas da bateria: o armazenamento (capacidade, cargas, autonomia) e, se a calculadora tiver aparelhos,
+  // a lista das cargas atendidas no backup.
+  function slidesBateria(d, c, comSolar) {
+    const capKwh = n(d.bat_kwh) * (n(d.bat_qtd) || 1), k = calcCargas(d);
+    const pgs = [`<section class="slide dark">${topo("Armazenamento de energia", "Energia quando a rede falta", true)}
+      <div class="grid g3">
+        <div class="card"><small>Capacidade</small><b class="big">${numx(capKwh)} kWh</b><span class="mut">${esc(d.bat_modelo)}</span></div>
+        <div class="card"><small>Cargas essenciais</small><b class="big">${num(d.carga_critica_kw, 1)} kW</b><span class="mut">potência média atendida no backup</span></div>
+        <div class="card lim"><small>Autonomia estimada</small><b class="big">${num(c.autonomia, 1)} h</b><span>com as cargas essenciais ligadas</span></div>
+      </div>
+      <ul class="lista" style="margin-top:28px"><li>Backup automático das cargas essenciais em quedas de energia</li>${comSolar ? "<li>Guarda a sobra do dia para usar à noite e no horário de ponta</li><li>O inversor híbrido gerencia solar, bateria e rede de forma automática</li>" : "<li>Recarrega pela rede e fica pronta para a próxima falta</li><li>Preparada para receber placas solares no futuro, se o inversor híbrido permitir</li>"}</ul>
+      <p class="nota" style="color:#b9c1ae">Autonomia estimada com ${num(UTIL_BAT * 100)}% da capacidade útil das baterias; varia conforme o consumo real no momento da falta.</p>${pe(d)}</section>`];
+    if (k.linhas.length && d.cargas_pdf !== false) {
+      const muitas = k.linhas.length > 8, pad = muitas ? "6px 12px" : "9px 14px";
+      pgs.push(`<section class="slide">${topo("Dimensionamento do backup", "O que fica ligado quando a energia cai")}
+      <div class="grid" style="grid-template-columns:1.6fr 1fr;gap:40px">
+        <table style="font-size:${muitas ? 15 : 17}px"><thead><tr><th style="padding:${pad}">Aparelho</th><th class="n" style="padding:${pad}">Qtd</th><th class="n" style="padding:${pad}">Potência</th><th class="n" style="padding:${pad}">Horas</th><th class="n" style="padding:${pad}">Energia</th></tr></thead><tbody>
+          ${k.linhas.slice(0, 14).map(l => `<tr><td style="padding:${pad}">${esc(l.nome || "Aparelho")}${n(l.btu) ? ` <span class="mut">${num(l.btu)} BTU</span>` : ""}</td><td class="n" style="padding:${pad}">${num(l.qtd)}</td><td class="n" style="padding:${pad}">${num(l.pot)} W</td><td class="n" style="padding:${pad}">${numx(l.h)} h</td><td class="n" style="padding:${pad}">${numx(r2(l.kwh))} kWh</td></tr>`).join("")}
+          <tr class="tot"><td style="padding:${pad}" colspan="4">Energia no período</td><td class="n" style="padding:${pad}">${numx(r2(k.kwh))} kWh</td></tr></tbody></table>
+        <div class="grid" style="gap:16px;align-content:start">
+          <div class="card"><small>Tudo ligado ao mesmo tempo</small><b class="big">${num(k.potKw, 1)} kW</b><span class="mut">pico de ${num(k.picoKw, 1)} kW na partida dos motores</span></div>
+          <div class="card lim"><small>Baterias necessárias</small><b class="big">${numx(k.kwh / UTIL_BAT > 0 ? r2(k.kwh / UTIL_BAT) : 0)} kWh</b><span>proposta: ${numx(capKwh)} kWh (${num(n(d.bat_qtd) || 1)} × ${numx(d.bat_kwh)} kWh)</span></div>
+        </div>
+      </div>
+      <p class="nota">Geladeira, freezer e ar-condicionado contam só o tempo em que o compressor está ligado. Valores típicos de mercado; o consumo real depende dos aparelhos do local.</p>${pe(d)}</section>`);
+    }
+    return pgs;
+  }
+  // "As duas opções" na mesma proposta: solar + bateria × só bateria.
+  function slideOpcoes(d, c) {
+    const b = calcSoBateria(d);
+    return `<section class="slide">${topo("Opções", "Duas formas de fazer")}
+      <div class="grid g2" style="gap:32px">
+        <div class="card lim" style="padding:30px"><small>Opção 1 · Solar + bateria</small><b class="big">${brl(c.investimento)}</b>
+          <ul class="lista" style="margin-top:14px"><li>${num(c.kwp, 2)} kWp gerando cerca de ${num(c.geracao)} kWh/mês</li>${d.mostrar_economia === false ? "" : `<li>Economia de cerca de ${brl(c.mensal)} por mês na conta</li>`}<li>Backup de ${numx(b.capKwh)} kWh · cerca de ${num(b.autonomia, 1)} h</li></ul></div>
+        <div class="card" style="padding:30px"><small>Opção 2 · Só bateria (sem solar)</small><b class="big">${brl(b.investimento)}</b>
+          <ul class="lista" style="margin-top:14px"><li>Backup de ${numx(b.capKwh)} kWh · cerca de ${num(b.autonomia, 1)} h</li><li>Protege as cargas essenciais nas quedas de energia</li><li>Sem geração: a conta de luz não muda</li></ul></div>
+      </div>
+      <p class="nota">As condições de pagamento da opção 1 estão na próxima página. A opção 2: ${brl(b.avista)} à vista${b.parcelas.length ? ` ou ${b.parcelas.map(x => `${x.q}× de ${brl(x.valor)}`).join(", ")}` : ""}.</p>${pe(d)}</section>`;
+  }
+  function paginasBateria(p, d, c, v) {
+    const pgs = [];
+    pgs.push(capa(p, d, "Armazenamento<br>de energia", d.cidade ? `${d.cidade} · ${dataLonga(d.data)}` : dataLonga(d.data),
+      [[`${numx(c.capKwh)} kWh`, "Armazenamento"], [`${num(c.autonomia, 1)} h`, "Autonomia estimada"], [brl(c.investimento), "Investimento"]]));
+    pgs.push(empresa(d));
+    pgs.push(...slidesBateria(d, c, false));
+    const det = [["Baterias", `${num(n(d.bat_qtd) || 1)} × ${numx(d.bat_kwh)} kWh · ${d.bat_modelo}`], ["Inversor híbrido", d.inv_hibrido], ["Capacidade total", `${numx(c.capKwh)} kWh`], ["Garantia das baterias", d.bat_garantia]];
+    const itens = [["Baterias e inversor híbrido", `${d.bat_modelo} · ${d.inv_hibrido}`, n(d.valor_bateria)], ["Projeto e implantação", "Engenharia, instalação, quadro de cargas essenciais e comissionamento", n(d.valor_impl_bat)]].filter(x => x[2]);
+    const fp = formasPagamento(p, d, c);
+    pgs.push(`<section class="slide">${topo("Investimento", "O sistema e as condições")}
+      <div class="grid g2" style="gap:40px">
+        <table style="font-size:16px"><tbody>${det.filter(x => x[1]).map(([a, b]) => `<tr><td class="mut" style="width:38%;padding:7px 12px">${esc(a)}</td><td style="padding:7px 12px"><b>${esc(b)}</b></td></tr>`).join("")}</tbody></table>
+        <table style="font-size:16px"><tbody>${itens.map(([a, b, x]) => `<tr><td style="padding:7px 12px"><b>${esc(a)}</b><small style="font-size:13px">${esc(b)}</small></td><td class="n" style="padding:7px 12px">${brl(x)}</td></tr>`).join("") || `<tr><td class="mut">Preencha os valores.</td><td></td></tr>`}
+          <tr class="tot"><td style="padding:9px 12px">Valor total</td><td class="n" style="padding:9px 12px">${brl(c.investimento)}</td></tr></tbody></table>
+      </div>
+      <h3 style="margin:20px 0 10px;font-size:14px;letter-spacing:.16em;color:var(--mut)">Formas de pagamento</h3>
+      ${cardsPagamento(fp)}
+      <p class="nota" style="margin-top:10px">Tempo de execução: <b>${esc(d.prazo)}</b>. Parcelamento sujeito à aprovação.</p>${pe(d)}</section>`);
+    pgs.push(contato(d, v, ["Levantamento das cargas essenciais", "Assinatura do contrato", "Aquisição dos equipamentos", "Montagem do quadro de cargas essenciais", "Instalação e comissionamento", "Teste de falta de energia"], "Estamos prontos para garantir a sua energia."));
+    return pgs;
+  }
   function paginasSolar(p, d, c, v) {
+    if (c.soBateria) return paginasBateria(p, d, c, v);
     const bat = p.tipo === "bateria", capKwh = n(d.bat_kwh) * (n(d.bat_qtd) || 1);
     const pgs = [];
     pgs.push(capa(p, d, bat ? "Energia solar<br>com bateria" : "Energia solar", d.cidade ? `${d.cidade} · ${dataLonga(d.data)}` : dataLonga(d.data),
@@ -427,14 +538,8 @@
           ${bat ? `<div class="card"><small>Garantia das baterias</small>${esc(d.bat_garantia)}</div>` : ""}
         </div>
       </div>${pe(d)}</section>`);
-    if (bat) pgs.push(`<section class="slide dark">${topo("Armazenamento de energia", "Energia quando a rede falta", true)}
-      <div class="grid g3">
-        <div class="card"><small>Capacidade</small><b class="big">${numx(capKwh)} kWh</b><span class="mut">${esc(d.bat_modelo)}</span></div>
-        <div class="card"><small>Cargas essenciais</small><b class="big">${num(d.carga_critica_kw, 1)} kW</b><span class="mut">potência média atendida no backup</span></div>
-        <div class="card lim"><small>Autonomia estimada</small><b class="big">${num(c.autonomia, 1)} h</b><span>com as cargas essenciais ligadas</span></div>
-      </div>
-      <ul class="lista" style="margin-top:28px"><li>Backup automático das cargas essenciais em quedas de energia</li><li>Guarda a sobra do dia para usar à noite e no horário de ponta</li><li>O inversor híbrido gerencia solar, bateria e rede de forma automática</li></ul>
-      <p class="nota" style="color:#b9c1ae">Autonomia estimada com 90% da capacidade útil das baterias; varia conforme o consumo real no momento da falta.</p>${pe(d)}</section>`);
+    if (bat) pgs.push(...slidesBateria(d, c, true));
+    if (bat && d.bat_modo === "ambas") pgs.push(slideOpcoes(d, c));
     const itens = [["Equipamentos", "Módulos, inversor, estrutura e materiais", n(d.valor_equip)], ...(bat ? [["Baterias", `${d.bat_modelo} · ${d.inv_hibrido}`, n(d.valor_bateria)]] : []), ["Projeto e implantação", "Engenharia, homologação, instalação e materiais complementares", n(d.valor_impl)]].filter(x => x[2]);
     const fp = formasPagamento(p, d, c);
     if (fp.separado) pgs.push(`<section class="slide">${topo("Investimento", "Condições comerciais")}
@@ -468,7 +573,8 @@
   function formasPagamento(p, d, c) {
     const grupos = p.tipo === "ev"
       ? (d.investimento || []).filter(l => n(l.valor)).map(l => ({ nome: l.descricao || "Item", valor: n(l.valor), avista: vazioOu(l.avista, n(l.valor)), parcelas: listaParcelas(n(l.valor), l.parcelas, l.juros) }))
-      : [["Equipamentos", n(d.valor_equip), d.avista_equip, d.parcelas_equip, d.juros_equip], ...(p.tipo === "bateria" ? [["Baterias", n(d.valor_bateria), d.avista_bat, d.parcelas_bat, d.juros_bat]] : []), ["Implantação", n(d.valor_impl), d.avista_impl, d.parcelas_impl, d.juros_impl]]
+      : (c.soBateria ? [["Baterias", n(d.valor_bateria), d.avista_bat, d.parcelas_bat, d.juros_bat], ["Implantação", n(d.valor_impl_bat), d.avista_impl, d.parcelas_impl, d.juros_impl]]
+        : [["Equipamentos", n(d.valor_equip), d.avista_equip, d.parcelas_equip, d.juros_equip], ...(p.tipo === "bateria" ? [["Baterias", n(d.valor_bateria), d.avista_bat, d.parcelas_bat, d.juros_bat]] : []), ["Implantação", n(d.valor_impl), d.avista_impl, d.parcelas_impl, d.juros_impl]])
         .filter(g => g[1]).map(([nome, valor, av, par, j]) => ({ nome, valor, avista: vazioOu(av, valor), parcelas: listaParcelas(valor, par, j) }));
     const junto = { nome: "Tudo junto", valor: c.investimento, avista: vazioOu(d.avista, c.investimento), parcelas: listaParcelas(c.investimento, d.parcelas, d.juros_parcela) };
     const separado = !!d.pag_separado && grupos.length > 1;
@@ -604,7 +710,18 @@
     const validade = (() => { const x = new Date((d.data || hoje()) + "T12:00:00"); x.setDate(x.getDate() + (n(d.validade_dias) || 15)); return x.toLocaleDateString("pt-BR"); })();
     const para = d.cliente ? ` para ${d.cliente}` : "", nr = p.numero ? ` ${p.numero}` : "";
     const msg = [`Olá! Tudo bem? Aqui é o ${eu}, da P3 Energy.`, ""];
-    if (p.tipo === "solar" || p.tipo === "bateria") {
+    if (c.soBateria) {
+      const k = calcCargas(d);
+      msg.push(`Segue em anexo a proposta${nr} do sistema de baterias${para} 🔋`, "",
+        `*O sistema*`,
+        `• ${num(n(d.bat_qtd) || 1)} × ${numx(d.bat_kwh)} kWh (${d.bat_modelo}) com ${d.inv_hibrido}: ${numx(c.capKwh)} kWh armazenados`,
+        `• Quando a energia cai, mantém as cargas essenciais (${num(d.carga_critica_kw, 1)} kW em média) ligadas por cerca de ${num(c.autonomia, 1)} h`,
+        ...(k.linhas.length ? [`• Cargas no backup: ${k.linhas.map(l => `${num(l.qtd)} ${l.nome}`).join(", ")}`] : []),
+        `• Garantia das baterias: ${d.bat_garantia}`);
+      if (d.prazo) msg.push(`• Prazo de execução: ${d.prazo}`);
+      msg.push("", `*Investimento*`);
+      { const fp = formasPagamento(p, d, c); msg.push(...[...(fp.separado ? fp.grupos : []), ...(fp.mostrarJunto ? [fp.junto] : [])].map(g => `• ${textoForma(g)}`)); }
+    } else if (p.tipo === "solar" || p.tipo === "bateria") {
       const bat = p.tipo === "bateria", capKwh = n(d.bat_kwh) * (n(d.bat_qtd) || 1);
       const parc = c.parcelas.length ? c.parcelas[c.parcelas.length - 1] : null;
       msg.push(`Segue em anexo a proposta${nr} do sistema de energia solar${bat ? " com baterias" : ""}${para} ☀️`, "",
@@ -623,6 +740,7 @@
         ...(d.mostrar_economia === false ? [] : [`• Conta de luz de ${brl(c.conta)} para cerca de ${brl(c.comSolar)} por mês: economia de ${brl(c.mensal)} (${Math.round(c.pct * 100)}%)`]),
         ...(() => { const fp = formasPagamento(p, d, c); return fp.separado ? [`• Investimento total de ${brl(c.investimento)}. Formas de pagamento:`, ...fp.grupos.map(g => `  – ${textoForma(g)}`), ...(fp.mostrarJunto ? [`  – ${textoForma(fp.junto)}`] : [])] : [`• Investimento de ${brl(c.investimento)}${c.avista < c.investimento ? ` (à vista ${brl(c.avista)})` : ""}${parc ? `, ou em até ${parc.q}× de ${brl(parc.valor)}` : ""}`]; })());
       if (c.payback != null && d.mostrar_economia !== false) msg.push(`• O sistema se paga em cerca de ${num(c.payback, 1)} anos, e em ${c.anos} anos a economia passa de ${brl(c.total)}`);
+      if (bat && d.bat_modo === "ambas") { const b = calcSoBateria(d); msg.push("", `*Opção 2: só a bateria (sem solar)*`, `• ${numx(b.capKwh)} kWh de backup, cerca de ${num(b.autonomia, 1)} h, por ${brl(b.investimento)}${b.avista < b.investimento ? ` (à vista ${brl(b.avista)})` : ""}`, `• Não gera energia: protege nas quedas, mas a conta de luz não muda`); }
     } else if (p.tipo === "ev") {
       const q = c.qtd, escopo = [`${q} ${q > 1 ? "carregadores" : "carregador"} ${d.corrente} de ${num(d.potencia_kw)} kW${d.modelo ? ` (${d.modelo})` : ""}`];
       if (d.clamper) escopo.push(`${q} Mobi Smart Clamper`);
@@ -744,41 +862,47 @@
     const escolha = (k, rot, lista) => `<label class="f">${rot}<select data-k="${k}">${opts(lista, d[k])}</select></label>`;
     const img = (k, rot, ajuda) => `<label class="f wide">${rot}<span class="pr-img">${d[k] ? `<img src="${d[k]}" alt="">` : ""}<input type="file" accept="image/*" data-img="${k}">${d[k] ? `<button type="button" class="btn ghost sm" data-tirar="${k}">Tirar</button>` : ""}</span><small>${ajuda}</small></label>`;
     const bloco = (titulo, html, aberto = true) => `<details class="pr-bloco" ${aberto ? "open" : ""}><summary>${titulo}</summary><div class="grid-form">${html}</div></details>`;
+    // Proposta de bateria: "solar" = some no modo só bateria; "bat" = só aparece quando há a opção só bateria.
+    const marca = (m, html) => html.replace(/^(\s*)<(details|label|p) /, `$1<$2 data-m="${m}" `);
 
     const comum = bloco("Cliente e proposta", `
       ${campo("cliente", "Cliente")}${campo("cidade", "Cidade")}${campo("data", "Data", "date")}${campo("validade_dias", "Validade (dias)", "num")}
       ${escolha("vendedor", "Contato na proposta", Object.entries(VENDEDORES).map(([k, x]) => [k, x.nome]))}
       ${img("logo_cliente", "Logo do cliente", "Aparece na capa (opcional).")}${img("foto_capa", "Foto da capa", "Foto do local ou do projeto (opcional).")}
       ${campo("fechamento", "Frase final (opcional)", "area", 2)}`);
-    const solar = () => (d.eco_v2 ? blocoEco() : bloco("Consumo e conta", `
+    const blocoBat = () => p.tipo !== "bateria" ? "" : bloco("Bateria", `
+        ${escolha("bat_modo", "O que vai na proposta", [["solar", "Solar + bateria"], ["bateria", "Só bateria (sem solar)"], ["ambas", "As duas opções na mesma proposta"]])}
+        <p class="muted wide" style="margin:0;font-size:12px">Para mandar em propostas separadas: salve esta, toque em Duplicar e troque a opção na cópia.</p>
+        ${campo("bat_qtd", "Quantidade de baterias", "num")}${campo("bat_kwh", "Capacidade de cada (kWh)", "num")}${campo("bat_modelo", "Modelo")}
+        ${campo("inv_hibrido", "Inversor híbrido")}${campo("carga_critica_kw", "Cargas essenciais no backup (kW)", "num")}${campo("bat_garantia", "Garantia das baterias")}
+        ${campo("valor_bateria", "Valor das baterias e inversor (R$)", "num")}${marca("bat", campo("valor_impl_bat", "Implantação só da bateria (R$)", "num"))}`)
+      + bloco("Calculadora de cargas do backup", `<div class="wide" id="prCargas"></div>`);
+    const solar = () => blocoBat() + marca("solar", d.eco_v2 ? blocoEco() : bloco("Consumo e conta", `
         <div class="wide note" style="font-size:12.5px">Esta proposta usa o cálculo antigo. <button type="button" class="btn sm" id="prEcoV2">Usar o cálculo da Lei 14.300</button></div>
         <div class="wide"><label class="btn sm" for="prFatura">Ler fatura da Copel (PDF)</label><input type="file" id="prFatura" accept="application/pdf,.pdf" hidden> <span class="muted" id="prFaturaMsg" style="font-size:12.5px">${esc(d.fatura_info || "Puxa o consumo médio dos 12 meses, a tarifa real e o tipo de ligação.")}</span></div>
         ${campo("consumo_kwh", "Consumo médio (kWh/mês)", "num")}${campo("conta_atual", "Conta atual (R$/mês)", "num")}
         ${escolha("fase", "Ligação", [["mono", "Monofásica (30 kWh)"], ["bi", "Bifásica (50 kWh)"], ["tri", "Trifásica (100 kWh)"]])}
         ${campo("fio_b_pct", "Fio B e encargos sobre o compensado (%)", "num")}
         ${campo("simultaneidade", "Simultaneidade (% da geração usada na hora)", "num")}${campo("custo_com_solar", "Custo com solar (R$/mês) — vazio = calcular", "num")}`))
-      + bloco("Sistema", `
+      + marca("solar", bloco("Sistema", `
         ${escolha("instalacao", "Instalação", [["telhado", "Telhado"], ["solo", "Solo"]])}${campo("qtd_modulos", "Quantidade de módulos", "num")}${campo("modulo_w", "Potência do módulo (W)", "num")}${campo("modulo_marca", "Marca do módulo")}
-        ${p.tipo === "bateria" ? campo("inv_hibrido", "Inversor híbrido") : campo("inversor", "Inversor")}
+        ${p.tipo === "bateria" ? "" : campo("inversor", "Inversor")}
         <label class="f">Geração (kWh por kWp ao mês)<span style="display:flex;gap:6px"><input data-k="fator_kwh_kwp" inputmode="decimal" value="${esc(String(d.fator_kwh_kwp).replace(".", ","))}"><button type="button" class="btn sm" id="prGeracao" title="Calcula pela cidade (dados de satélite)">Pela cidade</button></span></label>
         ${campo("estrutura", "Estrutura")}${campo("garantia_modulo", "Garantia dos módulos", "area", 2)}${campo("garantia_inversor", "Garantia do inversor", "area", 2)}
-        ${img("layout_img", "Layout projetado", "Imagem do layout dos módulos (opcional): vira uma página.")}`)
-      + (p.tipo === "bateria" ? bloco("Bateria", `
-        ${campo("bat_qtd", "Quantidade de baterias", "num")}${campo("bat_kwh", "Capacidade de cada (kWh)", "num")}${campo("bat_modelo", "Modelo")}
-        ${campo("carga_critica_kw", "Cargas essenciais no backup (kW)", "num")}${campo("bat_garantia", "Garantia das baterias")}${campo("valor_bateria", "Valor das baterias (R$)", "num")}`) : "")
-      + bloco("Custo da obra (planilha solar · não sai no PDF)", `
+        ${img("layout_img", "Layout projetado", "Imagem do layout dos módulos (opcional): vira uma página.")}`))
+      + marca("solar", bloco("Custo da obra (planilha solar · não sai no PDF)", `
         ${campo("c_km", "Distância até a obra (km, ida)", "num")}
         ${campo("c_viagens_eng", "Viagens da engenharia", "num")}${campo("c_viagens_equipe", "Viagens da equipe", "num")}${campo("c_pessoas", "Pessoas na equipe", "num")}${campo("c_dias", "Dias de obra (hospedagem)", "num")}
         ${campo("c_kit", "Custo do kit fotovoltaico (R$)", "num")}${p.tipo === "bateria" ? campo("c_bateria", "Custo das baterias e inversor híbrido (R$)", "num") : ""}${campo("c_estrutura", "Estrutura (R$)", "num")}${campo("c_transformador", "Transformador (R$)", "num")}
         ${campo("c_padrao", "Padrão de entrada (R$)", "num")}${campo("c_descarregamento", "Descarregamento (R$)", "num")}${campo("c_conexao", "Conexão (R$)", "num")}${campo("c_comissao", "Comissão (R$)", "num")}${campo("c_terrenista", "Terrenista (R$)", "num")}
         ${campo("c_margem_kwp", "Margem P3 (R$/kWp)", "num")}${escolha("c_faturamento", "Faturamento", [["p3", "Tudo pela P3 (5,93%)"], ["direto", "Kit direto ao cliente (16,33% no serviço)"]])}
         ${campo("c_imp_total", "% imposto · tudo pela P3", "num")}${campo("c_imp_servico", "% imposto · NF de serviço", "num")}
-        <div class="wide"><button type="button" class="btn sm primary" id="prCustos">Calcular preço pela planilha</button><p class="muted" id="prLucro" style="margin:8px 0 0;font-size:12.5px;white-space:pre-line"></p></div>`)
+        <div class="wide"><button type="button" class="btn sm primary" id="prCustos">Calcular preço pela planilha</button><p class="muted" id="prLucro" style="margin:8px 0 0;font-size:12.5px;white-space:pre-line"></p></div>`))
       + bloco("Investimento e condições", `
-        ${campo("valor_equip", "Equipamentos (R$)", "num")}${campo("valor_impl", "Projeto e implantação (R$)", "num")}
-        ${campo("pag_separado", "Pagamento separado (cada parte à vista ou parcelada)", "check")}${campo("pag_junto", "Mostrar também tudo junto", "check")}<p class="muted wide" style="margin:4px 0 0;font-size:12px;font-weight:600">Equipamentos</p>${campo("avista_equip", "À vista (R$) — vazio = valor", "num")}${campo("parcelas_equip", "Parcelas (ex.: 3, 6, 12)")}${campo("juros_equip", "Acréscimo no parcelado (%)", "num")}${p.tipo === "bateria" ? `<p class="muted wide" style="margin:4px 0 0;font-size:12px;font-weight:600">Baterias</p>${campo("avista_bat", "À vista (R$) — vazio = valor", "num")}${campo("parcelas_bat", "Parcelas")}${campo("juros_bat", "Acréscimo no parcelado (%)", "num")}` : ""}<p class="muted wide" style="margin:4px 0 0;font-size:12px;font-weight:600">Implantação</p>${campo("avista_impl", "À vista (R$) — vazio = valor", "num")}${campo("parcelas_impl", "Parcelas (ex.: 3)")}${campo("juros_impl", "Acréscimo no parcelado (%)", "num")}<p class="muted wide" style="margin:4px 0 0;font-size:12px;font-weight:600">Tudo junto</p>${campo("avista", "À vista (R$) — vazio = valor total", "num")}${campo("parcelas", "Parcelas (ex.: 3, 6, 12)")}${campo("juros_parcela", "Acréscimo no parcelado (%)", "num")}
+        ${marca("solar", campo("valor_equip", "Equipamentos (R$)", "num"))}${marca("solar", campo("valor_impl", "Projeto e implantação (R$)", "num"))}
+        ${campo("pag_separado", "Pagamento separado (cada parte à vista ou parcelada)", "check")}${campo("pag_junto", "Mostrar também tudo junto", "check")}${marca("solar", '<p class="muted wide" style="margin:4px 0 0;font-size:12px;font-weight:600">Equipamentos</p>')}${marca("solar", campo("avista_equip", "À vista (R$) — vazio = valor", "num"))}${marca("solar", campo("parcelas_equip", "Parcelas (ex.: 3, 6, 12)"))}${marca("solar", campo("juros_equip", "Acréscimo no parcelado (%)", "num"))}${p.tipo === "bateria" ? `<p class="muted wide" style="margin:4px 0 0;font-size:12px;font-weight:600">Baterias</p>${campo("avista_bat", "À vista (R$) — vazio = valor", "num")}${campo("parcelas_bat", "Parcelas")}${campo("juros_bat", "Acréscimo no parcelado (%)", "num")}` : ""}<p class="muted wide" style="margin:4px 0 0;font-size:12px;font-weight:600">Implantação</p>${campo("avista_impl", "À vista (R$) — vazio = valor", "num")}${campo("parcelas_impl", "Parcelas (ex.: 3)")}${campo("juros_impl", "Acréscimo no parcelado (%)", "num")}<p class="muted wide" style="margin:4px 0 0;font-size:12px;font-weight:600">Tudo junto</p>${campo("avista", "À vista (R$) — vazio = valor total", "num")}${campo("parcelas", "Parcelas (ex.: 3, 6, 12)")}${campo("juros_parcela", "Acréscimo no parcelado (%)", "num")}
         ${campo("prazo", "Tempo de execução")}${campo("pagamento_obs", "Observação das condições", "area", 2)}
-        ${campo("reajuste", "Reajuste da tarifa ao ano (%)", "num")}${campo("degradacao", "Perda dos módulos ao ano (%)", "num")}${campo("anos", "Anos da projeção", "num")}`);
+        ${marca("solar", campo("reajuste", "Reajuste da tarifa ao ano (%)", "num"))}${marca("solar", campo("degradacao", "Perda dos módulos ao ano (%)", "num"))}${marca("solar", campo("anos", "Anos da projeção", "num"))}`);
     const manut = () => bloco("Sistema do cliente", `
         ${campo("kwp", "Potência (kWp)", "num")}${campo("modulos", "Módulos — vazio = kWp ÷ 550 W", "num")}
         ${escolha("estrutura", "Estrutura", [["telhado", "Telhado"], ["solo", "Solo"]])}${campo("km", "Distância até o cliente (km, ida)", "num")}
@@ -881,7 +1005,7 @@
         }
       }, 250);
     };
-    const NUMS = new Set(["validade_dias", "consumo_kwh", "conta_atual", "fio_b_pct", "qtd_modulos", "modulo_w", "fator_kwh_kwp", "valor_equip", "valor_impl", "juros_parcela", "reajuste", "degradacao", "anos", "bat_qtd", "bat_kwh", "carga_critica_kw", "valor_bateria", "qtd", "potencia_kw", "software_mensal", "manutencao_mensal",
+    const NUMS = new Set(["validade_dias", "consumo_kwh", "conta_atual", "fio_b_pct", "qtd_modulos", "modulo_w", "fator_kwh_kwp", "valor_equip", "valor_impl", "juros_parcela", "reajuste", "degradacao", "anos", "bat_qtd", "bat_kwh", "carga_critica_kw", "valor_bateria", "valor_impl_bat", "qtd", "potencia_kw", "software_mensal", "manutencao_mensal",
       "c_km", "c_viagens_eng", "c_viagens_equipe", "c_pessoas", "c_dias", "c_margem_kwp", "c_imp_total", "c_imp_servico", "c_kit", "c_bateria", "c_estrutura", "c_transformador", "c_padrao", "c_descarregamento", "c_conexao", "c_comissao", "c_terrenista",
       "kwp", "km", "beneficiarias", "simultaneidade", "icms_pct", "pis_cofins_pct", "fio_b_parcela", "ilum_publica", "ano_inicio", "demanda_kw", "consumo_fp", "consumo_p", "juros_equip", "juros_bat", "juros_impl", "garantia_meses", "fiscal_pct", "markup_3x", "markup_anual", "markup_avulso", "tarifa_kwh"]);
     const OPCIONAL = new Set(["tarifa_kwh", "fio_b_kwh", "tar_demanda", "tar_fp", "tar_p", "fio_fp", "fio_p", "te_fp", "te_p", "avista", "custo_com_solar", "modulos", "avista_equip", "avista_bat", "avista_impl"]);
@@ -893,6 +1017,8 @@
         if (k === "pag_separado" && p.tipo === "ev") desenharInv();
         if (k === "instalacao") ajustarGeracao();
         if (k === "grupo") mostrarGrupo();
+        if (k === "bat_modo") mostrarModo();
+        if (["bat_kwh", "bat_qtd", "bat_modo"].includes(k)) resumoCargas();
         if (k === "fatura_uso") aplicarFatura();
       };
     });
@@ -915,6 +1041,65 @@
       $("#prInvMais", box).onclick = () => { d.investimento.push({ descricao: "", detalhe: "", valor: 0 }); desenharInv(); };
     };
     if (p.tipo === "ev") desenharInv();
+
+    // Modo da proposta de bateria: esconde o que é só do solar (ou só da opção sem solar).
+    const mostrarModo = () => {
+      const modo = p.tipo === "bateria" ? d.bat_modo || "solar" : "solar";
+      $$("[data-m]", main).forEach(el => { el.style.display = (el.dataset.m === "solar" ? modo !== "bateria" : modo !== "solar") ? "" : "none"; });
+    };
+    // Calculadora de cargas: aparelhos (do catálogo ou livres) → potência, pico, energia e quantas baterias.
+    const resumoCargas = () => {
+      const box = $("#prCargasRes", main); if (!box) return;
+      const k = calcCargas(d);
+      if (!k.linhas.length) { box.innerHTML = `<span class="muted">Adicione os aparelhos que devem continuar ligados quando a energia cair.</span>`; return; }
+      const falta = k.kwh > k.capAtual * UTIL_BAT + 1e-9;
+      box.innerHTML = `<div class="pr-carga-kpis">
+          <div><small>Tudo ligado</small><b>${num(k.potKw, 2)} kW</b></div>
+          <div><small>Pico na partida</small><b>${num(k.picoKw, 2)} kW</b></div>
+          <div><small>Energia no período</small><b>${num(k.kwh, 2)} kWh</b></div>
+          <div><small>Carga média</small><b>${num(k.mediaKw, 2)} kW</b></div>
+        </div>
+        <p style="margin:8px 0 4px">Precisa de <b>${num(k.kwh / UTIL_BAT, 1)} kWh</b> de bateria (${num(UTIL_BAT * 100)}% útil) → <b>${k.nBat} × ${numx(d.bat_kwh)} kWh</b>. Inversor híbrido de pelo menos <b>${num(Math.ceil(k.potKw * 10) / 10, 1)} kW</b> contínuos e pico de ${num(k.picoKw, 1)} kW.</p>
+        <p style="margin:0;${falta ? "color:var(--bad)" : ""}">Na proposta hoje: ${numx(k.capAtual)} kWh → ${falta ? `faltam ${num(k.kwh - k.capAtual * UTIL_BAT, 1)} kWh para as ${numx(k.horas)} h` : `atende, com autonomia de cerca de ${num(k.mediaKw ? k.capAtual * UTIL_BAT / k.mediaKw : 0, 1)} h nessa carga`}.</p>
+        <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button type="button" class="btn sm primary" id="prCargasUsar">Usar na proposta (${k.nBat} bateria${k.nBat > 1 ? "s" : ""} · ${num(k.mediaKw, 2)} kW)</button>
+          <label class="pr-check" style="margin:0"><span><input type="checkbox" id="prCargasPdf" ${d.cargas_pdf !== false ? "checked" : ""}> Mostrar a lista de cargas no PDF</span></label></div>`;
+      $("#prCargasUsar", box).onclick = () => {
+        d.bat_qtd = Math.max(1, k.nBat); d.carga_critica_kw = r2(k.mediaKw);
+        poe("bat_qtd", d.bat_qtd); poe("carga_critica_kw", d.carga_critica_kw);
+        sujo = true; atualizar(); resumoCargas(); toast(`Baterias: ${d.bat_qtd} × ${numx(d.bat_kwh)} kWh · cargas ${num(d.carga_critica_kw, 2)} kW.`, "ok");
+      };
+      $("#prCargasPdf", box).onchange = e => { d.cargas_pdf = e.target.checked; sujo = true; atualizar(); };
+    };
+    const desenharCargas = () => {
+      const box = $("#prCargas", main); if (!box) return;
+      if (!Array.isArray(d.cargas)) d.cargas = [];
+      const v = x => esc(String(x ?? "").replace(".", ","));
+      box.innerHTML = `${d.cargas.length ? `<div class="pr-carga pr-carga-h"><span>Aparelho</span><span>Qtd</span><span>Potência</span><span>Horas</span><span title="Parte do tempo em que o aparelho puxa energia (compressor liga e desliga)">% uso</span><span></span></div>` : ""}
+        ${d.cargas.map((c, i) => `<div class="pr-carga">
+          <input data-ci="${i}" data-cc="nome" value="${esc(c.nome || "")}" aria-label="Aparelho">
+          <input data-ci="${i}" data-cc="qtd" inputmode="decimal" value="${v(c.qtd)}" aria-label="Quantidade">
+          <span class="pr-carga-un"><input data-ci="${i}" data-cc="${n(c.fbtu) ? "btu" : "w"}" inputmode="decimal" value="${v(n(c.fbtu) ? c.btu : c.w)}" aria-label="${n(c.fbtu) ? "BTU" : "Watts"}"><i>${n(c.fbtu) ? "BTU" : "W"}</i></span>
+          <input data-ci="${i}" data-cc="h" inputmode="decimal" value="${v(c.h)}" aria-label="Horas ligado na falta">
+          <input data-ci="${i}" data-cc="uso" inputmode="decimal" value="${v(c.uso)}" aria-label="% do tempo puxando energia">
+          <button type="button" class="btn ghost sm" data-cdel="${i}" aria-label="Tirar aparelho">✕</button></div>`).join("")}
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0 2px"><select id="prCargaAdd" aria-label="Adicionar aparelho"><option value="">+ Adicionar aparelho…</option>${APARELHOS.map((a, j) => `<option value="${j}">${esc(a.nome)}${a.btu ? " (BTU)" : ` · ${num(a.w)} W`}</option>`).join("")}</select>
+          ${d.cargas.length ? `<span class="muted" style="font-size:12px">Horas = tempo ligado durante a falta de energia.</span>` : ""}</div>
+        <div id="prCargasRes" class="pr-carga-res"></div>`;
+      $$("[data-ci]", box).forEach(el => el.oninput = () => {
+        const c = d.cargas[Number(el.dataset.ci)], k = el.dataset.cc;
+        c[k] = k === "nome" ? el.value : n(el.value);
+        sujo = true; resumoCargas(); atualizar();
+      });
+      $$("[data-cdel]", box).forEach(b => b.onclick = () => { d.cargas.splice(Number(b.dataset.cdel), 1); sujo = true; desenharCargas(); atualizar(); });
+      $("#prCargaAdd", box).onchange = e => {
+        const a = APARELHOS[Number(e.target.value)]; if (!a) return;
+        d.cargas.push({ nome: a.nome, qtd: 1, w: a.w || 0, btu: a.btu || "", fbtu: a.fbtu || "", h: a.h, uso: a.uso, partida: a.partida });
+        sujo = true; desenharCargas(); atualizar();
+        const q = $$('[data-cc="qtd"]', box); if (q.length) q[q.length - 1].select();
+      };
+      resumoCargas();
+    };
+    desenharCargas();
 
     // Preço pela planilha de obra solar: equipamentos = kit; baterias = custo delas; o resto do preço sugerido
     // (implantação, projeto, logística, demais itens e a margem P3) vai em "Projeto e implantação".
@@ -1002,6 +1187,7 @@
       try { if (p.id) { await salvar(); editor(main, p.id); } else editor(main, "nova", p.tipo); } catch (err) { toast(err.message, "bad"); }
     };
     mostrarGrupo();
+    mostrarModo();
     // Unidades consumidoras extras: nome, grupo, consumo, ligação, tarifa e Fio B (vazio = da principal), iluminação e rateio.
     const desenharUcs = () => {
       const box = $("#prUcs", main); if (!box) return;
@@ -1068,7 +1254,7 @@
       try {
         const corpo = { nome: d.cliente || p.numero, contratante: p.tipo === "ev" ? "terceiro" : "p3", tipo: tipoObra, cidade: d.cidade, vendedor: (VENDEDORES[d.vendedor] || {}).nome, status: "andamento", modo: "simples", venda: c.investimento, kwp: p.tipo === "ev" ? null : c.kwp, custo: p.tipo === "manutencao" ? c.custoTotal : null, carregadores_dc: p.tipo === "ev" && d.corrente === "DC" ? c.qtd : null, carregadores_ac: p.tipo === "ev" && d.corrente === "AC" ? c.qtd : null, potencia_kw: p.tipo === "ev" ? n(d.potencia_kw) * c.qtd : null, data_inicio: hoje(), origem: "proposta", obs: `Gerada da proposta ${p.numero}.` };
         // Solar: a obra já nasce com o orçamento detalhado da planilha de obra solar e o valor da proposta como contratado.
-        const os = (p.tipo === "solar" || p.tipo === "bateria") && obraSolar(d, p.tipo);
+        const os = (p.tipo === "solar" || p.tipo === "bateria") && !soBateria(p) && obraSolar(d, p.tipo);
         if (os) Object.assign(corpo, { modo: "detalhado", itens: os.obra.itens.filter(i => n(i.qtd) * n(i.unit)), solar: os.obra.solar, valor_contratado: c.investimento, custo: os.c.custo });
         const o = await api("obras", { method: "POST", body: corpo });
         await api(`propostas/${encodeURIComponent(p.id)}`, { method: "PUT", body: { obra_id: o.id } });
