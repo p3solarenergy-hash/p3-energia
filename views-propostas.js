@@ -101,7 +101,9 @@
     { nome: "Chuveiro elétrico", w: 5500, h: 0.5, uso: 100, partida: 1 },
     { nome: "Outro aparelho", w: 100, h: 4, uso: 100, partida: 1 }
   ];
-  const UTIL_BAT = 0.9; // fração útil da bateria (a mesma da autonomia)
+  const UTIL_BAT = 0.9; // profundidade de descarga usada da bateria de lítio (90%)
+  const EFIC_INV = 0.95; // perdas do inversor híbrido ao converter a bateria (CC) para a casa (CA)
+  const ENTREGA = UTIL_BAT * EFIC_INV; // kWh que chegam aos aparelhos por kWh nominal de bateria (85,5%)
   const wCarga = c => n(c.btu) && n(c.fbtu) ? n(c.btu) * n(c.fbtu) : n(c.w);
   function calcCargas(d) {
     const linhas = (d.cargas || []).filter(c => n(c.qtd) > 0 && wCarga(c) > 0).map(c => {
@@ -112,9 +114,18 @@
     // Pico: tudo ligado + o maior motor partindo (os motores não partem todos no mesmo segundo).
     const picoKw = potKw + Math.max(0, ...linhas.map(l => l.extraPartida)) / 1000;
     const kwh = linhas.reduce((a, l) => a + l.kwh, 0), horas = Math.max(0, ...linhas.map(l => n(l.h)));
-    const mediaKw = horas ? kwh / horas : 0, porBat = n(d.bat_kwh) * UTIL_BAT;
+    const mediaKw = horas ? kwh / horas : 0, porBat = n(d.bat_kwh) * ENTREGA;
     const nBat = porBat && kwh ? Math.ceil(kwh / porBat - 1e-9) : 0;
-    return { linhas, potKw, picoKw, kwh, horas, mediaKw, nBat, capAtual: n(d.bat_kwh) * (n(d.bat_qtd) || 1) };
+    return { linhas, potKw, picoKw, kwh, horas, mediaKw, nBat, capAtual: n(d.bat_kwh) * (n(d.bat_qtd) || 1), precisaKwh: kwh / ENTREGA };
+  }
+  // O backup da proposta, num lugar só (PDF, WhatsApp e tela usam isto). Com aparelhos na calculadora, vale a lista
+  // atual (a carga média e as horas dela); sem lista, vale o campo "Cargas essenciais (kW)".
+  function backupDe(d) {
+    const k = calcCargas(d), cap = n(d.bat_kwh) * (n(d.bat_qtd) || 1), entrega = cap * ENTREGA;
+    const lista = k.linhas.length > 0, media = lista ? k.mediaKw : n(d.carga_critica_kw);
+    const autonomia = media ? entrega / media : 0;
+    return { k, lista, cap, entrega, media, autonomia, tudoKw: lista ? k.potKw : 0, picoKw: lista ? k.picoKw : 0,
+      horas: k.horas, cobre: lista ? entrega + 1e-9 >= k.kwh : null, nBat: k.nBat };
   }
   const novaDados = tipo => ({ ...COMUM, ...JSON.parse(JSON.stringify(PADRAO[tipo])), data: hoje() });
   const dadosDe = p => ({ ...novaDados(p.tipo), ...(p.dados && !Array.isArray(p.dados) ? p.dados : {}) });
@@ -231,7 +242,7 @@
     const soma = k => r2(porAno.slice(0, k).reduce((s, x) => s + x.economia, 0));
     const avista = d.avista !== "" && d.avista != null ? n(d.avista) : investimento;
     const parcelas = listaParcelas(investimento, d.parcelas, d.juros_parcela);
-    const autonomia = n(d.carga_critica_kw) ? r2(n(d.bat_kwh) * (n(d.bat_qtd) || 1) * 0.9 / n(d.carga_critica_kw)) : 0;
+    const autonomia = Math.floor(backupDe(d).autonomia * 10) / 10;
     return { eco: true, kwp, geracao, consumo, conta, tarifa: d.grupo === "A" ? t.tarFp : t.tar, t, m1, ano0, autoconsumo: Math.round(m1.auto), compensado: Math.round(m1.comp),
       comSolar, estimado: r2(m1.com), mensal, pct: conta ? mensal / conta : 0, investimento, porAno, ano1: soma(1), ano5: soma(5), ano20: soma(Math.min(20, anos)), total: soma(anos), anos, payback, avista, parcelas, autonomia, cobertura: consumo ? geracao / consumo : 0 };
   }
@@ -260,12 +271,12 @@
     const soma = k => r2(porAno.slice(0, k).reduce((s, x) => s + x.economia, 0));
     const avista = d.avista !== "" && d.avista != null ? n(d.avista) : investimento;
     const parcelas = listaParcelas(investimento, d.parcelas, d.juros_parcela);
-    const autonomia = n(d.carga_critica_kw) ? r2(n(d.bat_kwh) * (n(d.bat_qtd) || 1) * 0.9 / n(d.carga_critica_kw)) : 0;
+    const autonomia = Math.floor(backupDe(d).autonomia * 10) / 10;
     return { kwp, geracao, consumo, conta, tarifa, autoconsumo, compensado, comSolar, estimado, mensal, pct: conta ? mensal / conta : 0, investimento, porAno, ano1: soma(1), ano5: soma(5), ano20: soma(Math.min(20, anos)), total: soma(anos), anos, payback, avista, parcelas, autonomia, cobertura: consumo ? geracao / consumo : 0 };
   }
   // Proposta de bateria sem solar (backup puro): não há geração nem economia, só armazenamento e autonomia.
   const soBateria = p => p.tipo === "bateria" && (p.dados || {}).bat_modo === "bateria";
-  const autonomiaDe = d => n(d.carga_critica_kw) ? r2(n(d.bat_kwh) * (n(d.bat_qtd) || 1) * UTIL_BAT / n(d.carga_critica_kw)) : 0;
+  const autonomiaDe = d => Math.floor(backupDe(d).autonomia * 10) / 10;
   function calcSoBateria(d) {
     const temAvista = d.avista !== "" && d.avista != null;
     // Só o à vista preenchido (sem valor por parte): ele vira o valor do sistema.
@@ -445,15 +456,16 @@
   // Páginas da bateria: o armazenamento (capacidade, cargas, autonomia) e, se a calculadora tiver aparelhos,
   // a lista das cargas atendidas no backup.
   function slidesBateria(d, c, comSolar) {
-    const capKwh = n(d.bat_kwh) * (n(d.bat_qtd) || 1), k = calcCargas(d);
+    const capKwh = n(d.bat_kwh) * (n(d.bat_qtd) || 1), b = backupDe(d), k = b.k;
+    const h1 = v => num(Math.floor(v * 10) / 10, 1); // autonomia arredondada para baixo: nunca promete a mais
     const pgs = [`<section class="slide dark">${topo("Armazenamento de energia", "Energia quando a rede falta", true)}
       <div class="grid g3">
-        <div class="card"><small>Capacidade</small><b class="big">${numx(capKwh)} kWh</b><span class="mut">${esc(d.bat_modelo)}</span></div>
-        <div class="card"><small>Cargas essenciais</small><b class="big">${num(d.carga_critica_kw, 1)} kW</b><span class="mut">potência média atendida no backup</span></div>
-        <div class="card lim"><small>Autonomia estimada</small><b class="big">${num(c.autonomia, 1)} h</b><span>com as cargas essenciais ligadas</span></div>
+        <div class="card"><small>Capacidade</small><b class="big">${numx(capKwh)} kWh</b><span class="mut">${num(n(d.bat_qtd) || 1)} × ${numx(d.bat_kwh)} kWh · ${numx(r2(b.entrega))} kWh entregues às cargas</span></div>
+        <div class="card"><small>Cargas no backup</small><b class="big">${num(b.media, 2)} kW</b><span class="mut">${b.lista ? `consumo médio · ${num(b.tudoKw, 1)} kW com tudo ligado` : "potência média atendida no backup"}</span></div>
+        <div class="card lim"><small>Autonomia estimada</small><b class="big">${h1(b.autonomia)} h</b><span>${b.lista ? (b.cobre ? `cobre as ${numx(b.horas)} h da lista de cargas` : `das ${numx(b.horas)} h da lista · com ${b.nBat} × ${numx(d.bat_kwh)} kWh cobre tudo`) : "com as cargas essenciais ligadas"}</span></div>
       </div>
       <ul class="lista" style="margin-top:28px"><li>Backup automático das cargas essenciais em quedas de energia</li>${comSolar ? "<li>Guarda a sobra do dia para usar à noite e no horário de ponta</li><li>O inversor híbrido gerencia solar, bateria e rede de forma automática</li>" : "<li>Recarrega pela rede e fica pronta para a próxima falta</li><li>Preparada para receber placas solares no futuro, se o inversor híbrido permitir</li>"}</ul>
-      <p class="nota" style="color:#b9c1ae">Autonomia estimada com ${num(UTIL_BAT * 100)}% da capacidade útil das baterias; varia conforme o consumo real no momento da falta.</p>${pe(d)}</section>`];
+      <p class="nota" style="color:#b9c1ae">Autonomia estimada com ${num(UTIL_BAT * 100)}% da capacidade das baterias e ${num(EFIC_INV * 100)}% de eficiência do inversor; varia conforme o consumo real no momento da falta.</p>${pe(d)}</section>`];
     if (k.linhas.length && d.cargas_pdf !== false) {
       const muitas = k.linhas.length > 8, pad = muitas ? "6px 12px" : "9px 14px";
       pgs.push(`<section class="slide">${topo("Dimensionamento do backup", "O que fica ligado quando a energia cai")}
@@ -463,7 +475,7 @@
           <tr class="tot"><td style="padding:${pad}" colspan="4">Energia no período</td><td class="n" style="padding:${pad}">${numx(r2(k.kwh))} kWh</td></tr></tbody></table>
         <div class="grid" style="gap:16px;align-content:start">
           <div class="card"><small>Tudo ligado ao mesmo tempo</small><b class="big">${num(k.potKw, 1)} kW</b><span class="mut">pico de ${num(k.picoKw, 1)} kW na partida dos motores</span></div>
-          <div class="card lim"><small>Baterias necessárias</small><b class="big">${numx(k.kwh / UTIL_BAT > 0 ? r2(k.kwh / UTIL_BAT) : 0)} kWh</b><span>proposta: ${numx(capKwh)} kWh (${num(n(d.bat_qtd) || 1)} × ${numx(d.bat_kwh)} kWh)</span></div>
+          <div class="card lim"><small>Baterias necessárias</small><b class="big">${num(k.precisaKwh, 1)} kWh</b><span>proposta: ${numx(capKwh)} kWh (${num(n(d.bat_qtd) || 1)} × ${numx(d.bat_kwh)} kWh)</span></div>
         </div>
       </div>
       <p class="nota">Geladeira, freezer e ar-condicionado contam só o tempo em que o compressor está ligado. Valores típicos de mercado; o consumo real depende dos aparelhos do local.</p>${pe(d)}</section>`);
@@ -720,7 +732,7 @@
       msg.push(`Segue em anexo a proposta${nr} do sistema de baterias${para} 🔋`, "",
         `*O sistema*`,
         `• ${num(n(d.bat_qtd) || 1)} × ${numx(d.bat_kwh)} kWh (${d.bat_modelo}) com ${d.inv_hibrido}: ${numx(c.capKwh)} kWh armazenados`,
-        `• Quando a energia cai, mantém as cargas essenciais (${num(d.carga_critica_kw, 1)} kW em média) ligadas por cerca de ${num(c.autonomia, 1)} h`,
+        `• Quando a energia cai, mantém as cargas essenciais (${num(backupDe(d).media, 2)} kW em média) ligadas por cerca de ${num(c.autonomia, 1)} h`,
         ...(k.linhas.length ? [`• Cargas no backup: ${k.linhas.map(l => `${num(l.qtd)} ${l.nome}`).join(", ")}`] : []),
         `• Garantia das baterias: ${d.bat_garantia}`);
       if (d.prazo) msg.push(`• Prazo de execução: ${d.prazo}`);
@@ -878,7 +890,7 @@
         ${escolha("bat_modo", "O que vai na proposta", [["solar", "Solar + bateria"], ["bateria", "Só bateria (sem solar)"], ["ambas", "As duas opções na mesma proposta"]])}
         <p class="muted wide" style="margin:0;font-size:12px">Para mandar em propostas separadas: salve esta, toque em Duplicar e troque a opção na cópia.</p>
         ${campo("bat_qtd", "Quantidade de baterias", "num")}${campo("bat_kwh", "Capacidade de cada (kWh)", "num")}${campo("bat_modelo", "Modelo")}
-        ${campo("inv_hibrido", "Inversor híbrido")}${campo("carga_critica_kw", "Cargas essenciais no backup (kW)", "num")}${campo("bat_garantia", "Garantia das baterias")}
+        ${campo("inv_hibrido", "Inversor híbrido")}${campo("carga_critica_kw", "Cargas essenciais (kW) — só sem a calculadora", "num")}${campo("bat_garantia", "Garantia das baterias")}
         <p class="muted wide" style="margin:0;font-size:12px">Os valores ficam em "Investimento e condições".</p>`)
       + bloco("Calculadora de cargas do backup", `<div class="wide" id="prCargas"></div>`);
     const solar = () => blocoBat() + marca("solar", d.eco_v2 ? blocoEco() : bloco("Consumo e conta", `
@@ -1054,17 +1066,17 @@
     // Calculadora de cargas: aparelhos (do catálogo ou livres) → potência, pico, energia e quantas baterias.
     const resumoCargas = () => {
       const box = $("#prCargasRes", main); if (!box) return;
-      const k = calcCargas(d);
-      if (!k.linhas.length) { box.innerHTML = `<span class="muted">Adicione os aparelhos que devem continuar ligados quando a energia cair.</span>`; return; }
-      const falta = k.kwh > k.capAtual * UTIL_BAT + 1e-9;
+      const b = backupDe(d), k = b.k;
+      if (!k.linhas.length) { box.innerHTML = `<span class="muted">Adicione os aparelhos que devem continuar ligados quando a energia cair. Sem aparelhos, a autonomia usa o campo "Cargas essenciais (kW)".</span>`; return; }
+      const falta = !b.cobre;
       box.innerHTML = `<div class="pr-carga-kpis">
           <div><small>Tudo ligado</small><b>${num(k.potKw, 2)} kW</b></div>
           <div><small>Pico na partida</small><b>${num(k.picoKw, 2)} kW</b></div>
           <div><small>Energia no período</small><b>${num(k.kwh, 2)} kWh</b></div>
           <div><small>Carga média</small><b>${num(k.mediaKw, 2)} kW</b></div>
         </div>
-        <p style="margin:8px 0 4px">Precisa de <b>${num(k.kwh / UTIL_BAT, 1)} kWh</b> de bateria (${num(UTIL_BAT * 100)}% útil) → <b>${k.nBat} × ${numx(d.bat_kwh)} kWh</b>. Inversor híbrido de pelo menos <b>${num(Math.ceil(k.potKw * 10) / 10, 1)} kW</b> contínuos e pico de ${num(k.picoKw, 1)} kW.</p>
-        <p style="margin:0;${falta ? "color:var(--bad)" : ""}">Na proposta hoje: ${numx(k.capAtual)} kWh → ${falta ? `faltam ${num(k.kwh - k.capAtual * UTIL_BAT, 1)} kWh para as ${numx(k.horas)} h` : `atende, com autonomia de cerca de ${num(k.mediaKw ? k.capAtual * UTIL_BAT / k.mediaKw : 0, 1)} h nessa carga`}.</p>
+        <p style="margin:8px 0 4px">Precisa de <b>${num(k.precisaKwh, 1)} kWh</b> de bateria (${num(UTIL_BAT * 100)}% de descarga e ${num(EFIC_INV * 100)}% de eficiência do inversor) → <b>${k.nBat} × ${numx(d.bat_kwh)} kWh</b>. Inversor híbrido de pelo menos <b>${num(Math.ceil(k.potKw * 10) / 10, 1)} kW</b> contínuos e pico de ${num(k.picoKw, 1)} kW.</p>
+        <p style="margin:0;${falta ? "color:var(--bad)" : ""}">Na proposta hoje: ${numx(b.cap)} kWh entregam ${num(b.entrega, 1)} kWh → ${falta ? `faltam ${num(k.kwh - b.entrega, 1)} kWh para as ${numx(k.horas)} h; dura cerca de ${num(Math.floor(b.autonomia * 10) / 10, 1)} h` : `atende as ${numx(k.horas)} h (autonomia de cerca de ${num(Math.floor(b.autonomia * 10) / 10, 1)} h nessa carga)`}. A proposta usa sempre esta lista.</p>
         <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button type="button" class="btn sm primary" id="prCargasUsar">Usar na proposta (${k.nBat} bateria${k.nBat > 1 ? "s" : ""} · ${num(k.mediaKw, 2)} kW)</button>
           <label class="pr-check" style="margin:0"><span><input type="checkbox" id="prCargasPdf" ${d.cargas_pdf !== false ? "checked" : ""}> Mostrar a lista de cargas no PDF</span></label></div>`;
       $("#prCargasUsar", box).onclick = () => {
