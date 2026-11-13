@@ -217,7 +217,7 @@
     const manual = d.custo_com_solar !== "" && d.custo_com_solar != null;
     const comSolar = manual ? n(d.custo_com_solar) : r2(m1.com);
     const mensal = r2(Math.max(0, conta - comSolar));
-    const investimento = r2(n(d.valor_equip) + n(d.valor_impl) + (tipo === "bateria" ? n(d.valor_bateria) : 0));
+    const investimento = r2(n(d.valor_equip) + n(d.valor_impl) + (tipo === "bateria" ? n(d.valor_bateria) : 0)) || (d.avista !== "" && d.avista != null ? n(d.avista) : 0); // só o à vista preenchido: ele é o valor
     const anos = Math.max(5, Math.min(30, n(d.anos) || 25));
     const ajusteManual = manual ? comSolar - m1.com : 0;
     const porAno = []; let acum = 0, payback = null;
@@ -247,7 +247,7 @@
     const estimado = r2((consumoRede - compensado) * tarifa + compensado * tarifa * n(d.fio_b_pct) / 100);
     const comSolar = d.custo_com_solar !== "" && d.custo_com_solar != null ? n(d.custo_com_solar) : estimado;
     const mensal = r2(Math.max(0, conta - comSolar));
-    const investimento = r2(n(d.valor_equip) + n(d.valor_impl) + (tipo === "bateria" ? n(d.valor_bateria) : 0));
+    const investimento = r2(n(d.valor_equip) + n(d.valor_impl) + (tipo === "bateria" ? n(d.valor_bateria) : 0)) || (d.avista !== "" && d.avista != null ? n(d.avista) : 0); // só o à vista preenchido: ele é o valor
     const fator = (1 + n(d.reajuste) / 100) * (1 - n(d.degradacao) / 100);
     const anos = Math.max(5, Math.min(30, n(d.anos) || 25));
     const porAno = []; let acum = 0, payback = null;
