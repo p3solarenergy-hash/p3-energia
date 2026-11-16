@@ -358,7 +358,7 @@ function creditos(db, q) {
     const rec = S(x => x.m.recebido_uby ? x.c.uby : 0), pag = S(x => x.m.pago_dono ? x.c.dono : 0);
     Object.assign(tot, { kwh: tot.kwh + k, uby: tot.uby + u, dono: tot.dono + d, p3: tot.p3 + p, rec: tot.rec + rec, pag: tot.pag + pag });
     const saldo = (Number(l.kwh_transferidos) || 0) - sum(ate, x => x.c.kwh);
-    return `<div class="section"><h2>${esc(nomeUs(l.usina_id) || l.nome)} <small>${esc(l.nome)}</small></h2>
+    return `<div class="section"><h2>${nomeUs(l.usina_id) ? `${esc(nomeUs(l.usina_id))} <small>${esc(l.nome)}</small>` : esc(l.nome)}</h2>
 <p class="muted" style="margin:0 0 8px">Dono: <b>${esc(nomeDn(l))}</b> · destino ${esc(l.destino_nome || l.arrendatario || "Uby")}${l.uc_destino ? ` · UC ${esc(ucFmt(l.uc_destino))}` : ""} · Uby paga R$ ${num6(l.preco_uby_kwh).replace(/0+$/, "").replace(/,$/, "")}/kWh · dono recebe R$ ${num6(l.preco_dono_kwh).replace(/0+$/, "").replace(/,$/, "")}/kWh${l.kwh_transferidos ? ` · saldo de créditos ao fim do período: <b>${kwh(saldo)}</b>` : ""}</p>
 <table><thead><tr><th>Mês</th><th>Fatura</th><th class="n">kWh enviados</th><th class="n">kWh Uby</th><th class="n">Uby paga</th><th>Recebido</th><th class="n">Dono recebe</th><th>Pago</th><th class="n">P3</th></tr></thead>
 <tbody>${per.map(({ m, c }) => `<tr><td><b>${esc(motor.monthLabel(m.competencia))}</b></td><td>${esc(m.fatura_ref || "—")}</td><td class="n">${kwh(c.kwh)}</td><td class="n">${m.kwh_uby == null || m.kwh_uby === "" ? "—" : kwh(m.kwh_uby)}</td>
