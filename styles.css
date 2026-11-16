@@ -319,3 +319,25 @@ tr.grupo td { background: var(--panel-2); font-size: 13px; padding-top: 10px; }
 .pr-carga-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }
 .pr-carga-kpis small { display: block; font-size: 11px; color: var(--ink-2); }
 .pr-carga-kpis b { font-size: 17px; }
+
+/* Cérebro (WhatsApp) */
+.cb-msg { padding: 8px 10px; border-radius: 10px; background: var(--panel-2); margin: 0 30px 8px 0; border: 1px solid var(--line-2); }
+.cb-msg.eu { background: color-mix(in srgb, var(--lime) 16%, var(--panel)); margin: 0 0 8px 30px; }
+.cb-meta { font-size: 11.5px; color: var(--muted); margin-bottom: 3px; }
+.cb-meta b { color: var(--ink-2); }
+.cb-txt { font-size: 13.5px; line-height: 1.45; overflow-wrap: anywhere; }
+.cb-txt .btn { margin-left: 6px; vertical-align: middle; }
+.cb-conversa { max-height: 70vh; overflow-y: auto; }
+.cb-busca { max-height: none; }
+.cb-txt mark { background: var(--lime); color: var(--lime-ink); border-radius: 3px; padding: 0 2px; }
+.cb-itens { margin: 6px 0 0; padding-left: 18px; } .cb-itens li { margin-bottom: 4px; } .cb-itens small { color: var(--muted); }
+.cb-fichas { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+.cb-ficha-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.cb-ficha-top h2 { margin: 0; }
+.cb-sit { margin: 8px 0; color: var(--ink-2); }
+.cb-ficha details { border-top: 1px solid var(--line-2); padding: 6px 0; }
+.cb-ficha summary, .cb-dia summary { cursor: pointer; font-weight: 600; font-size: 13px; }
+.cb-rodape { font-size: 11.5px; margin: 8px 0 0; }
+.cb-resumo p { margin: 0 0 10px; } .cb-resumo h3 { margin: 12px 0 6px; font-size: 14px; }
+.cb-dia { border-top: 1px solid var(--line-2); padding: 6px 0; }
+@media (max-width: 640px) { .cb-msg { margin-right: 0; } .cb-msg.eu { margin-left: 0; } .cb-fichas { grid-template-columns: 1fr; } }

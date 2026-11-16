@@ -288,6 +288,25 @@
       }
       if (m === "DELETE" && id) return base.remove(t, id);
     }
+    // Cérebro: o que passou nos grupos de trabalho do WhatsApp (só leitura), fichas vivas e resumo do dia.
+    if (m === "GET" && p[0] === "cerebro") {
+      const ok = r => { if (r.error) throw new Error(r.error.message); return r.data; };
+      if (p[1] === "buscar") return ok(await sb.rpc("cerebro_buscar", { q: String(q.q || "").slice(0, 200), limite: 80 }));
+      if (p[1] === "grupos") return ok(await sb.from("whatsapp_atividade").select("*").order("ultima", { ascending: false, nullsFirst: false }));
+      if (p[1] === "conversa") {
+        let c = sb.from("whatsapp_mensagens").select("id, autor, autor_nome, texto, transcricao, tipo, midia, enviado_em").eq("grupo_jid", q.jid).order("enviado_em", { ascending: false }).limit(150);
+        if (q.ate) c = c.lte("enviado_em", q.ate);
+        return ok(await c).reverse();
+      }
+      if (p[1] === "fichas") return ok(await sb.from("cerebro_fichas").select("*").order("atualizado_em", { ascending: false }));
+      if (p[1] === "resumos") return ok(await sb.from("cerebro_resumos").select("*").order("dia", { ascending: false }).limit(14));
+      if (p[1] === "midia") {
+        if (!/^whatsapp\/[\w.-]+\/[\w.-]+$/.test(String(q.caminho || ""))) throw new Error("Arquivo inválido.");
+        const r = await sb.storage.from(BUCKET).createSignedUrl(q.caminho, 600);
+        if (r.error) throw new Error("Arquivo não encontrado.");
+        return { url: r.data.signedUrl };
+      }
+    }
     throw new Error("Rota não encontrada.");
   }
 
