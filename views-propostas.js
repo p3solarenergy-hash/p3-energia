@@ -1124,7 +1124,7 @@
       const box = $("#prCargas", main); if (!box) return;
       if (!Array.isArray(d.cargas)) d.cargas = [];
       const v = x => esc(String(x ?? "").replace(".", ","));
-      box.innerHTML = `${d.cargas.length ? `<div class="pr-carga pr-carga-h"><span>Aparelho</span><span>Qtd</span><span>Potência</span><span>Horas</span><span title="Parte do tempo em que o aparelho puxa energia (compressor liga e desliga)">% uso</span><span title="Cargas da mesma fase rodam juntas; fases diferentes rodam em sequência">Fase</span><span></span></div>` : ""}
+      box.innerHTML = `${d.cargas.length ? `<div class="pr-carga pr-carga-h"><span>Aparelho</span><span>Qtd</span><span>Potência</span><span>Horas</span><span title="Parte do tempo em que o aparelho puxa energia (compressor liga e desliga)">% uso</span><span title="1 = liga junto com as outras cargas da mesma etapa; 2 = só depois da etapa 1 terminar">Etapa</span><span></span></div>` : ""}
         ${d.cargas.map((c, i) => `<div class="pr-carga">
           <span class="pr-carga-nome"><input data-ci="${i}" data-cc="nome" value="${esc(c.nome || "")}" aria-label="Aparelho">${(() => {
             const a = catDe(c); if (!a || !a.var) return "";
@@ -1135,7 +1135,7 @@
           <span class="pr-carga-un"><input data-ci="${i}" data-cc="${n(c.fbtu) ? "btu" : "w"}" inputmode="decimal" value="${v(n(c.fbtu) ? c.btu : c.w)}" aria-label="${n(c.fbtu) ? "BTU" : "Watts"}"><i>${n(c.fbtu) ? "BTU" : "W"}</i></span>
           <input data-ci="${i}" data-cc="h" inputmode="decimal" value="${v(c.h)}" aria-label="Horas ligado na falta">
           <input data-ci="${i}" data-cc="uso" inputmode="decimal" value="${v(c.uso)}" aria-label="% do tempo puxando energia">
-          <input data-ci="${i}" data-cc="fase" inputmode="numeric" value="${v(n(c.fase) || 1)}" aria-label="Fase (sequência de uso)">
+          <input data-ci="${i}" data-cc="fase" inputmode="numeric" value="${v(n(c.fase) || 1)}" aria-label="Etapa (ordem de uso: 1 liga junto; 2 depois da 1)" title="1 = liga junto com as outras da etapa 1; 2 = só depois da etapa 1">
           <button type="button" class="btn ghost sm" data-cdel="${i}" aria-label="Tirar aparelho">✕</button></div>`).join("")}
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0 2px"><select id="prCargaAdd" aria-label="Adicionar aparelho"><option value="">+ Adicionar aparelho…</option><optgroup label="Residencial e geral">${APARELHOS.map((a, j) => `<option value="a${j}">${esc(a.nome)}${a.btu ? " (BTU)" : ` · ${num(a.w)} W`}</option>`).join("")}</optgroup><optgroup label="Leiteria">${LEITERIA.map((a, j) => `<option value="l${j}">${esc(a.nome)}${a.var ? ` · ${a.var.map(x => x[0]).join(" / ")}` : ` · ${num(a.w)} W`}</option>`).join("")}</optgroup></select>
           ${d.cargas.length ? `<span class="muted" style="font-size:12px">Horas = tempo ligado durante a falta de energia.</span>` : ""}</div>
