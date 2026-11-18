@@ -126,18 +126,19 @@
       const w = wCarga(c), pot = w * n(c.qtd), uso = c.uso === "" || c.uso == null ? 100 : n(c.uso);
       return { ...c, wUn: w, pot, fase: n(c.fase) || 1, kwh: pot * n(c.h) * uso / 100 / 1000, extraPartida: pot * (Math.max(1, n(c.partida) || 1) - 1) };
     });
-    const potKw = linhas.reduce((a, l) => a + l.pot, 0) / 1000;
     const fases = [...new Set(linhas.map(l => l.fase))].sort((a, b) => a - b).map(f => {
       const ls = linhas.filter(l => l.fase === f);
       return { f, potKw: ls.reduce((a, l) => a + l.pot, 0) / 1000, kwh: ls.reduce((a, l) => a + l.kwh, 0), h: Math.max(0, ...ls.map(l => n(l.h))), extra: Math.max(0, ...ls.map(l => l.extraPartida)) / 1000 };
     });
+    // Potência contínua: a fase mais pesada (fases em sequência nunca ficam ligadas juntas). Com fase única, é tudo ligado.
+    const potKw = Math.max(0, ...fases.map(f => f.potKw));
     // Pico: a fase mais pesada, com o maior motor partindo (os motores não partem todos no mesmo segundo).
     const picoKw = Math.max(0, ...fases.map(f => f.potKw + f.extra));
     // Energia: soma de todas as fases. Duração: as fases rodam uma depois da outra, então somam as horas.
     const kwh = linhas.reduce((a, l) => a + l.kwh, 0), horas = fases.reduce((a, f) => a + f.h, 0);
     const mediaKw = horas ? kwh / horas : 0, porBat = n(d.bat_kwh) * ENTREGA;
     const nBat = porBat && kwh ? Math.ceil(kwh / porBat - 1e-9) : 0;
-    return { linhas, potKw, picoKw, kwh, horas, mediaKw, nBat, capAtual: n(d.bat_kwh) * (n(d.bat_qtd) || 1), precisaKwh: kwh / ENTREGA };
+    return { linhas, fases: fases.length, potKw, picoKw, kwh, horas, mediaKw, nBat, capAtual: n(d.bat_kwh) * (n(d.bat_qtd) || 1), precisaKwh: kwh / ENTREGA };
   }
   // O backup da proposta, num lugar só (PDF, WhatsApp e tela usam isto). Com aparelhos na calculadora, vale a lista
   // atual (a carga média e as horas dela); sem lista, vale o campo "Cargas essenciais (kW)".
@@ -495,7 +496,7 @@
           ${k.linhas.slice(0, 14).map(l => `<tr><td style="padding:${pad}">${esc(l.nome || "Aparelho")}${n(l.btu) ? ` <span class="mut">${num(l.btu)} BTU</span>` : ""}</td><td class="n" style="padding:${pad}">${num(l.qtd)}</td><td class="n" style="padding:${pad}">${num(l.pot)} W</td><td class="n" style="padding:${pad}">${numx(l.h)} h</td><td class="n" style="padding:${pad}">${numx(r2(l.kwh))} kWh</td></tr>`).join("")}
           <tr class="tot"><td style="padding:${pad}" colspan="4">Energia no período</td><td class="n" style="padding:${pad}">${numx(r2(k.kwh))} kWh</td></tr></tbody></table>
         <div class="grid" style="gap:16px;align-content:start">
-          <div class="card"><small>Tudo ligado ao mesmo tempo</small><b class="big">${num(k.potKw, 1)} kW</b><span class="mut">pico de ${num(k.picoKw, 1)} kW na partida dos motores</span></div>
+          <div class="card"><small>${k.fases > 1 ? "Maior carga ligada junta" : "Tudo ligado ao mesmo tempo"}</small><b class="big">${num(k.potKw, 1)} kW</b><span class="mut">pico de ${num(k.picoKw, 1)} kW na partida dos motores</span></div>
           <div class="card lim"><small>Baterias necessárias</small><b class="big">${num(k.precisaKwh, 1)} kWh</b><span>proposta: ${numx(capKwh)} kWh (${num(n(d.bat_qtd) || 1)} × ${numx(d.bat_kwh)} kWh)</span></div>
         </div>
       </div>
@@ -1091,7 +1092,7 @@
       if (!k.linhas.length) { box.innerHTML = `<span class="muted">Adicione os aparelhos que devem continuar ligados quando a energia cair. Sem aparelhos, a autonomia usa o campo "Cargas essenciais (kW)".</span>`; return; }
       const falta = !b.cobre;
       box.innerHTML = `<div class="pr-carga-kpis">
-          <div><small>Tudo ligado</small><b>${num(k.potKw, 2)} kW</b></div>
+          <div><small>${k.fases > 1 ? "Maior fase ligada" : "Tudo ligado"}</small><b>${num(k.potKw, 2)} kW</b></div>
           <div><small>Pico na partida</small><b>${num(k.picoKw, 2)} kW</b></div>
           <div><small>Energia no período</small><b>${num(k.kwh, 2)} kWh</b></div>
           <div><small>Carga média</small><b>${num(k.mediaKw, 2)} kW</b></div>
