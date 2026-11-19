@@ -150,45 +150,45 @@
   }
   // Consumo da linha na falta (potência elétrica × qtd × horas × % de uso) e, nos motores, a partida em kVA.
   const kwhTxt = c => { const l = linhaCalc(c); return l.kwh > 0 ? `<small class="muted" style="white-space:nowrap;align-self:center">≈ ${num(l.kwh, 1)} kWh na falta${l.extraKva > 0 ? ` · partida ≈ ${num(l.kvaPartida, 1)} kVA` : ""}</small>` : ""; };
-  // Inversores com surto conferido na folha de dados do fabricante (Deye: 2× a nominal por 10 s, fora da rede;
-  // Growatt SPF 6000 ES Plus: 12 kVA de surto, tempo não informado). Fora disso, use "Personalizado".
-  const INVERSORES = [
-    ...[5, 6, 8, 10, 12].map(kw => ({ id: `deye-${kw}k-3f`, nome: `Deye SUN-${kw}K-SG04LP3 (trifásico)`, kw, surto: 2, s: 10, fases: 3 })),
-    { id: "deye-8k-1f", nome: "Deye SUN-8K-SG01LP1 (monofásico)", kw: 8, surto: 2, s: 10, fases: 1 },
-    { id: "growatt-spf6000", nome: "Growatt SPF 6000 ES Plus (monofásico)", kw: 6, surto: 2, s: 0, fases: 1 }
-  ];
+  // Inversor: só a potência. A marca/modelo vai escrita no "Inversor híbrido (nome na proposta)"; o fornecedor
+  // se decide depois. Sem surto informado, usa 2× a nominal por 10 s, o comum nos híbridos (ex.: Deye SG04LP3/SG01LP1).
+  const SURTO_PADRAO = 2, SURTO_S_PADRAO = 10;
+  const fasesInv = d => String(d.inv_fases || "1");
   function invCampos(d) {
-    const val = k => esc(String(d[k] ?? "").replace(".", ","));
-    return `<div class="pr-inversor"><b>Inversor híbrido e partida dos motores</b>
+    const val = k => esc(String(d[k] || "").replace(".", ","));
+    return `<div class="pr-inversor"><b>Potência do inversor híbrido</b> <span class="muted" style="font-size:12px">· a marca vai escrita no nome, acima; aqui é só para conferir a partida dos motores.</span>
       <div class="pr-inversor-campos">
-        <label>Modelo<select id="prInvPreset"><option value="">Escolha o inversor…</option>${INVERSORES.map(x => `<option value="${x.id}"${d.inv_preset === x.id ? " selected" : ""}>${esc(x.nome)}</option>`).join("")}<option value="custom"${d.inv_preset === "custom" ? " selected" : ""}>Personalizado (digite abaixo)</option></select></label>
-        <label>Potência nominal (kW)<input data-inv="inv_kw" inputmode="decimal" value="${val("inv_kw")}"></label>
-        <label>Surto (× a nominal)<input data-inv="inv_surto" inputmode="decimal" value="${val("inv_surto")}"></label>
-        <label>Tempo do surto (s)<input data-inv="inv_surto_s" inputmode="decimal" value="${val("inv_surto_s")}"></label>
+        <label>Potência nominal (kW)<input data-inv="inv_kw" inputmode="decimal" value="${val("inv_kw")}" placeholder="ex.: 12"></label>
+        <label>Surto (× a nominal)<input data-inv="inv_surto" inputmode="decimal" value="${val("inv_surto")}" placeholder="2 (padrão)"></label>
+        <label>Tempo do surto (s)<input data-inv="inv_surto_s" inputmode="decimal" value="${val("inv_surto_s")}" placeholder="10 (padrão)"></label>
         <label>Inversores em paralelo<input data-inv="inv_qtd" inputmode="numeric" value="${val("inv_qtd") || 1}"></label>
-        <label>Saída<select data-inv="inv_fases"><option value="1"${String(d.inv_fases) === "1" ? " selected" : ""}>Monofásica</option><option value="3"${String(d.inv_fases) === "3" ? " selected" : ""}>Trifásica</option></select></label>
+        <label>Saída<select data-inv="inv_fases"><option value="1"${fasesInv(d) === "1" ? " selected" : ""}>Monofásica</option><option value="3"${fasesInv(d) === "3" ? " selected" : ""}>Trifásica</option></select></label>
       </div></div>`;
   }
-  // Confere o inversor escolhido contra a lista: contínuo (etapa mais pesada) e partida (pico em kVA).
+  // Confere a potência digitada contra a lista: maior pico, contínuo (etapa mais pesada), partida (kVA) e a potência mínima.
   function checaInversor(d, k) {
     if (!k.linhas.length) return "";
-    const q = Math.max(1, n(d.inv_qtd) || 1), kw = n(d.inv_kw) * q, surto = n(d.inv_kw) * (n(d.inv_surto) || 1) * q;
-    const tri = k.linhas.some(l => l.ehMotor && l.eixo && wCarga(l) >= 3 * W_POR_CV - 1e-9);
-    // Inversor trifásico: motor monofásico pega uma fase só. No Deye SG04LP3 cada fase dá até 50% da nominal.
-    const porFase = String(d.inv_fases) === "3" ? surto * 0.5 : 0;
-    const soTri = porFase ? k.linhas.filter(l => l.extraKva > 0 && l.kvaPartida > porFase + 1e-9) : [];
+    const sx = n(d.inv_surto) || SURTO_PADRAO, ss = n(d.inv_surto_s) || SURTO_S_PADRAO, padrao = !n(d.inv_surto);
+    const q = Math.max(1, n(d.inv_qtd) || 1), kw = n(d.inv_kw) * q, surto = kw * sx, tri3 = fasesInv(d) === "3";
+    const motores = k.linhas.filter(l => l.extraKva > 0).sort((a, b) => b.kvaPartida - a.kvaPartida);
+    const tri = motores.some(l => l.eixo && wCarga(l) >= 3 * W_POR_CV - 1e-9);
+    // Inversor trifásico: motor monofásico pega uma fase só (em híbridos como o Deye SG04LP3, até 50% da nominal por fase).
+    const porFase = tri3 ? surto * 0.5 : 0;
+    const soTri = porFase ? motores.filter(l => l.kvaPartida > porFase + 1e-9) : [];
+    // Potência mínima para dar a partida sozinho com o surto informado (ou 2×).
+    const kwMin = Math.ceil(Math.max(k.contKva, k.picoKva / sx) * 10) / 10;
     const item = (ok, txt) => `<li style="color:var(${ok ? "--ok" : "--bad"})">${ok ? "✓" : "✗"} ${txt}</li>`;
-    const rec = INVERSORES.filter(x => x.kw >= k.contKva - 1e-9 && x.kw * x.surto >= k.picoKva - 1e-9 && (!tri || x.fases === 3)).sort((a, b) => a.kw - b.kw)[0];
     const m = k.motorPico;
-    const dica = m ? ` O que mais pesa na partida é <b>${esc(m.nome)}</b> (${num(m.kvaPartida, 1)} kVA): com soft-starter ou inversor de frequência nele, o pico cai bastante.${/vácuo/i.test(m.nome) ? " Na bomba de vácuo, o inversor de frequência ainda economiza energia." : ""}` : "";
+    const dica = m ? ` Com soft-starter ou inversor de frequência em <b>${esc(m.nome)}</b>, o pico cai bastante.${/vácuo/i.test(m.nome) ? " Na bomba de vácuo, o inversor de frequência ainda economiza energia." : ""}` : "";
     let html = `<div class="pr-inversor-check">`;
+    if (motores.length) html += `<p style="margin:6px 0">Maior pico de partida: <b>${esc(motores[0].nome)}</b> · ${num(motores[0].kvaPartida, 1)} kVA${motores.length > 1 ? ` <span class="muted">(depois: ${motores.slice(1, 3).map(l => `${esc(l.nome)} ${num(l.kvaPartida, 1)} kVA`).join(" · ")})</span>` : ""}.</p>`;
     if (n(d.inv_kw) > 0) html += `<ul style="margin:6px 0;padding-left:18px;list-style:none">
         ${item(k.contKva <= kw + 1e-9, `Contínuo: a etapa mais pesada pede ${num(k.contKva, 1)} kVA; ${q > 1 ? `os ${q} inversores dão` : "o inversor dá"} ${num(kw, 1)} kW.`)}
-        ${item(k.picoKva <= surto + 1e-9, `Partida: pico de ${num(k.picoKva, 1)} kVA; o surto é de ${num(surto, 1)} kVA${n(d.inv_surto_s) ? ` por ${numx(d.inv_surto_s)} s` : " (tempo não informado pelo fabricante)"}.`)}
-        ${tri && String(d.inv_fases) !== "3" ? `<li style="color:var(--bad)">⚠ Há motor de 3 CV ou mais: costuma ser trifásico (confira na placa). Inversor monofásico não aciona motor trifásico.</li>` : ""}
-        ${soTri.length ? `<li style="color:var(--bad)">⚠ Só passa se ${soTri.map(l => `<b>${esc(l.nome)}</b>`).join(" e ")} ${soTri.length > 1 ? "forem trifásicos" : "for trifásico"} (confira na placa). Ligado numa fase só, o inversor dá cerca de ${num(porFase, 1)} kVA na partida (Deye SG04LP3: até 50% da nominal por fase).</li>` : ""}</ul>`;
-    else html += `<p style="margin:6px 0">Escolha o inversor acima para conferir a partida.</p>`;
-    html += `<p style="margin:0">${rec ? `Menor da lista que atende sozinho: <b>${esc(rec.nome)}</b> (${num(rec.kw)} kW, surto de ${num(rec.kw * rec.surto)} kVA).` : `<b style="color:var(--bad)">Nenhum inversor da lista dá esta partida sozinho.</b>`}${!rec || k.picoKva > k.contKva * 2.5 ? dica : ""}</p></div>`;
+        ${item(k.picoKva <= surto + 1e-9, `Partida: pico de ${num(k.picoKva, 1)} kVA; o surto é de ${num(surto, 1)} kVA (${numx(sx)}× por ${numx(ss)} s${padrao ? ", valor padrão: confira na folha do inversor" : ""}).`)}
+        ${tri && !tri3 ? `<li style="color:var(--bad)">⚠ Há motor de 3 CV ou mais: costuma ser trifásico (confira na placa). Inversor monofásico não aciona motor trifásico.</li>` : ""}
+        ${soTri.length ? `<li style="color:var(--bad)">⚠ Só passa se ${soTri.map(l => `<b>${esc(l.nome)}</b>`).join(" e ")} ${soTri.length > 1 ? "forem trifásicos" : "for trifásico"} (confira na placa). Ligado numa fase só, o inversor dá cerca de ${num(porFase, 1)} kVA na partida (em híbridos trifásicos como o Deye, cada fase dá até 50% da nominal).</li>` : ""}</ul>`;
+    else html += `<p style="margin:6px 0">Digite a potência do inversor no bloco "Bateria" para conferir a partida.</p>`;
+    html += `<p style="margin:0">Para dar a partida sozinho, com surto de ${numx(sx)}×: inversor de pelo menos <b>${num(kwMin, 1)} kW</b>${tri ? " trifásico" : ""}.${m && k.picoKva > k.contKva * 2.5 ? dica : ""}</p></div>`;
     return html;
   }
   const PREMISSAS_ARRANQUE = `<details class="pr-premissas"><summary>Premissas e fontes do arranque</summary><ul>
@@ -199,9 +199,9 @@
     <li><b>Por que kVA:</b> o inversor híbrido limita corrente, e o motor parte com fator de potência baixo (0,3 a 0,5, segundo a Kohler). Por isso a partida é comparada em kVA: kVA rodando = W elétrico ÷ 0,8; partida = kVA rodando × Ip/In.</li>
     <li><b>CV → W:</b> CV é potência no eixo. A rede entrega CV × 750 W ÷ 0,85 (rendimento), cerca de 18% a mais que o número de placa. A potência digitada em W é tratada como potência elétrica.</li>
     <li><b>Pico de cada etapa:</b> tudo da etapa rodando + o maior motor partindo. Supõe que dois motores não partem no mesmo segundo; na instalação, garanta isso (partida escalonada).</li>
-    <li><b>Inversores:</b> Deye SG04LP3 (trifásico) e SG01LP1 (monofásico) aguentam 2× a nominal por 10 s fora da rede. Growatt SPF 6000 ES Plus: 12 kVA de surto, tempo não informado. Confira a folha do modelo exato.</li>
+    <li><b>Surto do inversor:</b> se não for informado, usamos 2× a nominal por 10 s, o comum nos híbridos (ex.: Deye SG04LP3 e SG01LP1). O Growatt SPF 6000 ES Plus informa 12 kVA de surto, sem o tempo. Na compra, confira na folha do modelo escolhido.</li>
     <li><b>Motor de 3 CV ou mais</b> costuma ser trifásico: precisa de inversor trifásico.</li>
-    <li><b>Motor monofásico em inversor trifásico</b> usa uma fase só. No Deye SG04LP3 cada fase entrega até 50% da nominal (no 12K, 6 kW por fase), então a partida dele tem de caber na metade do surto.</li>
+    <li><b>Motor monofásico em inversor trifásico</b> usa uma fase só. Em híbridos trifásicos como o Deye SG04LP3, cada fase entrega até 50% da nominal (no 12K, 6 kW por fase), então a partida dele tem de caber na metade do surto. Confira no modelo comprado.</li>
     <li>Isto é estimativa para orçamento, não dimensionamento elétrico: confirme placa dos motores, tensão, ligação e queda de tensão com o engenheiro.</li>
     <li><b>Fontes:</b> <a href="https://static.weg.net/medias/downloadcenter/hca/h01/WEG-dica-tecnica-soft-starters-50085124-pt.pdf" target="_blank" rel="noopener">WEG · soft-starters</a> ·
       <a href="https://mart.cummins.com/imagelibrary/data/assetfiles/0056648.pdf" target="_blank" rel="noopener">Cummins · partida de motores</a> ·
@@ -1007,7 +1007,8 @@
         ${escolha("bat_modo", "O que vai na proposta", [["solar", "Solar + bateria"], ["bateria", "Só bateria (sem solar)"], ["ambas", "As duas opções na mesma proposta"]])}
         <p class="muted wide" style="margin:0;font-size:12px">Para mandar em propostas separadas: salve esta, toque em Duplicar e troque a opção na cópia.</p>
         ${campo("bat_qtd", "Quantidade de baterias", "num")}${campo("bat_kwh", "Capacidade de cada (kWh)", "num")}${campo("bat_modelo", "Modelo")}
-        ${campo("inv_hibrido", "Inversor híbrido")}${campo("carga_critica_kw", "Cargas essenciais (kW) — só sem a calculadora", "num")}${campo("bat_garantia", "Garantia das baterias")}
+        ${campo("inv_hibrido", "Inversor híbrido (nome na proposta)")}${campo("carga_critica_kw", "Cargas essenciais (kW) — só sem a calculadora", "num")}${campo("bat_garantia", "Garantia das baterias")}
+        <div class="wide" id="prInversor"></div>
         <p class="muted wide" style="margin:0;font-size:12px">Os valores ficam em "Investimento e condições".</p>`)
       + bloco("Calculadora de cargas do backup", `<div class="wide" id="prCargas"></div>`);
     const solar = () => blocoBat() + marca("solar", d.eco_v2 ? blocoEco() : bloco("Consumo e conta", `
@@ -1180,8 +1181,24 @@
       const modo = p.tipo === "bateria" ? d.bat_modo || "solar" : "solar";
       $$("[data-m]", main).forEach(el => { el.style.display = (el.dataset.m === "solar" ? modo !== "bateria" : modo !== "solar") ? "" : "none"; });
     };
+    // Inversor híbrido (bloco Bateria): modelo da lista ou personalizado, e se ele aguenta a partida dos motores.
+    const compatInversor = () => {
+      const el = $("#prInvCompat", main); if (!el) return;
+      const k = calcCargas(d);
+      el.innerHTML = k.linhas.length ? checaInversor(d, k) : `<p class="muted" style="margin:8px 0 0;font-size:12.5px">Adicione os aparelhos na "Calculadora de cargas do backup" (logo abaixo) para conferir se o inversor aguenta a partida dos motores.</p>`;
+    };
+    const desenharInversor = () => {
+      const box = $("#prInversor", main); if (!box) return;
+      box.innerHTML = `${invCampos(d)}<div id="prInvCompat"></div>`;
+      $$("[data-inv]", box).forEach(el => { el[el.tagName === "SELECT" ? "onchange" : "oninput"] = () => {
+        d[el.dataset.inv] = el.tagName === "SELECT" ? el.value : n(el.value);
+        sujo = true; resumoCargas(); atualizar();
+      }; });
+      compatInversor();
+    };
     // Calculadora de cargas: aparelhos (do catálogo ou livres) → potência, pico, energia e quantas baterias.
     const resumoCargas = () => {
+      compatInversor();
       const box = $("#prCargasRes", main); if (!box) return;
       const b = backupDe(d), k = b.k;
       if (!k.linhas.length) { box.innerHTML = `<span class="muted">Adicione os aparelhos que devem continuar ligados quando a energia cair. Sem aparelhos, a autonomia usa o campo "Cargas essenciais (kW)".</span>`; return; }
@@ -1225,7 +1242,6 @@
           <button type="button" class="btn ghost sm" data-cdel="${i}" aria-label="Tirar aparelho">✕</button></div>`).join("")}
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0 2px"><select id="prCargaAdd" aria-label="Adicionar aparelho"><option value="">+ Adicionar aparelho…</option><optgroup label="Residencial e geral">${APARELHOS.map((a, j) => `<option value="a${j}">${esc(a.nome)}${a.btu ? " (BTU)" : ` · ${num(a.w)} W`}</option>`).join("")}</optgroup><optgroup label="Leiteria">${LEITERIA.map((a, j) => `<option value="l${j}">${esc(a.nome)}${a.var ? ` · ${a.var.map(x => x[0]).join(" / ")}` : ` · ${num(a.w)} W`}</option>`).join("")}</optgroup><optgroup label="Personalizado"><option value="m">Motor em CV (você digita os cavalos)</option></optgroup></select>
           ${d.cargas.length ? `<span class="muted" style="font-size:12px">Horas = tempo ligado durante a falta de energia.</span>` : ""}</div>
-        ${d.cargas.length ? invCampos(d) : ""}
         <div id="prCargasRes" class="pr-carga-res"></div>
         ${d.cargas.length ? PREMISSAS_ARRANQUE : ""}`;
       $$("[data-ci]", box).forEach(el => el.oninput = () => {
@@ -1254,18 +1270,6 @@
         c.metodo = el.value; c.partida = el.value === "direta" ? (n(c.pdir) || 6) : IPIN[el.value];
         sujo = true; desenharCargas(); atualizar();
       });
-      $$("[data-inv]", box).forEach(el => { el[el.tagName === "SELECT" ? "onchange" : "oninput"] = () => {
-        d[el.dataset.inv] = el.tagName === "SELECT" ? el.value : n(el.value);
-        // Mexeu num número do inversor: deixa de ser o modelo da lista.
-        if (el.dataset.inv !== "inv_fases" && d.inv_preset && d.inv_preset !== "custom") { d.inv_preset = "custom"; const sp = $("#prInvPreset", box); if (sp) sp.value = "custom"; }
-        sujo = true; resumoCargas(); atualizar();
-      }; });
-      const sp = $("#prInvPreset", box);
-      if (sp) sp.onchange = e => {
-        const x = INVERSORES.find(i => i.id === e.target.value); d.inv_preset = e.target.value;
-        if (x) { Object.assign(d, { inv_kw: x.kw, inv_surto: x.surto, inv_surto_s: x.s || "", inv_fases: String(x.fases) }); d.inv_hibrido = x.nome.replace(/ \(.*\)$/, ""); poe("inv_hibrido", d.inv_hibrido); }
-        sujo = true; desenharCargas(); atualizar();
-      };
       $$("[data-cdel]", box).forEach(b => b.onclick = () => { d.cargas.splice(Number(b.dataset.cdel), 1); sujo = true; desenharCargas(); atualizar(); });
       $("#prCargaAdd", box).onchange = e => {
         const v = String(e.target.value || ""), a = v === "m" ? MOTOR_CV : v[0] === "l" ? LEITERIA[Number(v.slice(1))] : APARELHOS[Number(v.slice(1))]; if (!a) return;
@@ -1276,6 +1280,7 @@
       resumoCargas();
     };
     desenharCargas();
+    desenharInversor();
 
     // Preço pela planilha de obra solar: equipamentos = kit; baterias = custo delas; o resto do preço sugerido
     // (implantação, projeto, logística, demais itens e a margem P3) vai em "Projeto e implantação".
