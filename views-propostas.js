@@ -187,7 +187,7 @@
         ${item(k.picoKva <= surto + 1e-9, `Partida: pico de ${num(k.picoKva, 1)} kVA; o surto é de ${num(surto, 1)} kVA${n(d.inv_surto_s) ? ` por ${numx(d.inv_surto_s)} s` : " (tempo não informado pelo fabricante)"}.`)}
         ${tri && String(d.inv_fases) !== "3" ? `<li style="color:var(--bad)">⚠ Há motor de 3 CV ou mais: costuma ser trifásico (confira na placa). Inversor monofásico não aciona motor trifásico.</li>` : ""}
         ${soTri.length ? `<li style="color:var(--bad)">⚠ Só passa se ${soTri.map(l => `<b>${esc(l.nome)}</b>`).join(" e ")} ${soTri.length > 1 ? "forem trifásicos" : "for trifásico"} (confira na placa). Ligado numa fase só, o inversor dá cerca de ${num(porFase, 1)} kVA na partida (Deye SG04LP3: até 50% da nominal por fase).</li>` : ""}</ul>`;
-    else html += `<p style="margin:6px 0">Escolha o inversor acima para conferir a partida.</p>`;
+    else html += `<p style="margin:6px 0">Escolha o inversor no bloco "Bateria" para conferir a partida.</p>`;
     html += `<p style="margin:0">${rec ? `Menor da lista que atende sozinho: <b>${esc(rec.nome)}</b> (${num(rec.kw)} kW, surto de ${num(rec.kw * rec.surto)} kVA).` : `<b style="color:var(--bad)">Nenhum inversor da lista dá esta partida sozinho.</b>`}${!rec || k.picoKva > k.contKva * 2.5 ? dica : ""}</p></div>`;
     return html;
   }
@@ -1007,7 +1007,8 @@
         ${escolha("bat_modo", "O que vai na proposta", [["solar", "Solar + bateria"], ["bateria", "Só bateria (sem solar)"], ["ambas", "As duas opções na mesma proposta"]])}
         <p class="muted wide" style="margin:0;font-size:12px">Para mandar em propostas separadas: salve esta, toque em Duplicar e troque a opção na cópia.</p>
         ${campo("bat_qtd", "Quantidade de baterias", "num")}${campo("bat_kwh", "Capacidade de cada (kWh)", "num")}${campo("bat_modelo", "Modelo")}
-        ${campo("inv_hibrido", "Inversor híbrido")}${campo("carga_critica_kw", "Cargas essenciais (kW) — só sem a calculadora", "num")}${campo("bat_garantia", "Garantia das baterias")}
+        ${campo("inv_hibrido", "Inversor híbrido (nome na proposta)")}${campo("carga_critica_kw", "Cargas essenciais (kW) — só sem a calculadora", "num")}${campo("bat_garantia", "Garantia das baterias")}
+        <div class="wide" id="prInversor"></div>
         <p class="muted wide" style="margin:0;font-size:12px">Os valores ficam em "Investimento e condições".</p>`)
       + bloco("Calculadora de cargas do backup", `<div class="wide" id="prCargas"></div>`);
     const solar = () => blocoBat() + marca("solar", d.eco_v2 ? blocoEco() : bloco("Consumo e conta", `
@@ -1180,8 +1181,32 @@
       const modo = p.tipo === "bateria" ? d.bat_modo || "solar" : "solar";
       $$("[data-m]", main).forEach(el => { el.style.display = (el.dataset.m === "solar" ? modo !== "bateria" : modo !== "solar") ? "" : "none"; });
     };
+    // Inversor híbrido (bloco Bateria): modelo da lista ou personalizado, e se ele aguenta a partida dos motores.
+    const compatInversor = () => {
+      const el = $("#prInvCompat", main); if (!el) return;
+      const k = calcCargas(d);
+      el.innerHTML = k.linhas.length ? checaInversor(d, k) : `<p class="muted" style="margin:8px 0 0;font-size:12.5px">Adicione os aparelhos na "Calculadora de cargas do backup" (logo abaixo) para conferir se o inversor aguenta a partida dos motores.</p>`;
+    };
+    const desenharInversor = () => {
+      const box = $("#prInversor", main); if (!box) return;
+      box.innerHTML = `${invCampos(d)}<div id="prInvCompat"></div>`;
+      $$("[data-inv]", box).forEach(el => { el[el.tagName === "SELECT" ? "onchange" : "oninput"] = () => {
+        d[el.dataset.inv] = el.tagName === "SELECT" ? el.value : n(el.value);
+        // Mexeu num número do inversor: deixa de ser o modelo da lista.
+        if (el.dataset.inv !== "inv_fases" && d.inv_preset && d.inv_preset !== "custom") { d.inv_preset = "custom"; const sp = $("#prInvPreset", box); if (sp) sp.value = "custom"; }
+        sujo = true; resumoCargas(); atualizar();
+      }; });
+      const sp = $("#prInvPreset", box);
+      if (sp) sp.onchange = e => {
+        const x = INVERSORES.find(i => i.id === e.target.value); d.inv_preset = e.target.value;
+        if (x) { Object.assign(d, { inv_kw: x.kw, inv_surto: x.surto, inv_surto_s: x.s || "", inv_fases: String(x.fases) }); d.inv_hibrido = x.nome.replace(/ \(.*\)$/, ""); poe("inv_hibrido", d.inv_hibrido); }
+        sujo = true; desenharInversor(); resumoCargas(); atualizar();
+      };
+      compatInversor();
+    };
     // Calculadora de cargas: aparelhos (do catálogo ou livres) → potência, pico, energia e quantas baterias.
     const resumoCargas = () => {
+      compatInversor();
       const box = $("#prCargasRes", main); if (!box) return;
       const b = backupDe(d), k = b.k;
       if (!k.linhas.length) { box.innerHTML = `<span class="muted">Adicione os aparelhos que devem continuar ligados quando a energia cair. Sem aparelhos, a autonomia usa o campo "Cargas essenciais (kW)".</span>`; return; }
@@ -1225,7 +1250,6 @@
           <button type="button" class="btn ghost sm" data-cdel="${i}" aria-label="Tirar aparelho">✕</button></div>`).join("")}
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0 2px"><select id="prCargaAdd" aria-label="Adicionar aparelho"><option value="">+ Adicionar aparelho…</option><optgroup label="Residencial e geral">${APARELHOS.map((a, j) => `<option value="a${j}">${esc(a.nome)}${a.btu ? " (BTU)" : ` · ${num(a.w)} W`}</option>`).join("")}</optgroup><optgroup label="Leiteria">${LEITERIA.map((a, j) => `<option value="l${j}">${esc(a.nome)}${a.var ? ` · ${a.var.map(x => x[0]).join(" / ")}` : ` · ${num(a.w)} W`}</option>`).join("")}</optgroup><optgroup label="Personalizado"><option value="m">Motor em CV (você digita os cavalos)</option></optgroup></select>
           ${d.cargas.length ? `<span class="muted" style="font-size:12px">Horas = tempo ligado durante a falta de energia.</span>` : ""}</div>
-        ${d.cargas.length ? invCampos(d) : ""}
         <div id="prCargasRes" class="pr-carga-res"></div>
         ${d.cargas.length ? PREMISSAS_ARRANQUE : ""}`;
       $$("[data-ci]", box).forEach(el => el.oninput = () => {
@@ -1254,18 +1278,6 @@
         c.metodo = el.value; c.partida = el.value === "direta" ? (n(c.pdir) || 6) : IPIN[el.value];
         sujo = true; desenharCargas(); atualizar();
       });
-      $$("[data-inv]", box).forEach(el => { el[el.tagName === "SELECT" ? "onchange" : "oninput"] = () => {
-        d[el.dataset.inv] = el.tagName === "SELECT" ? el.value : n(el.value);
-        // Mexeu num número do inversor: deixa de ser o modelo da lista.
-        if (el.dataset.inv !== "inv_fases" && d.inv_preset && d.inv_preset !== "custom") { d.inv_preset = "custom"; const sp = $("#prInvPreset", box); if (sp) sp.value = "custom"; }
-        sujo = true; resumoCargas(); atualizar();
-      }; });
-      const sp = $("#prInvPreset", box);
-      if (sp) sp.onchange = e => {
-        const x = INVERSORES.find(i => i.id === e.target.value); d.inv_preset = e.target.value;
-        if (x) { Object.assign(d, { inv_kw: x.kw, inv_surto: x.surto, inv_surto_s: x.s || "", inv_fases: String(x.fases) }); d.inv_hibrido = x.nome.replace(/ \(.*\)$/, ""); poe("inv_hibrido", d.inv_hibrido); }
-        sujo = true; desenharCargas(); atualizar();
-      };
       $$("[data-cdel]", box).forEach(b => b.onclick = () => { d.cargas.splice(Number(b.dataset.cdel), 1); sujo = true; desenharCargas(); atualizar(); });
       $("#prCargaAdd", box).onchange = e => {
         const v = String(e.target.value || ""), a = v === "m" ? MOTOR_CV : v[0] === "l" ? LEITERIA[Number(v.slice(1))] : APARELHOS[Number(v.slice(1))]; if (!a) return;
@@ -1276,6 +1288,7 @@
       resumoCargas();
     };
     desenharCargas();
+    desenharInversor();
 
     // Preço pela planilha de obra solar: equipamentos = kit; baterias = custo delas; o resto do preço sugerido
     // (implantação, projeto, logística, demais itens e a margem P3) vai em "Projeto e implantação".
