@@ -101,22 +101,64 @@
     { nome: "Chuveiro elétrico", w: 5500, h: 0.5, uso: 100, partida: 1 },
     { nome: "Outro aparelho", w: 100, h: 4, uso: 100, partida: 1 }
   ];
+  // Motor em CV digitado pelo usuário: 1 CV ≈ 750 W (premissa do áudio; a referência é 735,5 W por CV).
+  const W_POR_CV = 750;
+  const MOTOR_CV = { nome: "Motor em CV", w: W_POR_CV, h: 4, uso: 100, partida: 3, fase: 1 };
+  // Subgrupo Leiteria (emergência, sem tensão/fases/corrente de partida/rendimento confirmados).
+  // Valores do áudio: bomba de vácuo 5 CV (faixa usual 3 a 5, inicial 6 a 7 com lâmpada), transferidora 0,5 CV,
+  // compressor do resfriador 4 CV. Conversão usada: 750 W por CV (premissa do áudio; a referência NIST é
+  // 735,5 W por CV). Não funcionam ao mesmo tempo: primeiro ordenha, depois resfriador.
+  // Cada equipamento tem variações (var: [rótulo, W]); "w" é a variação padrão. Demais itens: ESTIMATIVAS,
+  // validar com a placa antes de enviar proposta. A potência continua editável na linha.
+  const LEITERIA = [
+    { nome: "Bomba de vácuo da ordenha", w: 3750, h: 4, uso: 100, partida: 3, fase: 1,
+      var: [["3 CV", 2250], ["4 CV", 3000], ["5 CV", 3750], ["7 CV", 5250], ["6 kW", 6000]] },
+    { nome: "Bomba transferidora de leite", w: 375, h: 4, uso: 100, partida: 3, fase: 1,
+      var: [["0,5 CV", 375], ["0,75 CV", 560], ["1 CV", 750]] },
+    { nome: "Iluminação LED da sala de ordenha", w: 60, h: 4, uso: 100, partida: 1, fase: 1,
+      var: [["30 W", 30], ["60 W", 60], ["120 W", 120], ["200 W", 200]] },
+    { nome: "Compressor do resfriador de leite", w: 3000, h: 3, uso: 100, partida: 4, fase: 2,
+      var: [["2 CV", 1500], ["3 CV", 2250], ["4 CV", 3000], ["5 CV", 3750], ["6 CV", 4500]] },
+    { nome: "Aquecedor de água para limpeza", w: 2700, h: 0.5, uso: 100, partida: 1, fase: 1,
+      var: [["2.000 W", 2000], ["2.700 W", 2700], ["4.000 W", 4000], ["6.000 W", 6000]] },
+    { nome: "Bomba de água para dessedentação", w: 750, h: 4, uso: 100, partida: 3, fase: 1,
+      var: [["0,5 CV", 375], ["1 CV", 750], ["2 CV", 1500], ["3 CV", 2250]] },
+    { nome: "Exaustor / ventilação do galpão", w: 150, h: 4, uso: 100, partida: 1, fase: 1,
+      var: [["150 W", 150], ["0,5 CV", 375], ["1 CV", 750]] }
+  ];
+  // Nome da linha com a variação: "Bomba de vácuo da ordenha (5 CV)".
+  const rotuloVar = (a, w) => ((a.var || []).find(v => v[1] === w) || [])[0] || "";
+  const nomeVar = (a, w) => rotuloVar(a, w) ? `${a.nome} (${rotuloVar(a, w)})` : a.nome;
+  const catDe = c => /^l\d+$/.test(String(c.cat || "")) ? LEITERIA[Number(String(c.cat).slice(1))] : null;
+  // Linha com CV (só motor personalizado): o campo CV define a potência (CV × 750 W).
+  const cvBox = (c, i) => c.cv === undefined ? "" : `<input data-cvi="${i}" type="number" step="0.5" min="0" inputmode="decimal" value="${esc(String(c.cv ?? ""))}" aria-label="Potência em CV" title="Cavalos (CV): a potência vira CV × 750 W" style="width:72px">`;
+  // Consumo da linha na falta: potência × qtd × horas × % de uso.
+  const kwhLinha = c => n(c.w) * n(c.qtd) * n(c.h) * (c.uso === "" || c.uso == null ? 100 : n(c.uso)) / 100 / 1000;
+  const kwhTxt = c => kwhLinha(c) > 0 ? `<small class="muted" style="white-space:nowrap;align-self:center">≈ ${num(kwhLinha(c), 1)} kWh na falta</small>` : "";
   const UTIL_BAT = 0.9; // profundidade de descarga usada da bateria de lítio (90%)
   const EFIC_INV = 0.95; // perdas do inversor híbrido ao converter a bateria (CC) para a casa (CA)
   const ENTREGA = UTIL_BAT * EFIC_INV; // kWh que chegam aos aparelhos por kWh nominal de bateria (85,5%)
   const wCarga = c => n(c.btu) && n(c.fbtu) ? n(c.btu) * n(c.fbtu) : n(c.w);
   function calcCargas(d) {
+    // Fase: cargas da mesma fase rodam juntas; fases diferentes rodam em sequência (ex.: ordenha, depois resfriador).
+    // Sem fase informada, a carga entra na fase 1 (tudo junto, como antes).
     const linhas = (d.cargas || []).filter(c => n(c.qtd) > 0 && wCarga(c) > 0).map(c => {
       const w = wCarga(c), pot = w * n(c.qtd), uso = c.uso === "" || c.uso == null ? 100 : n(c.uso);
-      return { ...c, wUn: w, pot, kwh: pot * n(c.h) * uso / 100 / 1000, extraPartida: pot * (Math.max(1, n(c.partida) || 1) - 1) };
+      return { ...c, wUn: w, pot, fase: n(c.fase) || 1, kwh: pot * n(c.h) * uso / 100 / 1000, extraPartida: pot * (Math.max(1, n(c.partida) || 1) - 1) };
     });
-    const potKw = linhas.reduce((a, l) => a + l.pot, 0) / 1000;
-    // Pico: tudo ligado + o maior motor partindo (os motores não partem todos no mesmo segundo).
-    const picoKw = potKw + Math.max(0, ...linhas.map(l => l.extraPartida)) / 1000;
-    const kwh = linhas.reduce((a, l) => a + l.kwh, 0), horas = Math.max(0, ...linhas.map(l => n(l.h)));
+    const fases = [...new Set(linhas.map(l => l.fase))].sort((a, b) => a - b).map(f => {
+      const ls = linhas.filter(l => l.fase === f);
+      return { f, potKw: ls.reduce((a, l) => a + l.pot, 0) / 1000, kwh: ls.reduce((a, l) => a + l.kwh, 0), h: Math.max(0, ...ls.map(l => n(l.h))), extra: Math.max(0, ...ls.map(l => l.extraPartida)) / 1000 };
+    });
+    // Potência contínua: a fase mais pesada (fases em sequência nunca ficam ligadas juntas). Com fase única, é tudo ligado.
+    const potKw = Math.max(0, ...fases.map(f => f.potKw));
+    // Pico: a fase mais pesada, com o maior motor partindo (os motores não partem todos no mesmo segundo).
+    const picoKw = Math.max(0, ...fases.map(f => f.potKw + f.extra));
+    // Energia: soma de todas as fases. Duração: as fases rodam uma depois da outra, então somam as horas.
+    const kwh = linhas.reduce((a, l) => a + l.kwh, 0), horas = fases.reduce((a, f) => a + f.h, 0);
     const mediaKw = horas ? kwh / horas : 0, porBat = n(d.bat_kwh) * ENTREGA;
     const nBat = porBat && kwh ? Math.ceil(kwh / porBat - 1e-9) : 0;
-    return { linhas, potKw, picoKw, kwh, horas, mediaKw, nBat, capAtual: n(d.bat_kwh) * (n(d.bat_qtd) || 1), precisaKwh: kwh / ENTREGA };
+    return { linhas, fases: fases.length, potKw, picoKw, kwh, horas, mediaKw, nBat, capAtual: n(d.bat_kwh) * (n(d.bat_qtd) || 1), precisaKwh: kwh / ENTREGA };
   }
   // O backup da proposta, num lugar só (PDF, WhatsApp e tela usam isto). Com aparelhos na calculadora, vale a lista
   // atual (a carga média e as horas dela); sem lista, vale o campo "Cargas essenciais (kW)".
@@ -474,7 +516,7 @@
           ${k.linhas.slice(0, 14).map(l => `<tr><td style="padding:${pad}">${esc(l.nome || "Aparelho")}${n(l.btu) ? ` <span class="mut">${num(l.btu)} BTU</span>` : ""}</td><td class="n" style="padding:${pad}">${num(l.qtd)}</td><td class="n" style="padding:${pad}">${num(l.pot)} W</td><td class="n" style="padding:${pad}">${numx(l.h)} h</td><td class="n" style="padding:${pad}">${numx(r2(l.kwh))} kWh</td></tr>`).join("")}
           <tr class="tot"><td style="padding:${pad}" colspan="4">Energia no período</td><td class="n" style="padding:${pad}">${numx(r2(k.kwh))} kWh</td></tr></tbody></table>
         <div class="grid" style="gap:16px;align-content:start">
-          <div class="card"><small>Tudo ligado ao mesmo tempo</small><b class="big">${num(k.potKw, 1)} kW</b><span class="mut">pico de ${num(k.picoKw, 1)} kW na partida dos motores</span></div>
+          <div class="card"><small>${k.fases > 1 ? "Maior carga ligada junta" : "Tudo ligado ao mesmo tempo"}</small><b class="big">${num(k.potKw, 1)} kW</b><span class="mut">pico de ${num(k.picoKw, 1)} kW na partida dos motores</span></div>
           <div class="card lim"><small>Baterias necessárias</small><b class="big">${num(k.precisaKwh, 1)} kWh</b><span>proposta: ${numx(capKwh)} kWh (${num(n(d.bat_qtd) || 1)} × ${numx(d.bat_kwh)} kWh)</span></div>
         </div>
       </div>
@@ -1070,7 +1112,7 @@
       if (!k.linhas.length) { box.innerHTML = `<span class="muted">Adicione os aparelhos que devem continuar ligados quando a energia cair. Sem aparelhos, a autonomia usa o campo "Cargas essenciais (kW)".</span>`; return; }
       const falta = !b.cobre;
       box.innerHTML = `<div class="pr-carga-kpis">
-          <div><small>Tudo ligado</small><b>${num(k.potKw, 2)} kW</b></div>
+          <div><small>${k.fases > 1 ? "Maior fase ligada" : "Tudo ligado"}</small><b>${num(k.potKw, 2)} kW</b></div>
           <div><small>Pico na partida</small><b>${num(k.picoKw, 2)} kW</b></div>
           <div><small>Energia no período</small><b>${num(k.kwh, 2)} kWh</b></div>
           <div><small>Carga média</small><b>${num(k.mediaKw, 2)} kW</b></div>
@@ -1090,15 +1132,20 @@
       const box = $("#prCargas", main); if (!box) return;
       if (!Array.isArray(d.cargas)) d.cargas = [];
       const v = x => esc(String(x ?? "").replace(".", ","));
-      box.innerHTML = `${d.cargas.length ? `<div class="pr-carga pr-carga-h"><span>Aparelho</span><span>Qtd</span><span>Potência</span><span>Horas</span><span title="Parte do tempo em que o aparelho puxa energia (compressor liga e desliga)">% uso</span><span></span></div>` : ""}
+      box.innerHTML = `${d.cargas.length ? `<div class="pr-carga pr-carga-h"><span>Aparelho</span><span>Qtd</span><span>Potência</span><span>Horas</span><span title="Parte do tempo em que o aparelho puxa energia (compressor liga e desliga)">% uso</span><span title="1 = liga junto com as outras cargas da mesma etapa; 2 = só depois da etapa 1 terminar">Etapa</span><span></span></div>` : ""}
         ${d.cargas.map((c, i) => `<div class="pr-carga">
-          <input data-ci="${i}" data-cc="nome" value="${esc(c.nome || "")}" aria-label="Aparelho">
+          <span class="pr-carga-nome"><input data-ci="${i}" data-cc="nome" value="${esc(c.nome || "")}" aria-label="Aparelho">${cvBox(c, i)}${(() => {
+            const a = catDe(c); if (!a || !a.var) return "";
+            const sel = rotuloVar(a, n(c.w));
+            return `<select data-cvar="${i}" aria-label="Variação de ${esc(a.nome)}">${a.var.map(x => `<option value="${x[1]}"${x[0] === sel ? " selected" : ""}>${esc(x[0])}${/W$/.test(x[0]) ? "" : ` · ${num(x[1])} W`}</option>`).join("")}${sel ? "" : `<option value="" selected>Outra · ${num(n(c.w))} W</option>`}</select>`;
+          })()}${kwhTxt(c)}</span>
           <input data-ci="${i}" data-cc="qtd" inputmode="decimal" value="${v(c.qtd)}" aria-label="Quantidade">
           <span class="pr-carga-un"><input data-ci="${i}" data-cc="${n(c.fbtu) ? "btu" : "w"}" inputmode="decimal" value="${v(n(c.fbtu) ? c.btu : c.w)}" aria-label="${n(c.fbtu) ? "BTU" : "Watts"}"><i>${n(c.fbtu) ? "BTU" : "W"}</i></span>
           <input data-ci="${i}" data-cc="h" inputmode="decimal" value="${v(c.h)}" aria-label="Horas ligado na falta">
           <input data-ci="${i}" data-cc="uso" inputmode="decimal" value="${v(c.uso)}" aria-label="% do tempo puxando energia">
+          <input data-ci="${i}" data-cc="fase" inputmode="numeric" value="${v(n(c.fase) || 1)}" aria-label="Etapa (ordem de uso: 1 liga junto; 2 depois da 1)" title="1 = liga junto com as outras da etapa 1; 2 = só depois da etapa 1">
           <button type="button" class="btn ghost sm" data-cdel="${i}" aria-label="Tirar aparelho">✕</button></div>`).join("")}
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0 2px"><select id="prCargaAdd" aria-label="Adicionar aparelho"><option value="">+ Adicionar aparelho…</option>${APARELHOS.map((a, j) => `<option value="${j}">${esc(a.nome)}${a.btu ? " (BTU)" : ` · ${num(a.w)} W`}</option>`).join("")}</select>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0 2px"><select id="prCargaAdd" aria-label="Adicionar aparelho"><option value="">+ Adicionar aparelho…</option><optgroup label="Residencial e geral">${APARELHOS.map((a, j) => `<option value="a${j}">${esc(a.nome)}${a.btu ? " (BTU)" : ` · ${num(a.w)} W`}</option>`).join("")}</optgroup><optgroup label="Leiteria">${LEITERIA.map((a, j) => `<option value="l${j}">${esc(a.nome)}${a.var ? ` · ${a.var.map(x => x[0]).join(" / ")}` : ` · ${num(a.w)} W`}</option>`).join("")}</optgroup><optgroup label="Personalizado"><option value="m">Motor em CV (você digita os cavalos)</option></optgroup></select>
           ${d.cargas.length ? `<span class="muted" style="font-size:12px">Horas = tempo ligado durante a falta de energia.</span>` : ""}</div>
         <div id="prCargasRes" class="pr-carga-res"></div>`;
       $$("[data-ci]", box).forEach(el => el.oninput = () => {
@@ -1106,10 +1153,24 @@
         c[k] = k === "nome" ? el.value : n(el.value);
         sujo = true; resumoCargas(); atualizar();
       });
+      $$('[data-cc="w"]', box).forEach(el => { const c = d.cargas[Number(el.dataset.ci)] || {}, a = catDe(c); if (!a) return;
+        el.onchange = () => { if (String(c.nome || "").startsWith(`${a.nome} (`)) c.nome = nomeVar(a, n(c.w)); desenharCargas(); };
+      });
+      $$("[data-cvar]", box).forEach(el => el.onchange = () => {
+        const c = d.cargas[Number(el.dataset.cvar)], a = catDe(c), w = n(el.value); if (!a || !w) return;
+        // Troca o nome só se ele ainda é o automático (não apaga o que o usuário escreveu).
+        if (!c.nome || c.nome === a.nome || c.nome === nomeVar(a, n(c.w))) c.nome = nomeVar(a, w);
+        c.w = w; sujo = true; desenharCargas(); atualizar();
+      });
+      $$("[data-cvi]", box).forEach(el => el.onchange = () => {
+        const c = d.cargas[Number(el.dataset.cvi)], cv = n(el.value); if (!c || !cv) return;
+        if (!c.nome || /^Motor /.test(c.nome)) c.nome = `Motor ${numx(cv)} CV`;
+        c.cv = cv; c.w = Math.round(cv * W_POR_CV); sujo = true; desenharCargas(); atualizar();
+      });
       $$("[data-cdel]", box).forEach(b => b.onclick = () => { d.cargas.splice(Number(b.dataset.cdel), 1); sujo = true; desenharCargas(); atualizar(); });
       $("#prCargaAdd", box).onchange = e => {
-        const a = APARELHOS[Number(e.target.value)]; if (!a) return;
-        d.cargas.push({ nome: a.nome, qtd: 1, w: a.w || 0, btu: a.btu || "", fbtu: a.fbtu || "", h: a.h, uso: a.uso, partida: a.partida });
+        const v = String(e.target.value || ""), a = v === "m" ? MOTOR_CV : v[0] === "l" ? LEITERIA[Number(v.slice(1))] : APARELHOS[Number(v.slice(1))]; if (!a) return;
+        d.cargas.push({ nome: v === "m" ? "Motor 1 CV" : nomeVar(a, a.w), cat: v[0] === "l" ? v : "", ...(v === "m" ? { cv: 1 } : {}), qtd: 1, w: a.w || 0, btu: a.btu || "", fbtu: a.fbtu || "", h: a.h, uso: a.uso, partida: a.partida, fase: a.fase || 1 });
         sujo = true; desenharCargas(); atualizar();
         const q = $$('[data-cc="qtd"]', box); if (q.length) q[q.length - 1].select();
       };
