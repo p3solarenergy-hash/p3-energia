@@ -112,13 +112,13 @@
   // validar com a placa antes de enviar proposta. A potência continua editável na linha.
   const LEITERIA = [
     { nome: "Bomba de vácuo da ordenha", w: 3750, h: 4, uso: 100, partida: 6, fase: 1,
-      var: [["2 CV", 1500], ["3 CV", 2250], ["4 CV", 3000], ["5 CV", 3750], ["7 CV", 5250], ["6 kW", 6000]] },
+      var: [["1 CV", 750], ["2 CV", 1500], ["3 CV", 2250], ["4 CV", 3000], ["5 CV", 3750], ["7 CV", 5250], ["6 kW", 6000]] },
     { nome: "Bomba transferidora de leite", w: 375, h: 4, uso: 100, partida: 6, fase: 1,
       var: [["0,5 CV", 375], ["0,75 CV", 560], ["1 CV", 750]] },
     { nome: "Iluminação LED da sala de ordenha", w: 60, h: 4, uso: 100, partida: 1, fase: 1,
       var: [["30 W", 30], ["60 W", 60], ["120 W", 120], ["200 W", 200]] },
     { nome: "Compressor do resfriador de leite", w: 3000, h: 3, uso: 100, partida: 5, fase: 2,
-      var: [["2 CV", 1500], ["3 CV", 2250], ["4 CV", 3000], ["5 CV", 3750], ["6 CV", 4500]] },
+      var: [["1 CV", 750], ["2 CV", 1500], ["3 CV", 2250], ["4 CV", 3000], ["5 CV", 3750], ["6 CV", 4500]] },
     { nome: "Aquecedor de água para limpeza", w: 2700, h: 0.5, uso: 100, partida: 1, fase: 1,
       var: [["2.000 W", 2000], ["2.700 W", 2700], ["4.000 W", 4000], ["6.000 W", 6000]] },
     { nome: "Bomba de água para dessedentação", w: 750, h: 4, uso: 100, partida: 6, fase: 1,
