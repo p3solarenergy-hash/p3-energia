@@ -174,6 +174,9 @@
     if (!k.linhas.length) return "";
     const q = Math.max(1, n(d.inv_qtd) || 1), kw = n(d.inv_kw) * q, surto = n(d.inv_kw) * (n(d.inv_surto) || 1) * q;
     const tri = k.linhas.some(l => l.ehMotor && l.eixo && wCarga(l) >= 3 * W_POR_CV - 1e-9);
+    // Inversor trifásico: motor monofásico pega uma fase só. No Deye SG04LP3 cada fase dá até 50% da nominal.
+    const porFase = String(d.inv_fases) === "3" ? surto * 0.5 : 0;
+    const soTri = porFase ? k.linhas.filter(l => l.extraKva > 0 && l.kvaPartida > porFase + 1e-9) : [];
     const item = (ok, txt) => `<li style="color:var(${ok ? "--ok" : "--bad"})">${ok ? "✓" : "✗"} ${txt}</li>`;
     const rec = INVERSORES.filter(x => x.kw >= k.contKva - 1e-9 && x.kw * x.surto >= k.picoKva - 1e-9 && (!tri || x.fases === 3)).sort((a, b) => a.kw - b.kw)[0];
     const m = k.motorPico;
@@ -182,7 +185,8 @@
     if (n(d.inv_kw) > 0) html += `<ul style="margin:6px 0;padding-left:18px;list-style:none">
         ${item(k.contKva <= kw + 1e-9, `Contínuo: a etapa mais pesada pede ${num(k.contKva, 1)} kVA; ${q > 1 ? `os ${q} inversores dão` : "o inversor dá"} ${num(kw, 1)} kW.`)}
         ${item(k.picoKva <= surto + 1e-9, `Partida: pico de ${num(k.picoKva, 1)} kVA; o surto é de ${num(surto, 1)} kVA${n(d.inv_surto_s) ? ` por ${numx(d.inv_surto_s)} s` : " (tempo não informado pelo fabricante)"}.`)}
-        ${tri && String(d.inv_fases) !== "3" ? `<li style="color:var(--bad)">⚠ Há motor de 3 CV ou mais: costuma ser trifásico (confira na placa). Inversor monofásico não aciona motor trifásico.</li>` : ""}</ul>`;
+        ${tri && String(d.inv_fases) !== "3" ? `<li style="color:var(--bad)">⚠ Há motor de 3 CV ou mais: costuma ser trifásico (confira na placa). Inversor monofásico não aciona motor trifásico.</li>` : ""}
+        ${soTri.length ? `<li style="color:var(--bad)">⚠ Só passa se ${soTri.map(l => `<b>${esc(l.nome)}</b>`).join(" e ")} ${soTri.length > 1 ? "forem trifásicos" : "for trifásico"} (confira na placa). Ligado numa fase só, o inversor dá cerca de ${num(porFase, 1)} kVA na partida (Deye SG04LP3: até 50% da nominal por fase).</li>` : ""}</ul>`;
     else html += `<p style="margin:6px 0">Escolha o inversor acima para conferir a partida.</p>`;
     html += `<p style="margin:0">${rec ? `Menor da lista que atende sozinho: <b>${esc(rec.nome)}</b> (${num(rec.kw)} kW, surto de ${num(rec.kw * rec.surto)} kVA).` : `<b style="color:var(--bad)">Nenhum inversor da lista dá esta partida sozinho.</b>`}${!rec || k.picoKva > k.contKva * 2.5 ? dica : ""}</p></div>`;
     return html;
@@ -197,6 +201,7 @@
     <li><b>Pico de cada etapa:</b> tudo da etapa rodando + o maior motor partindo. Supõe que dois motores não partem no mesmo segundo; na instalação, garanta isso (partida escalonada).</li>
     <li><b>Inversores:</b> Deye SG04LP3 (trifásico) e SG01LP1 (monofásico) aguentam 2× a nominal por 10 s fora da rede. Growatt SPF 6000 ES Plus: 12 kVA de surto, tempo não informado. Confira a folha do modelo exato.</li>
     <li><b>Motor de 3 CV ou mais</b> costuma ser trifásico: precisa de inversor trifásico.</li>
+    <li><b>Motor monofásico em inversor trifásico</b> usa uma fase só. No Deye SG04LP3 cada fase entrega até 50% da nominal (no 12K, 6 kW por fase), então a partida dele tem de caber na metade do surto.</li>
     <li>Isto é estimativa para orçamento, não dimensionamento elétrico: confirme placa dos motores, tensão, ligação e queda de tensão com o engenheiro.</li>
     <li><b>Fontes:</b> <a href="https://static.weg.net/medias/downloadcenter/hca/h01/WEG-dica-tecnica-soft-starters-50085124-pt.pdf" target="_blank" rel="noopener">WEG · soft-starters</a> ·
       <a href="https://mart.cummins.com/imagelibrary/data/assetfiles/0056648.pdf" target="_blank" rel="noopener">Cummins · partida de motores</a> ·
