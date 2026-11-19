@@ -154,10 +154,23 @@
   // se decide depois. Sem surto informado, usa 2× a nominal por 10 s, o comum nos híbridos (ex.: Deye SG04LP3/SG01LP1).
   const SURTO_PADRAO = 2, SURTO_S_PADRAO = 10;
   const fasesInv = d => String(d.inv_fases || "1");
+  // Inversores cadastrados (datasheets WEG W20). surtoKva = o que a folha garante para partida/pico; s = por quanto tempo.
+  // SIW200H S075: a partida de motor vem em LRA (110 A com bateria CB100 ≈ 24,2 kVA em 220 V; 69,8 A com uma CB050).
+  // SIW400H: só o pico de 60 s (1,2× em 380/220 V); em rede 220/127 V a potência cai quase à metade.
+  // Trifásico WEG: cada fase entrega 1/3 do total (corrente máxima por fase da folha).
+  const WEG_INV = [
+    { id: "weg-s075", nome: "WEG SIW200H S075 · 7,5 kW split-phase 110/220 V", nomeProposta: "WEG SIW200H S075 W20 (7,5 kW)", kw: 7.5, surtoKva: 24.2, s: 0, fases: 1, porFase: 1,
+      nota: "partida de motor da folha: 110 A de LRA com bateria CB100 (≈ 24,2 kVA em 220 V); com uma CB050 só, 69,8 A (≈ 15,4 kVA) e o backup cai para 5,2 kW" },
+    { id: "weg-t015-380", nome: "WEG SIW400H T015 · 15 kW trifásico, rede 380/220 V", nomeProposta: "WEG SIW400H T015 W20 (15 kW)", kw: 15, surtoKva: 18, s: 60, fases: 3, porFase: 1 / 3 },
+    { id: "weg-t015-220", nome: "WEG SIW400H T015 · trifásico, rede 220/127 V (8,6 kVA)", nomeProposta: "WEG SIW400H T015 W20", kw: 8.6, surtoKva: 9.5, s: 60, fases: 3, porFase: 1 / 3 },
+    { id: "weg-t030-380", nome: "WEG SIW400H T030 · 30 kW trifásico, rede 380/220 V", nomeProposta: "WEG SIW400H T030 W20 (30 kW)", kw: 30, surtoKva: 36, s: 60, fases: 3, porFase: 1 / 3 },
+    { id: "weg-t030-220", nome: "WEG SIW400H T030 · trifásico, rede 220/127 V (17,3 kVA)", nomeProposta: "WEG SIW400H T030 W20", kw: 17.3, surtoKva: 19, s: 60, fases: 3, porFase: 1 / 3 }
+  ];
   function invCampos(d) {
     const val = k => esc(String(d[k] || "").replace(".", ","));
     return `<div class="pr-inversor"><b>Potência do inversor híbrido</b> <span class="muted" style="font-size:12px">· a marca vai escrita no nome, acima; aqui é só para conferir a partida dos motores.</span>
       <div class="pr-inversor-campos">
+        <label class="largo">Modelo<select id="prInvModelo"><option value="">Só a potência (sem modelo)</option>${WEG_INV.map(x => `<option value="${x.id}"${d.inv_preset === x.id ? " selected" : ""}>${esc(x.nome)}</option>`).join("")}</select></label>
         <label>Potência nominal (kW)<input data-inv="inv_kw" inputmode="decimal" value="${val("inv_kw")}" placeholder="ex.: 12"></label>
         <label>Surto (× a nominal)<input data-inv="inv_surto" inputmode="decimal" value="${val("inv_surto")}" placeholder="2 (padrão)"></label>
         <label>Tempo do surto (s)<input data-inv="inv_surto_s" inputmode="decimal" value="${val("inv_surto_s")}" placeholder="10 (padrão)"></label>
@@ -172,8 +185,10 @@
     const q = Math.max(1, n(d.inv_qtd) || 1), kw = n(d.inv_kw) * q, surto = kw * sx, tri3 = fasesInv(d) === "3";
     const motores = k.linhas.filter(l => l.extraKva > 0).sort((a, b) => b.kvaPartida - a.kvaPartida);
     const tri = motores.some(l => l.eixo && wCarga(l) >= 3 * W_POR_CV - 1e-9);
-    // Inversor trifásico: motor monofásico pega uma fase só (em híbridos como o Deye SG04LP3, até 50% da nominal por fase).
-    const porFase = tri3 ? surto * 0.5 : 0;
+    // Inversor trifásico: motor monofásico pega uma fase só (WEG: 1/3 do total; sem modelo, 50% como no Deye SG04LP3).
+    const fr = n(d.inv_por_fase) || 0.5, porFase = tri3 ? surto * fr : 0;
+    const tempo = n(d.inv_surto_s) ? ` por ${numx(n(d.inv_surto_s))} s` : d.inv_preset ? "" : ` por ${SURTO_S_PADRAO} s`;
+    const modelo = WEG_INV.find(x => x.id === d.inv_preset);
     const soTri = porFase ? motores.filter(l => l.kvaPartida > porFase + 1e-9) : [];
     // Potência mínima para dar a partida sozinho com o surto informado (ou 2×).
     const kwMin = Math.ceil(Math.max(k.contKva, k.picoKva / sx) * 10) / 10;
@@ -184,11 +199,12 @@
     if (motores.length) html += `<p style="margin:6px 0">Maior pico de partida: <b>${esc(motores[0].nome)}</b> · ${num(motores[0].kvaPartida, 1)} kVA${motores.length > 1 ? ` <span class="muted">(depois: ${motores.slice(1, 3).map(l => `${esc(l.nome)} ${num(l.kvaPartida, 1)} kVA`).join(" · ")})</span>` : ""}.</p>`;
     if (n(d.inv_kw) > 0) html += `<ul style="margin:6px 0;padding-left:18px;list-style:none">
         ${item(k.contKva <= kw + 1e-9, `Contínuo: a etapa mais pesada pede ${num(k.contKva, 1)} kVA; ${q > 1 ? `os ${q} inversores dão` : "o inversor dá"} ${num(kw, 1)} kW.`)}
-        ${item(k.picoKva <= surto + 1e-9, `Partida: pico de ${num(k.picoKva, 1)} kVA; o surto é de ${num(surto, 1)} kVA (${numx(sx)}× por ${numx(ss)} s${padrao ? ", valor padrão: confira na folha do inversor" : ""}).`)}
+        ${item(k.picoKva <= surto + 1e-9, `Partida: pico de ${num(k.picoKva, 1)} kVA; o surto é de ${num(surto, 1)} kVA${modelo ? tempo : ` (${numx(sx)}×${tempo}${padrao ? ", valor padrão: confira na folha do inversor" : ""})`}.${modelo && modelo.nota ? ` <span class="muted">(${esc(modelo.nota)})</span>` : ""}`)}
         ${tri && !tri3 ? `<li style="color:var(--bad)">⚠ Há motor de 3 CV ou mais: costuma ser trifásico (confira na placa). Inversor monofásico não aciona motor trifásico.</li>` : ""}
-        ${soTri.length ? `<li style="color:var(--bad)">⚠ Só passa se ${soTri.map(l => `<b>${esc(l.nome)}</b>`).join(" e ")} ${soTri.length > 1 ? "forem trifásicos" : "for trifásico"} (confira na placa). Ligado numa fase só, o inversor dá cerca de ${num(porFase, 1)} kVA na partida (em híbridos trifásicos como o Deye, cada fase dá até 50% da nominal).</li>` : ""}</ul>`;
+        ${soTri.length ? `<li style="color:var(--bad)">⚠ Só passa se ${soTri.map(l => `<b>${esc(l.nome)}</b>`).join(" e ")} ${soTri.length > 1 ? "forem trifásicos" : "for trifásico"} (confira na placa). Ligado numa fase só, o inversor dá cerca de ${num(porFase, 1)} kVA na partida (${modelo ? "nos WEG trifásicos, cada fase dá 1/3 do total" : "em híbridos trifásicos, cada fase dá de 1/3 a 1/2 do total: confira no modelo"}).</li>` : ""}</ul>`;
     else html += `<p style="margin:6px 0">Digite a potência do inversor no bloco "Bateria" para conferir a partida.</p>`;
-    html += `<p style="margin:0">Para dar a partida sozinho, com surto de ${numx(sx)}×: inversor de pelo menos <b>${num(kwMin, 1)} kW</b>${tri ? " trifásico" : ""}.${m && k.picoKva > k.contKva * 2.5 ? dica : ""}</p></div>`;
+    const wegOk = WEG_INV.filter(x => x.kw >= k.contKva - 1e-9 && x.surtoKva >= k.picoKva - 1e-9 && (!tri || x.fases === 3));
+    html += `<p style="margin:0">${modelo ? "" : `Para dar a partida sozinho, com surto de ${numx(sx)}×: inversor de pelo menos <b>${num(kwMin, 1)} kW</b>${tri ? " trifásico" : ""}. `}${wegOk.length ? `WEG cadastrados que atendem: ${wegOk.map(x => `<b>${esc(x.nome)}</b>`).join("; ")}.` : "Nenhum WEG cadastrado atende sozinho."}${m && k.picoKva > k.contKva * 2.5 ? dica : ""}</p></div>`;
     return html;
   }
   const PREMISSAS_ARRANQUE = `<details class="pr-premissas"><summary>Premissas e fontes do arranque</summary><ul>
@@ -200,6 +216,7 @@
     <li><b>CV → W:</b> CV é potência no eixo. A rede entrega CV × 750 W ÷ 0,85 (rendimento), cerca de 18% a mais que o número de placa. A potência digitada em W é tratada como potência elétrica.</li>
     <li><b>Pico de cada etapa:</b> tudo da etapa rodando + o maior motor partindo. Supõe que dois motores não partem no mesmo segundo; na instalação, garanta isso (partida escalonada).</li>
     <li><b>Surto do inversor:</b> se não for informado, usamos 2× a nominal por 10 s, o comum nos híbridos (ex.: Deye SG04LP3 e SG01LP1). O Growatt SPF 6000 ES Plus informa 12 kVA de surto, sem o tempo. Na compra, confira na folha do modelo escolhido.</li>
+    <li><b>WEG cadastrados</b> (datasheets W20): SIW200H S075 (7,5 kW, split-phase 110/220 V) dá partida de motor de 110 A de LRA com bateria CB100 (≈ 24,2 kVA em 220 V); com uma CB050 só, 69,8 A (≈ 15,4 kVA) e backup de 5,2 kW. SIW400H T015 e T030: 15 e 30 kVA com pico de 18 e 36 kVA por 60 s em rede 380/220 V; em 220/127 V, 8,6 e 17,3 kVA com pico de 9,5 e 19 kVA. Nos trifásicos, cada fase entrega 1/3 do total.</li>
     <li><b>Motor de 3 CV ou mais</b> costuma ser trifásico: precisa de inversor trifásico.</li>
     <li><b>Motor monofásico em inversor trifásico</b> usa uma fase só. Em híbridos trifásicos como o Deye SG04LP3, cada fase entrega até 50% da nominal (no 12K, 6 kW por fase), então a partida dele tem de caber na metade do surto. Confira no modelo comprado.</li>
     <li>Isto é estimativa para orçamento, não dimensionamento elétrico: confirme placa dos motores, tensão, ligação e queda de tensão com o engenheiro.</li>
@@ -1192,8 +1209,20 @@
       box.innerHTML = `${invCampos(d)}<div id="prInvCompat"></div>`;
       $$("[data-inv]", box).forEach(el => { el[el.tagName === "SELECT" ? "onchange" : "oninput"] = () => {
         d[el.dataset.inv] = el.tagName === "SELECT" ? el.value : n(el.value);
+        // Mexeu num número: deixa de ser o modelo cadastrado.
+        if (d.inv_preset) { d.inv_preset = ""; d.inv_por_fase = ""; const sm = $("#prInvModelo", box); if (sm) sm.value = ""; }
         sujo = true; resumoCargas(); atualizar();
       }; });
+      const sm = $("#prInvModelo", box);
+      if (sm) sm.onchange = () => {
+        const x = WEG_INV.find(i => i.id === sm.value); d.inv_preset = x ? x.id : ""; d.inv_por_fase = x ? x.porFase : "";
+        if (x) {
+          Object.assign(d, { inv_kw: x.kw, inv_surto: Math.round(x.surtoKva / x.kw * 10000) / 10000, inv_surto_s: x.s || "", inv_fases: String(x.fases) });
+          // O nome da proposta só é preenchido se ainda estiver no padrão (não apaga o que foi escrito).
+          if (!d.inv_hibrido || d.inv_hibrido === "Inversor híbrido") { d.inv_hibrido = x.nomeProposta; poe("inv_hibrido", d.inv_hibrido); }
+        }
+        sujo = true; desenharInversor(); resumoCargas(); atualizar();
+      };
       compatInversor();
     };
     // Calculadora de cargas: aparelhos (do catálogo ou livres) → potência, pico, energia e quantas baterias.

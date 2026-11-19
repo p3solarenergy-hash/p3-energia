@@ -326,6 +326,7 @@ tr.grupo td { background: var(--panel-2); font-size: 13px; padding-top: 10px; }
 .pr-inversor-campos { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-top: 8px; }
 .pr-inversor-campos label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--ink-2); }
 .pr-inversor-check { margin-top: 8px; }
+.pr-inversor-campos label.largo { grid-column: 1 / -1; }
 .pr-premissas { margin-top: 10px; font-size: 12.5px; }
 .pr-premissas summary { cursor: pointer; font-weight: 600; }
 .pr-premissas ul { margin: 6px 0 0; padding-left: 18px; }
