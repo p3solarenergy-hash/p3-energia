@@ -83,19 +83,19 @@
   // Ar-condicionado vai em BTU: inverter ~0,09 W por BTU (12.000 BTU ≈ 1.080 W), convencional ~0,10.
   const APARELHOS = [
     { nome: "Lâmpada LED", w: 9, h: 6, uso: 100, partida: 1 },
-    { nome: "Geladeira", w: 150, h: 8, uso: 40, partida: 4 },
-    { nome: "Geladeira duplex / frost free", w: 250, h: 8, uso: 40, partida: 4 },
-    { nome: "Freezer", w: 200, h: 8, uso: 45, partida: 4 },
+    { nome: "Geladeira", w: 150, h: 8, uso: 40, partida: 5 },
+    { nome: "Geladeira duplex / frost free", w: 250, h: 8, uso: 40, partida: 5 },
+    { nome: "Freezer", w: 200, h: 8, uso: 45, partida: 5 },
     { nome: "Ar-condicionado inverter", btu: 12000, fbtu: 0.09, h: 4, uso: 70, partida: 1.3 },
-    { nome: "Ar-condicionado convencional", btu: 12000, fbtu: 0.1, h: 4, uso: 80, partida: 3 },
+    { nome: "Ar-condicionado convencional", btu: 12000, fbtu: 0.1, h: 4, uso: 80, partida: 5 },
     { nome: "Ventilador", w: 80, h: 6, uso: 100, partida: 1 },
     { nome: "TV", w: 100, h: 4, uso: 100, partida: 1 },
     { nome: "Internet (roteador e modem)", w: 20, h: 8, uso: 100, partida: 1 },
     { nome: "Notebook", w: 65, h: 4, uso: 100, partida: 1 },
     { nome: "Computador de mesa", w: 250, h: 4, uso: 100, partida: 1 },
     { nome: "Câmeras / alarme", w: 40, h: 8, uso: 100, partida: 1 },
-    { nome: "Portão eletrônico", w: 350, h: 0.2, uso: 100, partida: 3 },
-    { nome: "Bomba d'água 1/2 cv", w: 450, h: 1, uso: 100, partida: 3 },
+    { nome: "Portão eletrônico", w: 350, h: 0.2, uso: 100, partida: 6 },
+    { nome: "Bomba d'água 1/2 cv", w: 450, h: 1, uso: 100, partida: 6 },
     { nome: "Micro-ondas", w: 1200, h: 0.3, uso: 100, partida: 1 },
     { nome: "Máquina de lavar", w: 500, h: 1, uso: 60, partida: 3 },
     { nome: "Chuveiro elétrico", w: 5500, h: 0.5, uso: 100, partida: 1 },
@@ -103,7 +103,7 @@
   ];
   // Motor em CV digitado pelo usuário: 1 CV ≈ 750 W (premissa do áudio; a referência é 735,5 W por CV).
   const W_POR_CV = 750;
-  const MOTOR_CV = { nome: "Motor em CV", w: W_POR_CV, h: 4, uso: 100, partida: 3, fase: 1 };
+  const MOTOR_CV = { nome: "Motor em CV", w: W_POR_CV, h: 4, uso: 100, partida: 6, fase: 1 };
   // Subgrupo Leiteria (emergência, sem tensão/fases/corrente de partida/rendimento confirmados).
   // Valores do áudio: bomba de vácuo 5 CV (faixa usual 3 a 5, inicial 6 a 7 com lâmpada), transferidora 0,5 CV,
   // compressor do resfriador 4 CV. Conversão usada: 750 W por CV (premissa do áudio; a referência NIST é
@@ -111,19 +111,19 @@
   // Cada equipamento tem variações (var: [rótulo, W]); "w" é a variação padrão. Demais itens: ESTIMATIVAS,
   // validar com a placa antes de enviar proposta. A potência continua editável na linha.
   const LEITERIA = [
-    { nome: "Bomba de vácuo da ordenha", w: 3750, h: 4, uso: 100, partida: 3, fase: 1,
+    { nome: "Bomba de vácuo da ordenha", w: 3750, h: 4, uso: 100, partida: 6, fase: 1,
       var: [["3 CV", 2250], ["4 CV", 3000], ["5 CV", 3750], ["7 CV", 5250], ["6 kW", 6000]] },
-    { nome: "Bomba transferidora de leite", w: 375, h: 4, uso: 100, partida: 3, fase: 1,
+    { nome: "Bomba transferidora de leite", w: 375, h: 4, uso: 100, partida: 6, fase: 1,
       var: [["0,5 CV", 375], ["0,75 CV", 560], ["1 CV", 750]] },
     { nome: "Iluminação LED da sala de ordenha", w: 60, h: 4, uso: 100, partida: 1, fase: 1,
       var: [["30 W", 30], ["60 W", 60], ["120 W", 120], ["200 W", 200]] },
-    { nome: "Compressor do resfriador de leite", w: 3000, h: 3, uso: 100, partida: 4, fase: 2,
+    { nome: "Compressor do resfriador de leite", w: 3000, h: 3, uso: 100, partida: 5, fase: 2,
       var: [["2 CV", 1500], ["3 CV", 2250], ["4 CV", 3000], ["5 CV", 3750], ["6 CV", 4500]] },
     { nome: "Aquecedor de água para limpeza", w: 2700, h: 0.5, uso: 100, partida: 1, fase: 1,
       var: [["2.000 W", 2000], ["2.700 W", 2700], ["4.000 W", 4000], ["6.000 W", 6000]] },
-    { nome: "Bomba de água para dessedentação", w: 750, h: 4, uso: 100, partida: 3, fase: 1,
+    { nome: "Bomba de água para dessedentação", w: 750, h: 4, uso: 100, partida: 6, fase: 1,
       var: [["0,5 CV", 375], ["1 CV", 750], ["2 CV", 1500], ["3 CV", 2250]] },
-    { nome: "Exaustor / ventilação do galpão", w: 150, h: 4, uso: 100, partida: 1, fase: 1,
+    { nome: "Exaustor / ventilação do galpão", w: 150, h: 4, uso: 100, partida: 6, fase: 1,
       var: [["150 W", 150], ["0,5 CV", 375], ["1 CV", 750]] }
   ];
   // Nome da linha com a variação: "Bomba de vácuo da ordenha (5 CV)".
@@ -132,9 +132,86 @@
   const catDe = c => /^l\d+$/.test(String(c.cat || "")) ? LEITERIA[Number(String(c.cat).slice(1))] : null;
   // Linha com CV (só motor personalizado): o campo CV define a potência (CV × 750 W).
   const cvBox = (c, i) => c.cv === undefined ? "" : `<input data-cvi="${i}" type="number" step="0.5" min="0" inputmode="decimal" value="${esc(String(c.cv ?? ""))}" aria-label="Potência em CV" title="Cavalos (CV): a potência vira CV × 750 W" style="width:72px">`;
-  // Consumo da linha na falta: potência × qtd × horas × % de uso.
-  const kwhLinha = c => n(c.w) * n(c.qtd) * n(c.h) * (c.uso === "" || c.uso == null ? 100 : n(c.uso)) / 100 / 1000;
-  const kwhTxt = c => kwhLinha(c) > 0 ? `<small class="muted" style="white-space:nowrap;align-self:center">≈ ${num(kwhLinha(c), 1)} kWh na falta</small>` : "";
+  // ───────── Arranque (partida) dos motores · premissas e fontes no quadro "Premissas e fontes do arranque" ─────────
+  // Ip/In = corrente de partida ÷ corrente nominal. Partida direta: WEG 5 a 8× (usamos 6, o "típico" da Cummins);
+  // compressor de resfriador/geladeira ~5× (Copeland ZF06K4E, tanque de leite: 61 A ÷ 12,2 A). Soft-starter (≈3×) e
+  // inversor de frequência (≈1,5×) dependem do ajuste: são estimativas.
+  // O inversor limita corrente, então a partida conta em kVA: kVA rodando = W elétrico ÷ FP; partida = kVA × Ip/In.
+  // CV é potência no eixo: a rede entrega CV × 750 W ÷ rendimento. W digitado é potência elétrica (da rede).
+  const REND_MOTOR = 0.85, FP_MOTOR = 0.8;
+  const METODOS = { direta: "Partida direta", soft: "Soft-starter (≈3×)", vfd: "Inversor de frequência (≈1,5×)" };
+  const IPIN = { soft: 3, vfd: 1.5 };
+  const eixoDe = c => c.cv !== undefined || (!!catDe(c) && /CV$/.test(rotuloVar(catDe(c), n(c.w))));
+  function linhaCalc(c) {
+    const ehMotor = n(c.partida) > 1 || !!c.metodo, eixo = eixoDe(c);
+    const wEl = wCarga(c) / (eixo ? REND_MOTOR : 1), qtd = n(c.qtd), uso = c.uso === "" || c.uso == null ? 100 : n(c.uso);
+    const kvaRun = wEl * qtd / (ehMotor ? FP_MOTOR : 1) / 1000, ipin = Math.max(1, n(c.partida) || 1);
+    return { wEl, pot: wEl * qtd, kwh: wEl * qtd * n(c.h) * uso / 100 / 1000, kvaRun, kvaPartida: kvaRun * ipin, extraKva: kvaRun * (ipin - 1), ehMotor, eixo };
+  }
+  // Consumo da linha na falta (potência elétrica × qtd × horas × % de uso) e, nos motores, a partida em kVA.
+  const kwhTxt = c => { const l = linhaCalc(c); return l.kwh > 0 ? `<small class="muted" style="white-space:nowrap;align-self:center">≈ ${num(l.kwh, 1)} kWh na falta${l.extraKva > 0 ? ` · partida ≈ ${num(l.kvaPartida, 1)} kVA` : ""}</small>` : ""; };
+  // Inversores com surto conferido na folha de dados do fabricante (Deye: 2× a nominal por 10 s, fora da rede;
+  // Growatt SPF 6000 ES Plus: 12 kVA de surto, tempo não informado). Fora disso, use "Personalizado".
+  const INVERSORES = [
+    ...[5, 6, 8, 10, 12].map(kw => ({ id: `deye-${kw}k-3f`, nome: `Deye SUN-${kw}K-SG04LP3 (trifásico)`, kw, surto: 2, s: 10, fases: 3 })),
+    { id: "deye-8k-1f", nome: "Deye SUN-8K-SG01LP1 (monofásico)", kw: 8, surto: 2, s: 10, fases: 1 },
+    { id: "growatt-spf6000", nome: "Growatt SPF 6000 ES Plus (monofásico)", kw: 6, surto: 2, s: 0, fases: 1 }
+  ];
+  function invCampos(d) {
+    const val = k => esc(String(d[k] ?? "").replace(".", ","));
+    return `<div class="pr-inversor"><b>Inversor híbrido e partida dos motores</b>
+      <div class="pr-inversor-campos">
+        <label>Modelo<select id="prInvPreset"><option value="">Escolha o inversor…</option>${INVERSORES.map(x => `<option value="${x.id}"${d.inv_preset === x.id ? " selected" : ""}>${esc(x.nome)}</option>`).join("")}<option value="custom"${d.inv_preset === "custom" ? " selected" : ""}>Personalizado (digite abaixo)</option></select></label>
+        <label>Potência nominal (kW)<input data-inv="inv_kw" inputmode="decimal" value="${val("inv_kw")}"></label>
+        <label>Surto (× a nominal)<input data-inv="inv_surto" inputmode="decimal" value="${val("inv_surto")}"></label>
+        <label>Tempo do surto (s)<input data-inv="inv_surto_s" inputmode="decimal" value="${val("inv_surto_s")}"></label>
+        <label>Inversores em paralelo<input data-inv="inv_qtd" inputmode="numeric" value="${val("inv_qtd") || 1}"></label>
+        <label>Saída<select data-inv="inv_fases"><option value="1"${String(d.inv_fases) === "1" ? " selected" : ""}>Monofásica</option><option value="3"${String(d.inv_fases) === "3" ? " selected" : ""}>Trifásica</option></select></label>
+      </div></div>`;
+  }
+  // Confere o inversor escolhido contra a lista: contínuo (etapa mais pesada) e partida (pico em kVA).
+  function checaInversor(d, k) {
+    if (!k.linhas.length) return "";
+    const q = Math.max(1, n(d.inv_qtd) || 1), kw = n(d.inv_kw) * q, surto = n(d.inv_kw) * (n(d.inv_surto) || 1) * q;
+    const tri = k.linhas.some(l => l.ehMotor && l.eixo && wCarga(l) >= 3 * W_POR_CV - 1e-9);
+    // Inversor trifásico: motor monofásico pega uma fase só. No Deye SG04LP3 cada fase dá até 50% da nominal.
+    const porFase = String(d.inv_fases) === "3" ? surto * 0.5 : 0;
+    const soTri = porFase ? k.linhas.filter(l => l.extraKva > 0 && l.kvaPartida > porFase + 1e-9) : [];
+    const item = (ok, txt) => `<li style="color:var(${ok ? "--ok" : "--bad"})">${ok ? "✓" : "✗"} ${txt}</li>`;
+    const rec = INVERSORES.filter(x => x.kw >= k.contKva - 1e-9 && x.kw * x.surto >= k.picoKva - 1e-9 && (!tri || x.fases === 3)).sort((a, b) => a.kw - b.kw)[0];
+    const m = k.motorPico;
+    const dica = m ? ` O que mais pesa na partida é <b>${esc(m.nome)}</b> (${num(m.kvaPartida, 1)} kVA): com soft-starter ou inversor de frequência nele, o pico cai bastante.${/vácuo/i.test(m.nome) ? " Na bomba de vácuo, o inversor de frequência ainda economiza energia." : ""}` : "";
+    let html = `<div class="pr-inversor-check">`;
+    if (n(d.inv_kw) > 0) html += `<ul style="margin:6px 0;padding-left:18px;list-style:none">
+        ${item(k.contKva <= kw + 1e-9, `Contínuo: a etapa mais pesada pede ${num(k.contKva, 1)} kVA; ${q > 1 ? `os ${q} inversores dão` : "o inversor dá"} ${num(kw, 1)} kW.`)}
+        ${item(k.picoKva <= surto + 1e-9, `Partida: pico de ${num(k.picoKva, 1)} kVA; o surto é de ${num(surto, 1)} kVA${n(d.inv_surto_s) ? ` por ${numx(d.inv_surto_s)} s` : " (tempo não informado pelo fabricante)"}.`)}
+        ${tri && String(d.inv_fases) !== "3" ? `<li style="color:var(--bad)">⚠ Há motor de 3 CV ou mais: costuma ser trifásico (confira na placa). Inversor monofásico não aciona motor trifásico.</li>` : ""}
+        ${soTri.length ? `<li style="color:var(--bad)">⚠ Só passa se ${soTri.map(l => `<b>${esc(l.nome)}</b>`).join(" e ")} ${soTri.length > 1 ? "forem trifásicos" : "for trifásico"} (confira na placa). Ligado numa fase só, o inversor dá cerca de ${num(porFase, 1)} kVA na partida (Deye SG04LP3: até 50% da nominal por fase).</li>` : ""}</ul>`;
+    else html += `<p style="margin:6px 0">Escolha o inversor acima para conferir a partida.</p>`;
+    html += `<p style="margin:0">${rec ? `Menor da lista que atende sozinho: <b>${esc(rec.nome)}</b> (${num(rec.kw)} kW, surto de ${num(rec.kw * rec.surto)} kVA).` : `<b style="color:var(--bad)">Nenhum inversor da lista dá esta partida sozinho.</b>`}${!rec || k.picoKva > k.contKva * 2.5 ? dica : ""}</p></div>`;
+    return html;
+  }
+  const PREMISSAS_ARRANQUE = `<details class="pr-premissas"><summary>Premissas e fontes do arranque</summary><ul>
+    <li><b>O que é o arranque:</b> na partida, um motor puxa várias vezes a corrente normal por alguns segundos. A lista usa Ip/In (corrente de partida ÷ corrente nominal); o valor certo está na placa ou na folha de dados do motor.</li>
+    <li><b>Partida direta (motor de indução):</b> 5 a 8× a nominal segundo a WEG; usamos <b>6×</b>, o valor típico citado pela Cummins. Bomba de vácuo, bomba transferidora, bombas d'água, portão e exaustor.</li>
+    <li><b>Compressores</b> (resfriador de leite, geladeira, freezer, ar convencional): <b>5×</b>. Ex.: compressor Copeland ZF06K4E, usado em tanque de leite: 61 A na partida ÷ 12,2 A rodando ≈ 5×.</li>
+    <li><b>Soft-starter ≈ 3×</b> e <b>inversor de frequência ≈ 1,5×</b>: estimativas, dependem do ajuste do equipamento. Para gerador, a Cummins dimensiona carga com inversor de frequência em 1,4 a 2× a potência.</li>
+    <li><b>Por que kVA:</b> o inversor híbrido limita corrente, e o motor parte com fator de potência baixo (0,3 a 0,5, segundo a Kohler). Por isso a partida é comparada em kVA: kVA rodando = W elétrico ÷ 0,8; partida = kVA rodando × Ip/In.</li>
+    <li><b>CV → W:</b> CV é potência no eixo. A rede entrega CV × 750 W ÷ 0,85 (rendimento), cerca de 18% a mais que o número de placa. A potência digitada em W é tratada como potência elétrica.</li>
+    <li><b>Pico de cada etapa:</b> tudo da etapa rodando + o maior motor partindo. Supõe que dois motores não partem no mesmo segundo; na instalação, garanta isso (partida escalonada).</li>
+    <li><b>Inversores:</b> Deye SG04LP3 (trifásico) e SG01LP1 (monofásico) aguentam 2× a nominal por 10 s fora da rede. Growatt SPF 6000 ES Plus: 12 kVA de surto, tempo não informado. Confira a folha do modelo exato.</li>
+    <li><b>Motor de 3 CV ou mais</b> costuma ser trifásico: precisa de inversor trifásico.</li>
+    <li><b>Motor monofásico em inversor trifásico</b> usa uma fase só. No Deye SG04LP3 cada fase entrega até 50% da nominal (no 12K, 6 kW por fase), então a partida dele tem de caber na metade do surto.</li>
+    <li>Isto é estimativa para orçamento, não dimensionamento elétrico: confirme placa dos motores, tensão, ligação e queda de tensão com o engenheiro.</li>
+    <li><b>Fontes:</b> <a href="https://static.weg.net/medias/downloadcenter/hca/h01/WEG-dica-tecnica-soft-starters-50085124-pt.pdf" target="_blank" rel="noopener">WEG · soft-starters</a> ·
+      <a href="https://mart.cummins.com/imagelibrary/data/assetfiles/0056648.pdf" target="_blank" rel="noopener">Cummins · partida de motores</a> ·
+      <a href="https://resources.kohler.com/power/kohler/industrial/pdf/Sizing_Generators_for_Motor_Starting_WP.pdf" target="_blank" rel="noopener">Kohler · motor starting</a> ·
+      <a href="https://www.energy.gov/sites/prod/files/2014/04/f15/avoid_nuisance_motorsys_ts6.pdf" target="_blank" rel="noopener">DOE · código de letra (kVA/CV)</a> ·
+      <a href="https://deyeinverter.com/deyeinverter/2025/05/16/datasheet_sun-5-12k-sg04lp3.pdf" target="_blank" rel="noopener">Deye SG04LP3</a> ·
+      <a href="https://www.deyeinverter.com/deyeinverter/2026/04/24/BDatasheetSUN-76-8K-SG01LP1-EU20260424en.pdf" target="_blank" rel="noopener">Deye SG01LP1</a> ·
+      <a href="https://pv-magazine.com/2022/12/09/growatt-unveils-new-inverters-for-residential-off-grid-pv-systems" target="_blank" rel="noopener">Growatt SPF</a> ·
+      <a href="https://www.wisconsinpublicservice.com/savings/business/vacuum-pump" target="_blank" rel="noopener">Inversor de frequência na bomba de vácuo</a></li>
+  </ul></details>`;
   const UTIL_BAT = 0.9; // profundidade de descarga usada da bateria de lítio (90%)
   const EFIC_INV = 0.95; // perdas do inversor híbrido ao converter a bateria (CC) para a casa (CA)
   const ENTREGA = UTIL_BAT * EFIC_INV; // kWh que chegam aos aparelhos por kWh nominal de bateria (85,5%)
@@ -142,23 +219,21 @@
   function calcCargas(d) {
     // Fase: cargas da mesma fase rodam juntas; fases diferentes rodam em sequência (ex.: ordenha, depois resfriador).
     // Sem fase informada, a carga entra na fase 1 (tudo junto, como antes).
-    const linhas = (d.cargas || []).filter(c => n(c.qtd) > 0 && wCarga(c) > 0).map(c => {
-      const w = wCarga(c), pot = w * n(c.qtd), uso = c.uso === "" || c.uso == null ? 100 : n(c.uso);
-      return { ...c, wUn: w, pot, fase: n(c.fase) || 1, kwh: pot * n(c.h) * uso / 100 / 1000, extraPartida: pot * (Math.max(1, n(c.partida) || 1) - 1) };
-    });
+    const linhas = (d.cargas || []).filter(c => n(c.qtd) > 0 && wCarga(c) > 0).map(c => ({ ...c, ...linhaCalc(c), wUn: wCarga(c), fase: n(c.fase) || 1 }));
     const fases = [...new Set(linhas.map(l => l.fase))].sort((a, b) => a - b).map(f => {
-      const ls = linhas.filter(l => l.fase === f);
-      return { f, potKw: ls.reduce((a, l) => a + l.pot, 0) / 1000, kwh: ls.reduce((a, l) => a + l.kwh, 0), h: Math.max(0, ...ls.map(l => n(l.h))), extra: Math.max(0, ...ls.map(l => l.extraPartida)) / 1000 };
+      const ls = linhas.filter(l => l.fase === f), maior = ls.reduce((m, l) => l.extraKva > (m ? m.extraKva : 0) ? l : m, null);
+      return { f, potKw: ls.reduce((a, l) => a + l.pot, 0) / 1000, kva: ls.reduce((a, l) => a + l.kvaRun, 0), kwh: ls.reduce((a, l) => a + l.kwh, 0), h: Math.max(0, ...ls.map(l => n(l.h))), extraKva: maior ? maior.extraKva : 0, maior };
     });
-    // Potência contínua: a fase mais pesada (fases em sequência nunca ficam ligadas juntas). Com fase única, é tudo ligado.
-    const potKw = Math.max(0, ...fases.map(f => f.potKw));
-    // Pico: a fase mais pesada, com o maior motor partindo (os motores não partem todos no mesmo segundo).
-    const picoKw = Math.max(0, ...fases.map(f => f.potKw + f.extra));
-    // Energia: soma de todas as fases. Duração: as fases rodam uma depois da outra, então somam as horas.
+    // Contínuo: a etapa mais pesada (etapas em sequência nunca ficam ligadas juntas). Com etapa única, é tudo ligado.
+    const potKw = Math.max(0, ...fases.map(f => f.potKw)), contKva = Math.max(0, ...fases.map(f => f.kva));
+    // Partida (kVA): em cada etapa, tudo rodando + o maior motor partindo (os motores não partem no mesmo segundo).
+    const fPico = fases.reduce((m, f) => !m || f.kva + f.extraKva > m.kva + m.extraKva ? f : m, null);
+    const picoKva = fPico ? fPico.kva + fPico.extraKva : 0, motorPico = fPico && fPico.maior ? fPico.maior : null;
+    // Energia: soma de todas as etapas. Duração: as etapas rodam uma depois da outra, então somam as horas.
     const kwh = linhas.reduce((a, l) => a + l.kwh, 0), horas = fases.reduce((a, f) => a + f.h, 0);
     const mediaKw = horas ? kwh / horas : 0, porBat = n(d.bat_kwh) * ENTREGA;
     const nBat = porBat && kwh ? Math.ceil(kwh / porBat - 1e-9) : 0;
-    return { linhas, fases: fases.length, potKw, picoKw, kwh, horas, mediaKw, nBat, capAtual: n(d.bat_kwh) * (n(d.bat_qtd) || 1), precisaKwh: kwh / ENTREGA };
+    return { linhas, fases: fases.length, potKw, contKva, picoKva, motorPico, kwh, horas, mediaKw, nBat, capAtual: n(d.bat_kwh) * (n(d.bat_qtd) || 1), precisaKwh: kwh / ENTREGA };
   }
   // O backup da proposta, num lugar só (PDF, WhatsApp e tela usam isto). Com aparelhos na calculadora, vale a lista
   // atual (a carga média e as horas dela); sem lista, vale o campo "Cargas essenciais (kW)".
@@ -166,7 +241,7 @@
     const k = calcCargas(d), cap = n(d.bat_kwh) * (n(d.bat_qtd) || 1), entrega = cap * ENTREGA;
     const lista = k.linhas.length > 0, media = lista ? k.mediaKw : n(d.carga_critica_kw);
     const autonomia = media ? entrega / media : 0;
-    return { k, lista, cap, entrega, media, autonomia, tudoKw: lista ? k.potKw : 0, picoKw: lista ? k.picoKw : 0,
+    return { k, lista, cap, entrega, media, autonomia, tudoKw: lista ? k.potKw : 0, picoKva: lista ? k.picoKva : 0,
       horas: k.horas, cobre: lista ? entrega + 1e-9 >= k.kwh : null, nBat: k.nBat };
   }
   const novaDados = tipo => ({ ...COMUM, ...JSON.parse(JSON.stringify(PADRAO[tipo])), data: hoje() });
@@ -516,7 +591,7 @@
           ${k.linhas.slice(0, 14).map(l => `<tr><td style="padding:${pad}">${esc(l.nome || "Aparelho")}${n(l.btu) ? ` <span class="mut">${num(l.btu)} BTU</span>` : ""}</td><td class="n" style="padding:${pad}">${num(l.qtd)}</td><td class="n" style="padding:${pad}">${num(l.pot)} W</td><td class="n" style="padding:${pad}">${numx(l.h)} h</td><td class="n" style="padding:${pad}">${numx(r2(l.kwh))} kWh</td></tr>`).join("")}
           <tr class="tot"><td style="padding:${pad}" colspan="4">Energia no período</td><td class="n" style="padding:${pad}">${numx(r2(k.kwh))} kWh</td></tr></tbody></table>
         <div class="grid" style="gap:16px;align-content:start">
-          <div class="card"><small>${k.fases > 1 ? "Maior carga ligada junta" : "Tudo ligado ao mesmo tempo"}</small><b class="big">${num(k.potKw, 1)} kW</b><span class="mut">pico de ${num(k.picoKw, 1)} kW na partida dos motores</span></div>
+          <div class="card"><small>${k.fases > 1 ? "Maior carga ligada junta" : "Tudo ligado ao mesmo tempo"}</small><b class="big">${num(k.potKw, 1)} kW</b><span class="mut">pico de ${num(k.picoKva, 1)} kVA na partida dos motores</span></div>
           <div class="card lim"><small>Baterias necessárias</small><b class="big">${num(k.precisaKwh, 1)} kWh</b><span>proposta: ${numx(capKwh)} kWh (${num(n(d.bat_qtd) || 1)} × ${numx(d.bat_kwh)} kWh)</span></div>
         </div>
       </div>
@@ -1112,15 +1187,16 @@
       if (!k.linhas.length) { box.innerHTML = `<span class="muted">Adicione os aparelhos que devem continuar ligados quando a energia cair. Sem aparelhos, a autonomia usa o campo "Cargas essenciais (kW)".</span>`; return; }
       const falta = !b.cobre;
       box.innerHTML = `<div class="pr-carga-kpis">
-          <div><small>${k.fases > 1 ? "Maior fase ligada" : "Tudo ligado"}</small><b>${num(k.potKw, 2)} kW</b></div>
-          <div><small>Pico na partida</small><b>${num(k.picoKw, 2)} kW</b></div>
+          <div><small>${k.fases > 1 ? "Maior etapa ligada" : "Tudo ligado"}</small><b>${num(k.potKw, 2)} kW</b></div>
+          <div><small>Pico na partida</small><b>${num(k.picoKva, 1)} kVA</b></div>
           <div><small>Energia no período</small><b>${num(k.kwh, 2)} kWh</b></div>
           <div><small>Carga média</small><b>${num(k.mediaKw, 2)} kW</b></div>
         </div>
-        <p style="margin:8px 0 4px">Precisa de <b>${num(k.precisaKwh, 1)} kWh</b> de bateria (${num(UTIL_BAT * 100)}% de descarga e ${num(EFIC_INV * 100)}% de eficiência do inversor) → <b>${k.nBat} × ${numx(d.bat_kwh)} kWh</b>. Inversor híbrido de pelo menos <b>${num(Math.ceil(k.potKw * 10) / 10, 1)} kW</b> contínuos e pico de ${num(k.picoKw, 1)} kW.</p>
+        <p style="margin:8px 0 4px">Precisa de <b>${num(k.precisaKwh, 1)} kWh</b> de bateria (${num(UTIL_BAT * 100)}% de descarga e ${num(EFIC_INV * 100)}% de eficiência do inversor) → <b>${k.nBat} × ${numx(d.bat_kwh)} kWh</b>. Inversor: pelo menos <b>${num(k.contKva, 1)} kVA</b> contínuos e <b>${num(k.picoKva, 1)} kVA</b> na partida.</p>
         <p style="margin:0;${falta ? "color:var(--bad)" : ""}">Na proposta hoje: ${numx(b.cap)} kWh entregam ${num(b.entrega, 1)} kWh → ${falta ? `faltam ${num(k.kwh - b.entrega, 1)} kWh para as ${numx(k.horas)} h; dura cerca de ${num(Math.floor(b.autonomia * 10) / 10, 1)} h` : `atende as ${numx(k.horas)} h (autonomia de cerca de ${num(Math.floor(b.autonomia * 10) / 10, 1)} h nessa carga)`}. A proposta usa sempre esta lista.</p>
         <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button type="button" class="btn sm primary" id="prCargasUsar">Usar na proposta (${k.nBat} bateria${k.nBat > 1 ? "s" : ""} · ${num(k.mediaKw, 2)} kW)</button>
-          <label class="pr-check" style="margin:0"><span><input type="checkbox" id="prCargasPdf" ${d.cargas_pdf !== false ? "checked" : ""}> Mostrar a lista de cargas no PDF</span></label></div>`;
+          <label class="pr-check" style="margin:0"><span><input type="checkbox" id="prCargasPdf" ${d.cargas_pdf !== false ? "checked" : ""}> Mostrar a lista de cargas no PDF</span></label></div>
+        ${checaInversor(d, k)}`;
       $("#prCargasUsar", box).onclick = () => {
         d.bat_qtd = Math.max(1, k.nBat); d.carga_critica_kw = r2(k.mediaKw);
         poe("bat_qtd", d.bat_qtd); poe("carga_critica_kw", d.carga_critica_kw);
@@ -1132,13 +1208,15 @@
       const box = $("#prCargas", main); if (!box) return;
       if (!Array.isArray(d.cargas)) d.cargas = [];
       const v = x => esc(String(x ?? "").replace(".", ","));
+      // Motores: como parte (direta, soft-starter, inversor de frequência) e Ip/In editável.
+      const partidaBox = (c, i) => !(n(c.partida) > 1 || c.metodo) ? "" : `<select data-cmet="${i}" aria-label="Como o motor parte" title="Como o motor parte">${Object.entries(METODOS).map(([key, r]) => `<option value="${key}"${(c.metodo || "direta") === key ? " selected" : ""}>${r}</option>`).join("")}</select><span class="pr-carga-un pr-carga-ip"><input data-ci="${i}" data-cc="partida" inputmode="decimal" value="${v(c.partida)}" aria-label="Corrente de partida (vezes a nominal)" title="Corrente de partida ÷ corrente nominal (Ip/In). Confira na placa ou na folha de dados do motor."><i>×</i></span>`;
       box.innerHTML = `${d.cargas.length ? `<div class="pr-carga pr-carga-h"><span>Aparelho</span><span>Qtd</span><span>Potência</span><span>Horas</span><span title="Parte do tempo em que o aparelho puxa energia (compressor liga e desliga)">% uso</span><span title="1 = liga junto com as outras cargas da mesma etapa; 2 = só depois da etapa 1 terminar">Etapa</span><span></span></div>` : ""}
         ${d.cargas.map((c, i) => `<div class="pr-carga">
           <span class="pr-carga-nome"><input data-ci="${i}" data-cc="nome" value="${esc(c.nome || "")}" aria-label="Aparelho">${cvBox(c, i)}${(() => {
             const a = catDe(c); if (!a || !a.var) return "";
             const sel = rotuloVar(a, n(c.w));
             return `<select data-cvar="${i}" aria-label="Variação de ${esc(a.nome)}">${a.var.map(x => `<option value="${x[1]}"${x[0] === sel ? " selected" : ""}>${esc(x[0])}${/W$/.test(x[0]) ? "" : ` · ${num(x[1])} W`}</option>`).join("")}${sel ? "" : `<option value="" selected>Outra · ${num(n(c.w))} W</option>`}</select>`;
-          })()}${kwhTxt(c)}</span>
+          })()}${partidaBox(c, i)}${kwhTxt(c)}</span>
           <input data-ci="${i}" data-cc="qtd" inputmode="decimal" value="${v(c.qtd)}" aria-label="Quantidade">
           <span class="pr-carga-un"><input data-ci="${i}" data-cc="${n(c.fbtu) ? "btu" : "w"}" inputmode="decimal" value="${v(n(c.fbtu) ? c.btu : c.w)}" aria-label="${n(c.fbtu) ? "BTU" : "Watts"}"><i>${n(c.fbtu) ? "BTU" : "W"}</i></span>
           <input data-ci="${i}" data-cc="h" inputmode="decimal" value="${v(c.h)}" aria-label="Horas ligado na falta">
@@ -1147,10 +1225,13 @@
           <button type="button" class="btn ghost sm" data-cdel="${i}" aria-label="Tirar aparelho">✕</button></div>`).join("")}
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0 2px"><select id="prCargaAdd" aria-label="Adicionar aparelho"><option value="">+ Adicionar aparelho…</option><optgroup label="Residencial e geral">${APARELHOS.map((a, j) => `<option value="a${j}">${esc(a.nome)}${a.btu ? " (BTU)" : ` · ${num(a.w)} W`}</option>`).join("")}</optgroup><optgroup label="Leiteria">${LEITERIA.map((a, j) => `<option value="l${j}">${esc(a.nome)}${a.var ? ` · ${a.var.map(x => x[0]).join(" / ")}` : ` · ${num(a.w)} W`}</option>`).join("")}</optgroup><optgroup label="Personalizado"><option value="m">Motor em CV (você digita os cavalos)</option></optgroup></select>
           ${d.cargas.length ? `<span class="muted" style="font-size:12px">Horas = tempo ligado durante a falta de energia.</span>` : ""}</div>
-        <div id="prCargasRes" class="pr-carga-res"></div>`;
+        ${d.cargas.length ? invCampos(d) : ""}
+        <div id="prCargasRes" class="pr-carga-res"></div>
+        ${d.cargas.length ? PREMISSAS_ARRANQUE : ""}`;
       $$("[data-ci]", box).forEach(el => el.oninput = () => {
         const c = d.cargas[Number(el.dataset.ci)], k = el.dataset.cc;
         c[k] = k === "nome" ? el.value : n(el.value);
+        if (k === "partida" && (c.metodo || "direta") === "direta") c.pdir = c.partida;
         sujo = true; resumoCargas(); atualizar();
       });
       $$('[data-cc="w"]', box).forEach(el => { const c = d.cargas[Number(el.dataset.ci)] || {}, a = catDe(c); if (!a) return;
@@ -1167,10 +1248,28 @@
         if (!c.nome || /^Motor /.test(c.nome)) c.nome = `Motor ${numx(cv)} CV`;
         c.cv = cv; c.w = Math.round(cv * W_POR_CV); sujo = true; desenharCargas(); atualizar();
       });
+      $$("[data-cmet]", box).forEach(el => el.onchange = () => {
+        const c = d.cargas[Number(el.dataset.cmet)]; if (!c) return;
+        if ((c.metodo || "direta") === "direta") c.pdir = n(c.partida);
+        c.metodo = el.value; c.partida = el.value === "direta" ? (n(c.pdir) || 6) : IPIN[el.value];
+        sujo = true; desenharCargas(); atualizar();
+      });
+      $$("[data-inv]", box).forEach(el => { el[el.tagName === "SELECT" ? "onchange" : "oninput"] = () => {
+        d[el.dataset.inv] = el.tagName === "SELECT" ? el.value : n(el.value);
+        // Mexeu num número do inversor: deixa de ser o modelo da lista.
+        if (el.dataset.inv !== "inv_fases" && d.inv_preset && d.inv_preset !== "custom") { d.inv_preset = "custom"; const sp = $("#prInvPreset", box); if (sp) sp.value = "custom"; }
+        sujo = true; resumoCargas(); atualizar();
+      }; });
+      const sp = $("#prInvPreset", box);
+      if (sp) sp.onchange = e => {
+        const x = INVERSORES.find(i => i.id === e.target.value); d.inv_preset = e.target.value;
+        if (x) { Object.assign(d, { inv_kw: x.kw, inv_surto: x.surto, inv_surto_s: x.s || "", inv_fases: String(x.fases) }); d.inv_hibrido = x.nome.replace(/ \(.*\)$/, ""); poe("inv_hibrido", d.inv_hibrido); }
+        sujo = true; desenharCargas(); atualizar();
+      };
       $$("[data-cdel]", box).forEach(b => b.onclick = () => { d.cargas.splice(Number(b.dataset.cdel), 1); sujo = true; desenharCargas(); atualizar(); });
       $("#prCargaAdd", box).onchange = e => {
         const v = String(e.target.value || ""), a = v === "m" ? MOTOR_CV : v[0] === "l" ? LEITERIA[Number(v.slice(1))] : APARELHOS[Number(v.slice(1))]; if (!a) return;
-        d.cargas.push({ nome: v === "m" ? "Motor 1 CV" : nomeVar(a, a.w), cat: v[0] === "l" ? v : "", ...(v === "m" ? { cv: 1 } : {}), qtd: 1, w: a.w || 0, btu: a.btu || "", fbtu: a.fbtu || "", h: a.h, uso: a.uso, partida: a.partida, fase: a.fase || 1 });
+        d.cargas.push({ nome: v === "m" ? "Motor 1 CV" : nomeVar(a, a.w), cat: v[0] === "l" ? v : "", ...(v === "m" ? { cv: 1 } : {}), qtd: 1, w: a.w || 0, btu: a.btu || "", fbtu: a.fbtu || "", h: a.h, uso: a.uso, partida: a.partida, pdir: a.partida, fase: a.fase || 1 });
         sujo = true; desenharCargas(); atualizar();
         const q = $$('[data-cc="qtd"]', box); if (q.length) q[q.length - 1].select();
       };
