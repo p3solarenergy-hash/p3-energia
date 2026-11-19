@@ -937,13 +937,7 @@
   }
 
   // ───────── imprimir (PDF) ─────────
-  function imprimir(p) {
-    const f = document.createElement("iframe");
-    f.style.cssText = "position:fixed;width:0;height:0;border:0;left:-9999px";
-    f.onload = () => { const t = document.title; document.title = `Proposta P3 - ${dadosDe(p).cliente || p.numero || ""}`; f.contentWindow.focus(); f.contentWindow.print(); setTimeout(() => { document.title = t; f.remove(); }, 60000); };
-    f.srcdoc = montar(p);
-    document.body.appendChild(f);
-  }
+  function imprimir(p) { imprimirHtml(montar(p), `Proposta P3 - ${dadosDe(p).cliente || p.numero || ""}`); }
 
   // Foto/logo para dentro da proposta: reduz e guarda como imagem embutida.
   function imagem(file, max) {
@@ -1454,7 +1448,7 @@
           if (!p.id) { p.id = r.id; p.numero = r.numero; history.replaceState(null, "", `#/propostas/${encodeURIComponent(r.id)}`); window.P3.state.params = [r.id]; }
         }
       } catch (err) { return toast(err.message, "bad"); }
-      toast("Na janela de impressão, escolha \"Salvar como PDF\".", "ok"); imprimir(p);
+      if (!ehCelular()) toast("Na janela de impressão, escolha \"Salvar como PDF\".", "ok"); imprimir(p);
     };
     const obra = $("#prObra", main);
     if (obra) obra.onclick = async () => {
@@ -1494,7 +1488,46 @@
   }
 
   // Peças do visual da P3 usadas também pelos relatórios técnicos (views-laudos.js).
-  const imprimirHtml = (html, titulo) => { const f = document.createElement("iframe"); f.style.cssText = "position:fixed;width:0;height:0;border:0;left:-9999px"; f.onload = () => { const t = document.title; document.title = titulo; f.contentWindow.focus(); f.contentWindow.print(); setTimeout(() => { document.title = t; f.remove(); }, 60000); }; f.srcdoc = html; document.body.appendChild(f); };
-  window.P3_PROPOSTA = { montar, calcSolar, calcEv, calc, dadosDe, textoWhats, visual: { CSS, LOGO, topo, pe, capa, contato, empresa, imagem, imprimirHtml, VENDEDORES, CNPJ, dataLonga, mesAno, numx, num, linhas, hoje } };
+  // Celular: a impressão do Android/iPhone não respeita o tamanho 16:9 das páginas e solta folhas em branco.
+  // Lá o PDF é montado no próprio app (cada .slide vira uma página 1440×810) e baixado direto.
+  const ehCelular = () => /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
+  const carregarJs = src => new Promise((ok, erro) => {
+    if (document.querySelector(`script[src="${src}"]`)) return ok();
+    const s = document.createElement("script"); s.src = src; s.onload = ok; s.onerror = () => erro(new Error("Sem internet para montar o PDF.")); document.head.appendChild(s);
+  });
+  async function pdfCelular(html, titulo) {
+    const { toast } = window.P3;
+    toast("Montando o PDF…", "ok");
+    await carregarJs("https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js");
+    await carregarJs("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js");
+    const f = document.createElement("iframe");
+    f.style.cssText = "position:fixed;left:-20000px;top:0;width:1440px;height:810px;border:0;visibility:hidden";
+    const pronto = new Promise(ok => { f.onload = ok; });
+    f.srcdoc = html; document.body.appendChild(f); await pronto;
+    try {
+      const doc = f.contentDocument;
+      if (doc.fonts && doc.fonts.ready) await doc.fonts.ready;
+      await Promise.all([...doc.images].map(i => i.complete ? 0 : new Promise(ok => { i.onload = i.onerror = ok; })));
+      const slides = [...doc.querySelectorAll(".slide")];
+      if (!slides.length) throw new Error("Nada para colocar no PDF.");
+      const pdf = new window.jspdf.jsPDF({ orientation: "landscape", unit: "pt", format: [1080, 607.5], compress: true });
+      for (const [i, el] of slides.entries()) {
+        const cv = await window.html2canvas(el, { scale: 1.5, width: 1440, height: 810, windowWidth: 1440, windowHeight: 810, backgroundColor: "#ffffff", logging: false, useCORS: true });
+        if (i) pdf.addPage([1080, 607.5], "landscape");
+        pdf.addImage(cv.toDataURL("image/jpeg", 0.9), "JPEG", 0, 0, 1080, 607.5);
+      }
+      const nome = `${String(titulo || "documento").replace(/[\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim()}.pdf`;
+      const blob = pdf.output("blob");
+      const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = nome;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+      toast(`PDF baixado: ${nome}`, "ok");
+    } finally { f.remove(); }
+  }
+  const imprimirHtml = (html, titulo) => {
+    if (ehCelular()) return pdfCelular(html, titulo).catch(e => window.P3.toast(e.message || "Não consegui montar o PDF.", "bad"));
+    const f = document.createElement("iframe"); f.style.cssText = "position:fixed;width:0;height:0;border:0;left:-9999px"; f.onload = () => { const t = document.title; document.title = titulo; f.contentWindow.focus(); f.contentWindow.print(); setTimeout(() => { document.title = t; f.remove(); }, 60000); }; f.srcdoc = html; document.body.appendChild(f);
+  };
+  window.P3_PROPOSTA = { ehCelular, montar, calcSolar, calcEv, calc, dadosDe, textoWhats, visual: { CSS, LOGO, topo, pe, capa, contato, empresa, imagem, imprimirHtml, VENDEDORES, CNPJ, dataLonga, mesAno, numx, num, linhas, hoje } };
   window.P3.register("propostas", { render });
 })();
