@@ -261,6 +261,33 @@
     return { k, lista, cap, entrega, media, autonomia, tudoKw: lista ? k.potKw : 0, picoKva: lista ? k.picoKva : 0,
       horas: k.horas, cobre: lista ? entrega + 1e-9 >= k.kwh : null, nBat: k.nBat };
   }
+  // Autonomia com o solar ajudando (proposta solar + bateria). Simula a falta em passos de 6 min com o sol de um dia
+  // médio: geração do mês ÷ 30, em curva de seno das 6h às 18h. A bateria começa cheia (o que ela entrega às cargas);
+  // o sol vai direto às cargas com 96% e a sobra recarrega a bateria com 90% (ida e volta). A carga é a média da
+  // lista o tempo todo, como na autonomia só bateria. Roda com a falta começando de manhã (7h) e ao anoitecer (18h).
+  // h = horas até esvaziar; sem esvaziar em 7 dias de sol: "se mantém" (ou "mais de 7 dias", se ainda vai caindo).
+  const EFIC_SOL = 0.96, EFIC_RECARGA = 0.9, DIAS_SIM = 7;
+  function autonomiaSolarDe(d) {
+    if (d.bat_modo === "bateria") return null;
+    const kwp = n(d.qtd_modulos) * n(d.modulo_w) / 1000, solDia = kwp * n(d.fator_kwh_kwp) / 30, b = backupDe(d);
+    if (!kwp || !solDia || !b.media || !b.entrega) return null;
+    const solKw = t => { const h = t % 24; return h > 6 && h < 18 ? solDia * Math.PI / 24 * Math.sin(Math.PI * (h - 6) / 12) : 0; };
+    const passo = 0.1;
+    const sim = inicio => {
+      let soc = b.entrega, socDia = [];
+      for (let i = 0; i < DIAS_SIM * 24 / passo; i++) {
+        const t = i * passo, sol = solKw(inicio + t + passo / 2) * EFIC_SOL, falta = b.media - sol;
+        if (falta > 0) { soc -= falta * passo; if (soc <= 0) return { h: t + passo + soc / falta }; }
+        else soc = Math.min(b.entrega, soc - falta * passo * EFIC_RECARGA);
+        if ((i + 1) % (24 / passo) === 0) socDia.push(soc);
+      }
+      const [pen, ult] = socDia.slice(-2);
+      return { h: null, caindo: ult < pen - 1e-6 };
+    };
+    return { kwp, solDia, consumoDia: b.media * 24, manha: sim(7), noite: sim(18) };
+  }
+  // Texto de um cenário: horas arredondadas para baixo (nunca promete a mais).
+  const txtAut = r => r.h != null ? `${num(Math.floor(r.h * 10) / 10, 1)} h` : r.caindo ? "mais de 7 dias" : "se mantém enquanto houver sol";
   const novaDados = tipo => ({ ...COMUM, ...JSON.parse(JSON.stringify(PADRAO[tipo])), data: hoje() });
   const dadosDe = p => ({ ...novaDados(p.tipo), ...(p.dados && !Array.isArray(p.dados) ? p.dados : {}) });
 
@@ -590,16 +617,16 @@
   // Páginas da bateria: o armazenamento (capacidade, cargas, autonomia) e, se a calculadora tiver aparelhos,
   // a lista das cargas atendidas no backup.
   function slidesBateria(d, c, comSolar) {
-    const capKwh = n(d.bat_kwh) * (n(d.bat_qtd) || 1), b = backupDe(d), k = b.k;
+    const capKwh = n(d.bat_kwh) * (n(d.bat_qtd) || 1), b = backupDe(d), k = b.k, sol = comSolar ? autonomiaSolarDe(d) : null;
     const h1 = v => num(Math.floor(v * 10) / 10, 1); // autonomia arredondada para baixo: nunca promete a mais
     const pgs = [`<section class="slide dark">${topo("Armazenamento de energia", "Energia quando a rede falta", true)}
       <div class="grid g3">
         <div class="card"><small>Capacidade</small><b class="big">${numx(capKwh)} kWh</b><span class="mut">${num(n(d.bat_qtd) || 1)} × ${numx(d.bat_kwh)} kWh · ${numx(r2(b.entrega))} kWh entregues às cargas</span></div>
         <div class="card"><small>Cargas no backup</small><b class="big">${num(b.media, 2)} kW</b><span class="mut">${b.lista ? `consumo médio · ${num(b.tudoKw, 1)} kW com tudo ligado` : "potência média atendida no backup"}</span></div>
-        <div class="card lim"><small>Autonomia estimada</small><b class="big">${h1(b.autonomia)} h</b><span>${b.lista ? (b.cobre ? `cobre as ${numx(b.horas)} h da lista de cargas` : `das ${numx(b.horas)} h da lista · com ${b.nBat} × ${numx(d.bat_kwh)} kWh cobre tudo`) : "com as cargas essenciais ligadas"}</span></div>
+        <div class="card lim"><small>Autonomia estimada${sol ? " · só a bateria" : ""}</small><b class="big">${h1(b.autonomia)} h</b><span>${b.lista ? (b.cobre ? `cobre as ${numx(b.horas)} h da lista de cargas` : `das ${numx(b.horas)} h da lista · com ${b.nBat} × ${numx(d.bat_kwh)} kWh cobre tudo`) : "com as cargas essenciais ligadas"}</span>${sol ? `<span style="display:block;margin-top:10px"><b>Bateria + solar</b> (dia de sol médio): falta que começa de manhã, ${txtAut(sol.manha)}; à noite, ${txtAut(sol.noite)}.</span>` : ""}</div>
       </div>
       <ul class="lista" style="margin-top:28px"><li>Backup automático das cargas essenciais em quedas de energia</li>${comSolar ? "<li>Guarda a sobra do dia para usar à noite e no horário de ponta</li><li>O inversor híbrido gerencia solar, bateria e rede de forma automática</li>" : "<li>Recarrega pela rede e fica pronta para a próxima falta</li><li>Preparada para receber placas solares no futuro, se o inversor híbrido permitir</li>"}</ul>
-      <p class="nota" style="color:#b9c1ae">Autonomia estimada com ${num(UTIL_BAT * 100)}% da capacidade das baterias e ${num(EFIC_INV * 100)}% de eficiência do inversor; varia conforme o consumo real no momento da falta.</p>${pe(d)}</section>`];
+      <p class="nota" style="color:#b9c1ae">Autonomia estimada com ${num(UTIL_BAT * 100)}% da capacidade das baterias e ${num(EFIC_INV * 100)}% de eficiência do inversor; varia conforme o consumo real no momento da falta.${sol ? ` Com o solar: ${num(sol.solDia, 1)} kWh por dia em média (${num(sol.kwp, 2)} kWp), sol das 6h às 18h; em dias nublados a autonomia fica mais perto da de só a bateria.` : ""}</p>${pe(d)}</section>`];
     if (k.linhas.length && d.cargas_pdf !== false) {
       const muitas = k.linhas.length > 8, pad = muitas ? "6px 12px" : "9px 14px";
       pgs.push(`<section class="slide">${topo("Dimensionamento do backup", "O que fica ligado quando a energia cai")}
@@ -618,11 +645,11 @@
   }
   // "As duas opções" na mesma proposta: solar + bateria × só bateria.
   function slideOpcoes(d, c) {
-    const b = calcSoBateria(d);
+    const b = calcSoBateria(d), sol = autonomiaSolarDe(d);
     return `<section class="slide">${topo("Opções", "Duas formas de fazer")}
       <div class="grid g2" style="gap:32px">
         <div class="card lim" style="padding:30px"><small>Opção 1 · Solar + bateria</small><b class="big">${brl(c.investimento)}</b>
-          <ul class="lista" style="margin-top:14px"><li>${num(c.kwp, 2)} kWp gerando cerca de ${num(c.geracao)} kWh/mês</li>${d.mostrar_economia === false ? "" : `<li>Economia de cerca de ${brl(c.mensal)} por mês na conta</li>`}<li>Backup de ${numx(b.capKwh)} kWh · cerca de ${num(b.autonomia, 1)} h</li></ul></div>
+          <ul class="lista" style="margin-top:14px"><li>${num(c.kwp, 2)} kWp gerando cerca de ${num(c.geracao)} kWh/mês</li>${d.mostrar_economia === false ? "" : `<li>Economia de cerca de ${brl(c.mensal)} por mês na conta</li>`}<li>Backup de ${numx(b.capKwh)} kWh · cerca de ${num(b.autonomia, 1)} h só com a bateria${sol ? `; com o solar, ${txtAut(sol.noite)} se a falta começa à noite` : ""}</li></ul></div>
         <div class="card" style="padding:30px"><small>Opção 2 · Só bateria (sem solar)</small><b class="big">${brl(b.investimento)}</b>
           <ul class="lista" style="margin-top:14px"><li>Backup de ${numx(b.capKwh)} kWh · cerca de ${num(b.autonomia, 1)} h</li><li>Protege as cargas essenciais nas quedas de energia</li><li>Sem geração: a conta de luz não muda</li></ul></div>
       </div>
@@ -878,7 +905,7 @@
         `*O sistema*`,
         `• ${num(c.kwp, 2)} kWp: ${num(d.qtd_modulos)} módulos ${d.modulo_marca} de ${num(d.modulo_w)} W e ${bat ? d.inv_hibrido : d.inversor}`,
         `• Geração média de cerca de ${num(c.geracao)} kWh por mês (${Math.round(c.cobertura * 100)}% do consumo de ${num(c.consumo)} kWh${(d.ucs || []).length ? `, somando ${(d.ucs || []).length + 1} unidades consumidoras` : ""})`);
-      if (bat) msg.push(`• ${numx(capKwh)} kWh em baterias (${d.bat_modelo}): quando a energia cai, mantêm as cargas essenciais ligadas por cerca de ${num(c.autonomia, 1)} h`);
+      if (bat) { const sol = autonomiaSolarDe(d); msg.push(`• ${numx(capKwh)} kWh em baterias (${d.bat_modelo}): quando a energia cai, mantêm as cargas essenciais ligadas por cerca de ${num(c.autonomia, 1)} h só com a bateria${sol ? `; com o solar ajudando, ${txtAut(sol.manha)} se a falta começa de manhã e ${txtAut(sol.noite)} se começa à noite` : ""}`); }
       msg.push("", `*O que está incluso*`,
         `• Projeto e homologação na concessionária`,
         `• Equipamentos, estrutura${d.estrutura ? ` (${String(d.estrutura).toLowerCase()})` : ""} e materiais`,
@@ -1240,6 +1267,7 @@
         </div>
         <p style="margin:8px 0 4px">Precisa de <b>${num(k.precisaKwh, 1)} kWh</b> de bateria (${num(UTIL_BAT * 100)}% de descarga e ${num(EFIC_INV * 100)}% de eficiência do inversor) → <b>${k.nBat} × ${numx(d.bat_kwh)} kWh</b>. Inversor: pelo menos <b>${num(k.contKva, 1)} kVA</b> contínuos e <b>${num(k.picoKva, 1)} kVA</b> na partida.</p>
         <p style="margin:0;${falta ? "color:var(--bad)" : ""}">Na proposta hoje: ${numx(b.cap)} kWh entregam ${num(b.entrega, 1)} kWh → ${falta ? `faltam ${num(k.kwh - b.entrega, 1)} kWh para as ${numx(k.horas)} h; dura cerca de ${num(Math.floor(b.autonomia * 10) / 10, 1)} h` : `atende as ${numx(k.horas)} h (autonomia de cerca de ${num(Math.floor(b.autonomia * 10) / 10, 1)} h nessa carga)`}. A proposta usa sempre esta lista.</p>
+        ${(() => { const sol = p.tipo === "bateria" ? autonomiaSolarDe(d) : null; return sol ? `<p style="margin:6px 0 0">Com o solar (${num(sol.solDia, 1)} kWh/dia em média, ${num(sol.kwp, 2)} kWp; carga de ${num(sol.consumoDia, 1)} kWh/dia): falta que começa de manhã → <b>${txtAut(sol.manha)}</b>; à noite → <b>${txtAut(sol.noite)}</b>.</p>` : ""; })()}
         <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button type="button" class="btn sm primary" id="prCargasUsar">Usar na proposta (${k.nBat} bateria${k.nBat > 1 ? "s" : ""} · ${num(k.mediaKw, 2)} kW)</button>
           <label class="pr-check" style="margin:0"><span><input type="checkbox" id="prCargasPdf" ${d.cargas_pdf !== false ? "checked" : ""}> Mostrar a lista de cargas no PDF</span></label></div>
         ${checaInversor(d, k)}`;
