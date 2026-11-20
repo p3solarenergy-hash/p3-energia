@@ -302,7 +302,7 @@
     $("#ltStatus", main).onchange = () => { sujo = true; };
     $("#ltPdf", main).onclick = async () => {
       try { if (sujo || !l.id) { const r = await salvar(); if (!l.id) { l.id = r.id; l.numero = r.numero; history.replaceState(null, "", `#/laudos/${encodeURIComponent(r.id)}`); window.P3.state.params = [r.id]; } } } catch (err) { return toast(err.message, "bad"); }
-      toast("Na janela de impressão, escolha \"Salvar como PDF\".", "ok"); v.imprimirHtml(montar(l), `${TIPOS[l.tipo]} - ${d.cliente || l.numero || ""}`);
+      if (!window.P3_PROPOSTA.ehCelular()) toast("Na janela de impressão, escolha \"Salvar como PDF\".", "ok"); v.imprimirHtml(montar(l), `${TIPOS[l.tipo]} - ${d.cliente || l.numero || ""}`);
     };
     const exc = $("#ltExcluir", main);
     if (exc) exc.onclick = async () => { if (!await confirmar("Excluir relatório", `Excluir o relatório ${esc(l.numero || "")}?`, "Excluir")) return; try { sujo = false; await api(`laudos/${encodeURIComponent(l.id)}`, { method: "DELETE" }); toast("Excluído.", "ok"); window.P3.go("#/laudos"); } catch (e) { toast(e.message, "bad"); } };
