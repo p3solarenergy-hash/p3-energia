@@ -36,7 +36,33 @@
     return `<div class="cb-msg ${m.autor === "eu" ? "eu" : ""}"><div class="cb-meta"><b>${esc(autor(m))}</b>${comGrupo ? ` · <a href="#" data-grupo="${esc(m.grupo_jid)}">${esc(m.grupo || "")}</a>` : ""} · ${esc(quando(m.enviado_em))}</div><div class="cb-txt">${corpo}${anexo}</div></div>`;
   }
 
+  // Estado das pontes (celular do Eduardo e do Rafael): o programa no PC avisa a cada 30 s.
+  // Sem aviso há mais de 3 minutos = ponte desligada. Se o celular precisa ler o QR, ele aparece aqui.
+  const PONTE_VELHA_MS = 3 * 60 * 1000;
+  let pontes = [], pontesTimer = null;
+  const estadoPonte = p => {
+    const sinal = Date.now() - new Date(p.atualizado_em).getTime();
+    if (sinal > PONTE_VELHA_MS) return { tom: "bad", rotulo: "Desligada", msg: `Sem sinal desde ${quando(p.atualizado_em)}. O programa da ponte não está rodando no computador do escritório: abra o INICIAR PONTE WHATSAPP.` };
+    if (!p.conectado) return { tom: "warn", rotulo: p.qr ? "Precisa reconectar" : "Reconectando…", msg: p.qr ? "No celular: WhatsApp → ⋮ → Aparelhos conectados → Conectar um aparelho, e aponte para o código abaixo." : (p.erro ? esc(p.erro) : "Tentando reconectar sozinha. Se demorar, o código aparece aqui.") };
+    return { tom: "ok", rotulo: "Ligada", msg: `Recebendo mensagens (sinal ${quando(p.atualizado_em)}).` };
+  };
+  function painelPonte() {
+    if (!pontes.length) return `<div class="note warn" style="margin-bottom:14px">Ponte do WhatsApp: nenhum sinal recebido ainda.</div>`;
+    return `<div class="section" style="margin-bottom:14px"><div style="display:flex;flex-wrap:wrap;gap:10px">${pontes.map(p => {
+      const e = estadoPonte(p);
+      const qr = e.tom === "warn" && p.qr ? `<div style="margin-top:8px"><img src="${esc(p.qr)}" width="220" height="220" alt="QR Code para reconectar" style="background:#fff;padding:6px;border-radius:8px"></div>` : "";
+      return `<div class="note ${e.tom}" style="flex:1 1 260px"><b>Ponte de ${esc(p.nome || p.perfil)}</b> · ${badge(e.rotulo, e.tom)}<div style="margin-top:4px">${e.msg}</div>${qr}</div>`;
+    }).join("")}</div></div>`;
+  }
+  async function atualizarPonte() {
+    try { pontes = await api("cerebro/ponte") || []; } catch { return; }
+    const el = document.getElementById("cbPonte");
+    if (el && window.P3.state.route === "cerebro") el.innerHTML = painelPonte();
+    else if (!el) clearInterval(pontesTimer);
+  }
+
   async function carregar() {
+    try { pontes = await api("cerebro/ponte") || []; } catch { pontes = []; }
     const [grupos, fichas, resumos] = await Promise.all([api("cerebro/grupos"), api("cerebro/fichas"), api("cerebro/resumos")]);
     dados = { grupos: grupos || [], fichas: fichas || [], resumos: resumos || [] };
   }
@@ -54,6 +80,7 @@
     const ultima = dados.grupos.find(g => g.ultima);
     main.innerHTML = `
       <div class="head"><div><p class="kicker">WhatsApp</p><h1>Cérebro</h1><p>Tudo o que passa nos grupos de trabalho: resumo do dia, fichas de cada usina e obra, busca em mensagens e áudios.</p></div></div>
+      <div id="cbPonte">${painelPonte()}</div>
       <form class="inline" id="cbBusca" style="margin-bottom:14px;align-items:flex-end">
         <label class="f" style="flex:1 1 320px">Buscar em tudo (mensagens e áudios)<input name="q" value="${esc(ui.busca)}" placeholder="Ex.: garantia Chint, Duzinho, kWh Robert Koch" autocomplete="off"></label>
         <button class="btn primary" type="submit">Buscar</button>
@@ -66,6 +93,7 @@
       </div>
       <div class="tabs section">${[["hoje", "Resumo do dia"], ["fichas", "Fichas"], ["grupos", "Grupos"], ["busca", "Busca"]].map(([k, l]) => `<button data-aba="${k}" class="${ui.aba === k ? "on" : ""}">${l}</button>`).join("")}</div>
       <div id="cbAba"></div>`;
+    clearInterval(pontesTimer); pontesTimer = setInterval(atualizarPonte, 15000);
     $$(".tabs button", main).forEach(b => b.onclick = () => { ui.aba = b.dataset.aba; ui.grupo = null; desenhar(main); });
     $("#cbBusca", main).onsubmit = e => { e.preventDefault(); ui.busca = e.target.q.value.trim(); ui.aba = "busca"; desenhar(main); };
     const el = $("#cbAba", main);

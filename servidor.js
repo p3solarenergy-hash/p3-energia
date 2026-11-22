@@ -298,6 +298,7 @@
         if (q.ate) c = c.lte("enviado_em", q.ate);
         return ok(await c).reverse();
       }
+      if (p[1] === "ponte") return ok(await sb.from("whatsapp_ponte_status").select("perfil, nome, conectado, qr, erro, enviadas, atualizado_em").order("perfil"));
       if (p[1] === "fichas") return ok(await sb.from("cerebro_fichas").select("*").order("atualizado_em", { ascending: false }));
       if (p[1] === "resumos") return ok(await sb.from("cerebro_resumos").select("*").order("dia", { ascending: false }).limit(14));
       if (p[1] === "midia") {
