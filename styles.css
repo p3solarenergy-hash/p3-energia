@@ -357,3 +357,8 @@ tr.grupo td { background: var(--panel-2); font-size: 13px; padding-top: 10px; }
 .cb-resumo p { margin: 0 0 10px; } .cb-resumo h3 { margin: 12px 0 6px; font-size: 14px; }
 .cb-dia { border-top: 1px solid var(--line-2); padding: 6px 0; }
 @media (max-width: 640px) { .cb-msg { margin-right: 0; } .cb-msg.eu { margin-left: 0; } .cb-fichas { grid-template-columns: 1fr; } }
+.cb-selos { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.cb-periodo { font-size: 12px; margin: 4px 0 0; }
+.cb-alerta { margin: 6px 0; font-size: 12.5px; padding: 6px 9px; }
+.cb-itens li .badge { font-size: 10.5px; padding: 1px 6px; vertical-align: 1px; }
+.cb-itens li.cb-feita { color: var(--muted); text-decoration: line-through; }
