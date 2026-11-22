@@ -234,7 +234,7 @@
         if (row.hora && !/^\d{2}:\d{2}$/.test(String(row.hora))) throw new Error("Hora deve ser HH:MM.");
       }
       if (table === "propostas") {
-        if (!["ev", "solar", "bateria", "manutencao"].includes(row.tipo)) throw new Error("Tipo de proposta: carregador EV, solar, solar com bateria ou manutenção.");
+        if (!["ev", "solar", "bateria", "manutencao", "analisador"].includes(row.tipo)) throw new Error("Tipo de proposta: carregador EV, solar, solar com bateria, manutenção ou analisador de energia.");
         if (row.status && !["rascunho", "enviada", "aceita", "executada", "recusada"].includes(row.status)) throw new Error("Situação da proposta inválida.");
       }
       if (table === "usina_mes") {
