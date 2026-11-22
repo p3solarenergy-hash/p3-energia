@@ -15,7 +15,7 @@
   const dataLonga = iso => { const [a, m, d] = String(iso || hoje()).split("-").map(Number); return `${d} de ${MESES[m - 1]} de ${a}`; };
   const mesAno = iso => { const [a, m] = String(iso || hoje()).split("-").map(Number); return `${MESES[m - 1]} ${a}`; };
 
-  const TIPOS = { solar: "Energia solar", bateria: "Bateria (com ou sem solar)", ev: "Carregador EV", manutencao: "Manutenção" };
+  const TIPOS = { solar: "Energia solar", bateria: "Bateria (com ou sem solar)", ev: "Carregador EV", manutencao: "Manutenção", analisador: "Analisador de energia" };
   const STATUS = { rascunho: ["Rascunho", ""], enviada: ["Enviada", "info"], aceita: ["Aceita", "ok"], executada: ["Executada", "ok"], recusada: ["Recusada", "bad"] };
   const VENDEDORES = {
     eduardo: { nome: "Eduardo Berger Prochet", tel: "(43) 98861-7800", email: "eduardo@p3energy.com.br" },
@@ -74,6 +74,21 @@
     fiscal_pct: 6, markup_3x: 60, markup_anual: 50, markup_avulso: 50, arredondar: true, tarifa_kwh: 0.82,
     inclusos: "Visita técnica com check-list completo\nReaperto dos grampos de fixação dos módulos\nRevisão da força mecânica nas estruturas do sistema\nLimpeza e reaperto dos terminais elétricos\nLimpeza da carcaça e dos exaustores do inversor\nLimpeza dos módulos (1 vez ao ano)",
     exclusos: "Substituição de componentes\nHospedagem e alimentação\nLimpeza dos módulos mais de 1 vez ao ano\nDeslocamento mais de 1 vez ao ano"
+  };
+  // Análise de energia: aluguel do analisador da P3 (garras de tensão + TCs no quadro), por período (dia, semana ou mês)
+  // ou por equipamento medido, com instalação, retirada e relatório exportado. Preços vazios = calculados pela calculadora.
+  PADRAO.analisador = {
+    equip_modelo: "Analisador de energia", equip_corrente: "", geracao_propria: false, endereco: "",
+    modo: "periodo", periodo_un: "semana", periodo_qtd: 1, equipamentos: [],
+    preco_dia: "", preco_semana: "", preco_mes: "", visitas: "", km: 0, preco_ponto: 0,
+    horas_relatorio: 4, horas_rel_equip: 1, valor_hora: 150, art: false, art_valor: 0, reposicao: "",
+    // Calculadora (não sai no PDF): o analisador se paga em vida_anos alugando dias_ano por ano.
+    valor_equip: 30000, vida_anos: 5, dias_ano: 100, margem_aluguel: 150, desc_semana: 40, desc_mes: 65,
+    km_custo: 1.75, custo_hora: 60, horas_visita: 2, markup_servico: 50, fiscal_pct: 6, arredondar: true,
+    objetivo: "",
+    pagamento: "50% na instalação do analisador\n50% na entrega do relatório",
+    resp_p3: "Instalação das garras de tensão e dos TCs no quadro, com segurança (NR-10)\nConfiguração do analisador e conferência das leituras\nRetirada do equipamento ao fim da medição\nExportação dos dados e relatório técnico com a análise",
+    resp_cliente: "Acesso seguro ao quadro elétrico no dia da instalação e da retirada\nGuarda do equipamento no local durante a medição (responde por dano, furto ou perda)\nNão desligar nem mexer no analisador durante a medição\nInformar a rotina de funcionamento dos equipamentos no período"
   };
   PADRAO.bateria = { ...PADRAO.solar, bat_qtd: 1, bat_kwh: 10, bat_modelo: "Bateria de lítio LiFePO4", inv_hibrido: "Inversor híbrido", carga_critica_kw: 2, valor_bateria: 0, bat_garantia: "10 anos ou 6.000 ciclos", cargas: [], cargas_pdf: true,
     // bat_modo: "solar" = solar + bateria; "bateria" = só bateria (sem solar); "ambas" = as duas opções na mesma proposta.
@@ -499,7 +514,46 @@
     return { kwp, mod, km, limpeza, visita, prev, custo, fiscal, parcela3, parcela12, avista, plano, monitAnual, monitCusto, monitVenda, visitaCusto, visitaPreco, limpezaCusto, limpezaPreco,
       linhas, investimento, custoTotal, lucro: r2(investimento - custoTotal), economiaAnual, pctEconomia: economiaAnual ? plano / economiaAnual : 0 };
   }
-  const calc = p => p.tipo === "ev" ? calcEv(dadosDe(p)) : p.tipo === "manutencao" ? calcManut(dadosDe(p)) : soBateria(p) ? calcSoBateria(dadosDe(p)) : calcSolar(dadosDe(p), p.tipo);
+  // Análise de energia (aluguel do analisador):
+  //  custo do equipamento por dia = valor ÷ (vida × dias alugados por ano); diária = custo × (1 + margem) × (1 + fiscal), em R$ 10;
+  //  semana = 7 diárias − desconto; mês = 30 diárias − desconto (preço preenchido na tela vale mais que o calculado);
+  //  visita (instalar/retirar/trocar de equipamento) = (km × 2 × R$/km + horas × custo da hora) × (1 + margem do serviço) × (1 + fiscal);
+  //  relatório = horas × valor da hora (+ horas por equipamento no modo por equipamento).
+  const UN_DIAS = { dia: 1, semana: 7, mes: 30 }, UN_NOME = { dia: ["dia", "dias"], semana: ["semana", "semanas"], mes: ["mês", "meses"] };
+  const unTxt = (q, u) => `${numx(q)} ${(UN_NOME[u] || UN_NOME.dia)[q === 1 ? 0 : 1]}`;
+  function calcAnalisador(d) {
+    const fis = 1 + n(d.fiscal_pct) / 100, arr10 = v => Math.ceil(v / 10 - 1e-9) * 10, arr = v => d.arredondar ? Math.ceil(v / 5 - 1e-9) * 5 : r2(v);
+    const custoDia = r2(n(d.valor_equip) / Math.max(1, n(d.vida_anos) * n(d.dias_ano)));
+    const diariaCalc = arr10(custoDia * (1 + n(d.margem_aluguel) / 100) * fis);
+    const tab = {
+      dia: d.preco_dia !== "" && d.preco_dia != null ? n(d.preco_dia) : diariaCalc,
+      semana: d.preco_semana !== "" && d.preco_semana != null ? n(d.preco_semana) : arr10(diariaCalc * 7 * (1 - n(d.desc_semana) / 100)),
+      mes: d.preco_mes !== "" && d.preco_mes != null ? n(d.preco_mes) : arr10(diariaCalc * 30 * (1 - n(d.desc_mes) / 100))
+    };
+    const porEquip = d.modo === "equipamento", eqs = (d.equipamentos || []).filter(e => String(e.nome || "").trim() || n(e.dias));
+    const un = UN_DIAS[d.periodo_un] ? d.periodo_un : "semana", qtd = Math.max(1, n(d.periodo_qtd));
+    const dias = porEquip ? eqs.reduce((s, e) => s + Math.max(1, n(e.dias)), 0) : qtd * UN_DIAS[un];
+    const linhas = [];
+    if (porEquip) {
+      const aluguel = r2(dias * tab.dia);
+      linhas.push({ k: "aluguel", nome: "Análise por equipamento", det: `${eqs.length} equipamento(s) · ${unTxt(dias, "dia")} de medição no total · ${brl(tab.dia)} por dia`, preco: aluguel, custo: r2(dias * custoDia) });
+      if (eqs.length && n(d.preco_ponto)) linhas.push({ k: "pontos", nome: "Preparação de cada equipamento", det: `${eqs.length} × ${brl(n(d.preco_ponto))}: configuração e conferência das leituras`, preco: r2(eqs.length * n(d.preco_ponto)), custo: r2(eqs.length * n(d.custo_hora)) });
+    } else {
+      linhas.push({ k: "aluguel", nome: "Aluguel do analisador", det: `${unTxt(qtd, un)} de medição · ${brl(tab[un])} por ${UN_NOME[un][0]}`, preco: r2(qtd * tab[un]), custo: r2(dias * custoDia) });
+    }
+    const visitasAuto = porEquip ? Math.max(2, eqs.length + 1) : 2;
+    const visitas = d.visitas !== "" && d.visitas != null ? Math.max(0, n(d.visitas)) : visitasAuto;
+    const visitaCusto = r2(n(d.km) * 2 * n(d.km_custo) + n(d.horas_visita) * n(d.custo_hora));
+    const visitaPreco = arr(visitaCusto * (1 + n(d.markup_servico) / 100) * fis);
+    if (visitas && visitaPreco) linhas.push({ k: "visitas", nome: porEquip ? "Instalação, trocas e retirada" : "Instalação e retirada", det: `${num(visitas)} visita(s) técnica(s)${n(d.km) ? ` · ${num(n(d.km))} km até o local` : ""}`, preco: r2(visitas * visitaPreco), custo: r2(visitas * visitaCusto) });
+    const horasRel = n(d.horas_relatorio) + (porEquip ? eqs.length * n(d.horas_rel_equip) : 0);
+    if (horasRel) linhas.push({ k: "relatorio", nome: "Relatório técnico", det: porEquip ? `dados exportados e análise de cada equipamento` : "dados exportados, gráficos e análise", preco: arr(horasRel * n(d.valor_hora)), custo: r2(horasRel * n(d.custo_hora)) });
+    if (d.art && n(d.art_valor)) linhas.push({ k: "art", nome: "ART do serviço", det: "Anotação de Responsabilidade Técnica (CREA)", preco: r2(n(d.art_valor)), custo: r2(n(d.art_valor)) });
+    const investimento = r2(linhas.reduce((s, l) => s + l.preco, 0)), imposto = r2(investimento * n(d.fiscal_pct) / 100);
+    const custoTotal = r2(linhas.reduce((s, l) => s + l.custo, 0) + imposto); // custos + imposto sobre a venda
+    return { custoDia, diariaCalc, tab, porEquip, eqs, un, qtd, dias, visitas, visitasAuto, visitaCusto, visitaPreco, horasRel, linhas, investimento, custoTotal, imposto, lucro: r2(investimento - custoTotal) };
+  }
+  const calc = p => p.tipo === "ev" ? calcEv(dadosDe(p)) : p.tipo === "manutencao" ? calcManut(dadosDe(p)) : p.tipo === "analisador" ? calcAnalisador(dadosDe(p)) : soBateria(p) ? calcSoBateria(dadosDe(p)) : calcSolar(dadosDe(p), p.tipo);
 
   // ───────── a proposta (HTML das páginas) ─────────
   const LOGO = (cor1, cor2) => `<svg class="logo" viewBox="129 169 1743 757" role="img" aria-label="P3 Energy"><path fill="${cor1}" d="M129 169H993V623H320V461H817V313H287V926H129Z"/><path fill="${cor2}" d="M1052 169H1872V926H1052V771H1731V313H1052Z"/><rect fill="${cor2}" x="1061" y="461" width="636" height="162"/><text fill="${cor1}" x="330" y="923" font-size="206" textLength="690" lengthAdjust="spacingAndGlyphs" font-family="'Arial Narrow','Roboto Condensed',Arial,sans-serif">ENERGY</text></svg>`;
@@ -538,7 +592,7 @@
 
   function montar(p) {
     const d = dadosDe(p), c = calc(p), v = VENDEDORES[d.vendedor] || VENDEDORES.eduardo;
-    const paginas = p.tipo === "ev" ? paginasEv(p, d, c, v) : p.tipo === "manutencao" ? paginasManut(p, d, c, v) : paginasSolar(p, d, c, v);
+    const paginas = p.tipo === "ev" ? paginasEv(p, d, c, v) : p.tipo === "manutencao" ? paginasManut(p, d, c, v) : p.tipo === "analisador" ? paginasAnalisador(p, d, c, v) : paginasSolar(p, d, c, v);
     const total = String(paginas.length).padStart(2, "0");
     const corpo = paginas.map((pg, i) => pg.replace("{{PG}}", `${String(i + 1).padStart(2, "0")} / ${total}`)).join("");
     return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Proposta ${esc(p.numero || "")} ${esc(d.cliente || "")}</title><style>${CSS}</style></head><body>${corpo}</body></html>`;
@@ -880,6 +934,65 @@
     return pgs;
   }
 
+  // Páginas da análise de energia (aluguel do analisador).
+  function paginasAnalisador(p, d, c, v) {
+    const pgs = [], bi = !!d.geracao_propria;
+    const periodoTxt = c.porEquip ? `${c.eqs.length} equipamento(s)` : unTxt(c.qtd, c.un);
+    pgs.push(capa(p, d, "Análise<br>de energia", `Medição com analisador de energia e relatório técnico${d.cidade ? ` · ${d.cidade}` : ""}`,
+      [[periodoTxt, c.porEquip ? "analisados um a um" : "de medição contínua"], [bi ? "Bidirecional" : "Consumo", bi ? "consumo e geração própria" : "fluxo da rede para a carga"], ["Relatório", "técnico com a análise"]]));
+    pgs.push(empresa(d));
+    const obj = linhas(d.objetivo);
+    pgs.push(`<section class="slide">${topo("Por que medir", "Conheça a sua energia de verdade")}
+      <div class="grid g2" style="gap:56px">
+        <div>${obj.length ? obj.map(l => `<p>${esc(l)}</p>`).join("") : `<p>A <b>análise de energia</b> registra, minuto a minuto, como a energia chega e é usada na sua instalação. Com os dados na mão, as decisões deixam de ser estimativa.</p>
+          <p class="mut">O analisador fica instalado no quadro durante o período combinado e grava todas as grandezas elétricas; no fim, exportamos os dados e entregamos o relatório com a análise.</p>`}</div>
+        <ul class="lista">
+          <li>Dimensionar com precisão energia solar, baterias ou carregadores de veículos elétricos</li>
+          <li>Conferir a demanda contratada e o fator de potência (evitar multa de reativo)</li>
+          <li>Encontrar equipamentos que consomem demais ou fora do horário</li>
+          <li>Investigar quedas, oscilações de tensão e desligamentos</li>
+          ${bi ? "<li>Ver quanto da geração própria é consumido na hora e quanto vai para a rede</li>" : "<li>Comprovar problemas na rede junto à concessionária</li>"}
+        </ul>
+      </div>${pe(d)}</section>`);
+    pgs.push(`<section class="slide dark">${topo("O que medimos", "Todas as grandezas da energia", true)}
+      <div class="grid g3">
+        <div class="card"><small>Tensão</small><p style="font-size:19px;margin:0">Por fase, com mínimos, máximos e oscilações ao longo do período.</p></div>
+        <div class="card"><small>Corrente</small><p style="font-size:19px;margin:0">Por fase, com os picos de partida e o desequilíbrio entre fases.</p></div>
+        <div class="card lim"><small>Potência e energia</small><p style="font-size:19px;margin:0">Ativa, reativa e aparente; consumo em kWh e demanda ao longo do dia.</p></div>
+        <div class="card"><small>Fator de potência</small><p style="font-size:19px;margin:0">Mostra a energia reativa e o risco de cobrança extra na conta.</p></div>
+        <div class="card"><small>Frequência</small><p style="font-size:19px;margin:0">Estabilidade da rede durante toda a medição.</p></div>
+        <div class="card ${bi ? "lim" : ""}"><small>${bi ? "Fluxo bidirecional" : "Histórico"}</small><p style="font-size:19px;margin:0">${bi ? "Mede nos dois sentidos: o que vem da rede e o que a geração própria injeta." : "Registro contínuo de tudo, para ver o comportamento por hora e por dia."}</p></div>
+      </div>
+      <p class="mut" style="margin-top:22px;font-size:17px">${[d.equip_modelo && d.equip_modelo !== "Analisador de energia" ? `Equipamento: ${esc(d.equip_modelo)}` : "", d.equip_corrente ? esc(d.equip_corrente) : ""].filter(Boolean).map(x => x + " · ").join("")}Garras de tensão e TCs instalados no quadro, sem interromper a operação sempre que possível.</p>
+      ${pe(d)}</section>`);
+    if (c.porEquip && c.eqs.length) {
+      const grande = c.eqs.length > 10;
+      pgs.push(`<section class="slide">${topo("Escopo", "Equipamentos analisados")}
+        <div class="grid g2" style="gap:${grande ? 10 : 14}px 28px">${c.eqs.map((e, i) => `<div class="passo" style="font-size:${grande ? 17 : 20}px"><i style="${grande ? "flex-basis:34px;height:34px;font-size:14px" : ""}">${String(i + 1).padStart(2, "0")}</i><span><b>${esc(e.nome || `Equipamento ${i + 1}`)}</b> · ${unTxt(Math.max(1, n(e.dias)), "dia")} de medição</span></div>`).join("")}</div>
+        <p class="nota">Um analisador por vez: a cada troca, a equipe muda as garras e os TCs para o próximo equipamento.</p>${pe(d)}</section>`);
+    }
+    pgs.push(`<section class="slide">${topo("Investimento", "Sua análise de energia")}
+      <div class="grid" style="grid-template-columns:1fr 1.5fr;gap:40px">
+        <div class="grid" style="gap:16px;align-content:start">
+          <div class="card"><small>Cliente</small><b style="font-size:22px">${esc(d.cliente || "—")}</b>${d.endereco || d.cidade ? `<div class="mut">${esc([d.endereco, d.cidade].filter(Boolean).join(" · "))}</div>` : ""}</div>
+          <div class="card esc"><small>${c.porEquip ? "Análise por equipamento" : "Período de medição"}</small><b class="big">${esc(periodoTxt)}</b><span>${c.porEquip ? `${unTxt(c.dias, "dia")} de medição no total` : bi ? "medição bidirecional" : "medição contínua"}</span></div>
+          ${linhas(d.pagamento).length ? `<div class="card"><small>Pagamento</small>${linhas(d.pagamento).map(esc).join("<br>")}</div>` : ""}
+        </div>
+        <div><table><thead><tr><th>Item</th><th class="n">Valor</th></tr></thead><tbody>
+          ${c.linhas.map(l => `<tr><td><b>${esc(l.nome)}</b><small>${esc(l.det)}</small></td><td class="n">${brl(l.preco)}</td></tr>`).join("")}
+          <tr class="tot"><td>Total</td><td class="n">${brl(c.investimento)}</td></tr></tbody></table>
+          ${c.porEquip ? "" : `<p class="nota">Tabela do aluguel: ${brl(c.tab.dia)} por dia · ${brl(c.tab.semana)} por semana · ${brl(c.tab.mes)} por mês. Dias a mais são cobrados pela diária.</p>`}</div>
+      </div>${pe(d)}</section>`);
+    pgs.push(`<section class="slide">${topo("Condições", "Responsabilidades")}
+      <div class="grid g2" style="gap:44px">
+        <div class="card"><h3 style="color:var(--ver)">P3 Energy</h3><ul class="lista">${linhas(d.resp_p3).map(l => `<li>${esc(l)}</li>`).join("")}</ul></div>
+        <div class="card"><h3 style="color:var(--esc)">Cliente</h3><ul class="lista">${linhas(d.resp_cliente).map(l => `<li>${esc(l)}</li>`).join("")}</ul></div>
+      </div>
+      ${n(d.reposicao) ? `<p class="nota">Valor de reposição do analisador e dos TCs: ${brl(n(d.reposicao))}, cobrado em caso de dano, furto ou perda enquanto o equipamento estiver no local.</p>` : ""}${pe(d)}</section>`);
+    pgs.push(contato(d, v, ["Aprovação da proposta", "Agendamento da instalação", c.porEquip ? "Medição de cada equipamento" : "Medição durante o período", "Retirada e entrega do relatório"], "Decisões de energia com base em dados medidos."));
+    return pgs;
+  }
+
   // ───────── texto para mandar junto com o PDF no WhatsApp ─────────
   // Um texto curto por tipo, com os números da proposta, a validade e quem está mandando.
   function textoWhats(p) {
@@ -946,6 +1059,16 @@
       if (linhas(d.exclusos).length) msg.push("", `Não inclui: ${linhas(d.exclusos).map(x => x.charAt(0).toLowerCase() + x.slice(1)).join("; ")}.`);
       if (d.srv_preventiva && c.economiaAnual) msg.push("", `O sistema economiza cerca de ${brl(c.economiaAnual)} por ano. A manutenção mantém essa economia, evita paradas e prolonga a vida útil dos equipamentos.`);
     }
+    if (p.tipo === "analisador") {
+      msg.push(`Segue em anexo a proposta${nr} de análise de energia${para} 📊`, "",
+        `*Como funciona*`,
+        `• Instalamos o analisador de energia${[d.equip_modelo !== "Analisador de energia" && d.equip_modelo, d.equip_corrente].filter(Boolean).length ? ` (${[d.equip_modelo !== "Analisador de energia" && d.equip_modelo, d.equip_corrente].filter(Boolean).join(", ")})` : ""} no quadro, com as garras de tensão e os TCs`,
+        c.porEquip ? `• Medimos ${c.eqs.length} equipamento(s), um por vez: ${c.eqs.map(e => `${e.nome || "equipamento"} (${unTxt(Math.max(1, n(e.dias)), "dia")})`).join(", ")}` : `• Ele grava tudo durante ${unTxt(c.qtd, c.un)}`,
+        `• Registra tensão, corrente, potências, fator de potência, frequência e o histórico completo${d.geracao_propria ? ", nos dois sentidos (consumo e geração própria)" : ""}`,
+        `• No fim, retiramos o equipamento, exportamos os dados e entregamos o relatório técnico`, "",
+        `*Investimento*`, ...c.linhas.map(l => `• ${l.nome}: ${brl(l.preco)}`), `• *Total: ${brl(c.investimento)}*`);
+      if (linhas(d.pagamento).length) msg.push("", `*Pagamento*`, ...linhas(d.pagamento).map(x => `• ${x}`));
+    }
     msg.push("", `A proposta vale até ${validade}. Qualquer dúvida, é só me chamar por aqui. Posso te ligar para explicar os detalhes?`, "", `${v.nome} · P3 Energy`, v.tel);
     return msg.join("\n");
   }
@@ -999,7 +1122,7 @@
     lista.sort((a, b) => String(b.criado_em).localeCompare(String(a.criado_em)));
     const soma = s => lista.filter(p => p.status === s).reduce((t, p) => t + n(p.valor_total), 0);
     main.innerHTML = `
-      <div class="head"><div><p class="kicker">Comercial</p><h1>Propostas</h1><p>Proposta da P3 Energy para carregador EV, energia solar ou solar com bateria, com os cálculos prontos e o PDF no padrão da P3.</p></div>
+      <div class="head"><div><p class="kicker">Comercial</p><h1>Propostas</h1><p>Proposta da P3 Energy para carregador EV, energia solar, solar com bateria, manutenção ou análise de energia (aluguel do analisador), com os cálculos prontos e o PDF no padrão da P3.</p></div>
         <div class="actions">${Object.entries(TIPOS).map(([k, l]) => `<a class="btn ${k === "solar" ? "primary" : ""}" href="#/propostas/nova/${k}">+ ${esc(l)}</a>`).join("")}</div></div>
       <div class="kpis">${window.P3.kpi("Propostas", String(lista.length), `${lista.filter(p => p.status === "enviada").length} enviada(s) aguardando`, "lead")}${window.P3.kpi("Em negociação", brl(soma("enviada")), "enviadas")}${window.P3.kpi("Aceitas", brl(soma("aceita")), `${lista.filter(p => p.status === "aceita").length} proposta(s)`)}</div>
       <div class="section"><div class="table-wrap"><table><thead><tr><th>Nº</th><th>Cliente</th><th>Tipo</th><th>Cidade</th><th>Data</th><th class="n">Valor</th><th>Situação</th></tr></thead><tbody>
@@ -1023,7 +1146,7 @@
     if (id === "nova") {
       if (!TIPOS[tipoNovo]) return window.P3.go("#/propostas");
       p = { tipo: tipoNovo, status: "rascunho", dados: novaDados(tipoNovo) };
-      if (tipoNovo !== "ev" && tipoNovo !== "manutencao") Object.assign(p.dados, { simultaneidade: 30, fator_kwh_kwp: GER_PADRAO.telhado, eco_v2: true, ano_inicio: new Date().getFullYear() });
+      if (!["ev", "manutencao", "analisador"].includes(tipoNovo)) Object.assign(p.dados, { simultaneidade: 30, fator_kwh_kwp: GER_PADRAO.telhado, eco_v2: true, ano_inicio: new Date().getFullYear() });
     } else {
       main.innerHTML = `<div class="loading">Abrindo a proposta…</div>`;
       try { p = await api(`propostas/${encodeURIComponent(id)}`); } catch (e) { main.innerHTML = `<div class="note bad">${esc(e.message)}</div>`; return; }
@@ -1095,6 +1218,28 @@
         ${campo("markup_avulso", "Margem dos avulsos (%)", "num")}${campo("tarifa_kwh", "Tarifa para a economia (R$/kWh)", "num")}${campo("arredondar", "Arredondar preços para R$ 5", "check")}
         <p class="muted wide" id="prManut" style="margin:4px 0 0;font-size:12.5px;white-space:pre-line"></p>`)
       + bloco("Textos", `${campo("inclusos", "Serviços inclusos (um por linha)", "area", 6)}${campo("exclusos", "Itens exclusos (um por linha)", "area", 4)}`, false);
+    // Análise de energia: "am" marca o que só aparece num modo (periodo / equipamento).
+    const soModo = (m, html) => html.replace(/^(\s*)<(label|div|p) /, `$1<$2 data-am="${m}" `);
+    const analisador = () => bloco("Analisador e medição", `
+        ${campo("equip_modelo", "Analisador (nome na proposta)")}${campo("equip_corrente", "Faixa de corrente / TCs (ex.: TCs até 1.000 A) — vazio = não mostra")}
+        ${campo("geracao_propria", "Cliente tem geração própria (medição bidirecional)", "check")}${campo("endereco", "Endereço")}
+        ${escolha("modo", "Como cobrar", [["periodo", "Por período (dia, semana ou mês)"], ["equipamento", "Por equipamento analisado"]])}
+        ${soModo("periodo", escolha("periodo_un", "Período", [["dia", "Dia"], ["semana", "Semana"], ["mes", "Mês"]]))}${soModo("periodo", campo("periodo_qtd", "Quantidade do período", "num"))}
+        ${soModo("equipamento", `<div class="wide" id="prEqs"></div>`)}
+        ${campo("objetivo", "Objetivo da medição — vazio = texto automático (um parágrafo por linha)", "area", 3)}`)
+      + bloco("Preços", `
+        ${campo("preco_dia", "Diária (R$) — vazio = calculada", "num")}${campo("preco_semana", "Semana (R$) — vazio = calculada", "num")}${campo("preco_mes", "Mês (R$) — vazio = calculado", "num")}
+        ${campo("km", "Distância até o cliente (km, ida)", "num")}${campo("visitas", "Visitas técnicas — vazio = automático", "num")}${soModo("equipamento", campo("preco_ponto", "Taxa extra por equipamento (R$) — opcional; as trocas já entram nas visitas", "num"))}
+        ${campo("horas_relatorio", "Horas do relatório", "num")}${soModo("equipamento", campo("horas_rel_equip", "Horas de relatório por equipamento", "num"))}${campo("valor_hora", "Valor da hora técnica (R$)", "num")}
+        ${campo("art", "Incluir ART", "check")}${campo("art_valor", "Valor da ART (R$)", "num")}${campo("reposicao", "Valor de reposição do analisador (R$) — vazio = não mostra", "num")}
+        ${campo("pagamento", "Condições de pagamento (uma por linha)", "area", 2)}`)
+      + bloco("Calculadora (custo do analisador · não sai no PDF)", `
+        ${campo("valor_equip", "Valor do analisador + TCs (R$)", "num")}${campo("vida_anos", "Vida útil (anos)", "num")}${campo("dias_ano", "Dias alugados por ano", "num")}
+        ${campo("margem_aluguel", "Margem sobre o custo do aluguel (%)", "num")}${campo("desc_semana", "Desconto da semana sobre 7 diárias (%)", "num")}${campo("desc_mes", "Desconto do mês sobre 30 diárias (%)", "num")}
+        ${campo("km_custo", "Custo do km rodado (R$)", "num")}${campo("custo_hora", "Custo da hora técnica (R$)", "num")}${campo("horas_visita", "Horas por visita", "num")}
+        ${campo("markup_servico", "Margem das visitas (%)", "num")}${campo("fiscal_pct", "Imposto sobre a venda (%) — confirmar com o contador", "num")}${campo("arredondar", "Arredondar para R$ 5", "check")}
+        <p class="muted wide" id="prAnal" style="margin:4px 0 0;font-size:12.5px;white-space:pre-line"></p>`)
+      + bloco("Responsabilidades", `${campo("resp_p3", "P3 Energy (uma por linha)", "area", 4)}${campo("resp_cliente", "Cliente (uma por linha)", "area", 4)}`, false);
     // Consumo e conta pela Lei 14.300: Grupo B ou A, tarifas da ANEEL (distribuidora/subgrupo) ou da fatura, impostos e regra.
     const so = (g, html) => html.replace(/^<label class="f/, `<label data-g="${g}" class="f`);
     const blocoEco = () => bloco("Consumo, tarifas e economia", `
@@ -1134,8 +1279,8 @@
         <div class="actions"><select id="prStatus" aria-label="Situação">${opts(Object.entries(STATUS).map(([k, [l]]) => [k, l]), p.status)}</select>
           <button class="btn" id="prWhatsBtn">Texto p/ WhatsApp</button><button class="btn" id="prPdf">Gerar PDF</button><button class="btn primary" id="prSalvar">Salvar</button></div></div>
       <div class="pr-ed">
-        <div class="pr-form">${comum}${p.tipo === "ev" ? ev() : p.tipo === "manutencao" ? manut() : solar()}
-          <div class="pr-acoes">${p.id && p.status === "aceita" && !p.obra_id ? `<button class="btn" id="prObra">Virar obra</button>` : ""}${p.obra_id ? `<a class="btn ghost" href="#/obras">Ver em Obras</a>` : ""}${p.id && ["aceita", "executada"].includes(p.status) ? `<a class="btn" href="#/laudos/proposta/${encodeURIComponent(p.id)}">Relatório técnico</a>` : ""}${p.id ? `<button class="btn ghost" id="prCopia">Duplicar</button><button class="btn ghost danger" id="prExcluir">Excluir</button>` : ""}</div></div>
+        <div class="pr-form">${comum}${p.tipo === "ev" ? ev() : p.tipo === "manutencao" ? manut() : p.tipo === "analisador" ? analisador() : solar()}
+          <div class="pr-acoes">${p.id && p.status === "aceita" && !p.obra_id ? `<button class="btn" id="prObra">Virar obra</button>` : ""}${p.obra_id ? `<a class="btn ghost" href="#/obras">Ver em Obras</a>` : ""}${p.id && p.tipo !== "analisador" && ["aceita", "executada"].includes(p.status) ? `<a class="btn" href="#/laudos/proposta/${encodeURIComponent(p.id)}">Relatório técnico</a>` : ""}${p.id ? `<button class="btn ghost" id="prCopia">Duplicar</button><button class="btn ghost danger" id="prExcluir">Excluir</button>` : ""}</div></div>
         <div class="pr-prev"><iframe id="prFrame" title="Prévia da proposta"></iframe></div>
       </div>`;
 
@@ -1156,7 +1301,15 @@
           `Monitoramento: custo ${brl(c.monitCusto)}/mês → venda ${brl(c.monitVenda)}/mês. Limpeza avulsa: custo ${brl(c.limpezaCusto)} → ${brl(c.limpezaPreco)}. Visita avulsa: custo ${brl(c.visitaCusto)} → ${brl(c.visitaPreco)}.`,
           `Proposta: ${brl(c.investimento)} · custo com fiscal ${brl(c.custoTotal)} · lucro ${brl(c.lucro)}${c.investimento ? ` (${num(c.lucro / c.investimento * 100, 1)}%)` : ""}.`
         ].join("\n");
-        $("#prResumo", main).textContent = p.tipo === "manutencao"
+        const ca = $("#prAnal", main);
+        if (ca && p.tipo === "analisador") ca.textContent = [
+          `Custo do analisador: ${brl(c.custoDia)} por dia alugado → diária calculada ${brl(c.diariaCalc)}. Tabela usada: dia ${brl(c.tab.dia)} · semana ${brl(c.tab.semana)} · mês ${brl(c.tab.mes)}.`,
+          `Visita: custo ${brl(c.visitaCusto)} → ${brl(c.visitaPreco)} cada · ${num(c.visitas)} visita(s)${d.visitas === "" || d.visitas == null ? " (automático)" : ""}. Relatório: ${numx(c.horasRel)} h.`,
+          `Proposta: ${brl(c.investimento)} · imposto ${brl(c.imposto)} · custos ${brl(r2(c.custoTotal - c.imposto))} · lucro ${brl(c.lucro)}${c.investimento ? ` (${num(c.lucro / c.investimento * 100, 1)}%)` : ""}.`
+        ].join("\n");
+        $("#prResumo", main).textContent = p.tipo === "analisador"
+          ? `${d.cliente || "Cliente"} · ${c.porEquip ? `${c.eqs.length} equipamento(s), ${unTxt(c.dias, "dia")}` : unTxt(c.qtd, c.un)} · ${brl(c.investimento)} · lucro ${brl(c.lucro)}`
+          : p.tipo === "manutencao"
           ? `${d.cliente || "Cliente"} · ${numx(c.kwp)} kWp · ${Math.round(c.mod)} módulos · ${c.linhas.map(l => l.nome.split(" (")[0]).join(" + ") || "nenhum serviço"} · ${brl(c.investimento)} · lucro ${brl(c.lucro)}`
           : p.tipo === "ev"
           ? `${d.cliente || "Cliente"} · ${c.qtd} carregador(es) · investimento ${brl(c.investimento)}${d.operacao ? ` · fixo mensal ${brl(n(d.manutencao_mensal) ? c.fixoCom : c.fixoSem)}` : ""}`
@@ -1185,8 +1338,9 @@
     };
     const NUMS = new Set(["validade_dias", "consumo_kwh", "conta_atual", "fio_b_pct", "qtd_modulos", "modulo_w", "fator_kwh_kwp", "valor_equip", "valor_impl", "juros_parcela", "reajuste", "degradacao", "anos", "bat_qtd", "bat_kwh", "carga_critica_kw", "valor_bateria", "valor_impl_bat", "qtd", "potencia_kw", "software_mensal", "manutencao_mensal",
       "c_km", "c_viagens_eng", "c_viagens_equipe", "c_pessoas", "c_dias", "c_margem_kwp", "c_imp_total", "c_imp_servico", "c_kit", "c_bateria", "c_estrutura", "c_transformador", "c_padrao", "c_descarregamento", "c_conexao", "c_comissao", "c_terrenista",
-      "kwp", "km", "beneficiarias", "simultaneidade", "icms_pct", "pis_cofins_pct", "fio_b_parcela", "ilum_publica", "ano_inicio", "demanda_kw", "consumo_fp", "consumo_p", "juros_equip", "juros_bat", "juros_impl", "garantia_meses", "fiscal_pct", "markup_3x", "markup_anual", "markup_avulso", "tarifa_kwh"]);
-    const OPCIONAL = new Set(["tarifa_kwh", "fio_b_kwh", "tar_demanda", "tar_fp", "tar_p", "fio_fp", "fio_p", "te_fp", "te_p", "avista", "custo_com_solar", "modulos", "avista_equip", "avista_bat", "avista_impl"]);
+      "kwp", "km", "beneficiarias", "simultaneidade", "icms_pct", "pis_cofins_pct", "fio_b_parcela", "ilum_publica", "ano_inicio", "demanda_kw", "consumo_fp", "consumo_p", "juros_equip", "juros_bat", "juros_impl", "garantia_meses", "fiscal_pct", "markup_3x", "markup_anual", "markup_avulso", "tarifa_kwh",
+      "periodo_qtd", "preco_ponto", "horas_relatorio", "horas_rel_equip", "valor_hora", "art_valor", "valor_equip", "vida_anos", "dias_ano", "margem_aluguel", "desc_semana", "desc_mes", "km_custo", "custo_hora", "horas_visita", "markup_servico"]);
+    const OPCIONAL = new Set(["tarifa_kwh", "fio_b_kwh", "tar_demanda", "tar_fp", "tar_p", "fio_fp", "fio_p", "te_fp", "te_p", "avista", "custo_com_solar", "modulos", "avista_equip", "avista_bat", "avista_impl", "preco_dia", "preco_semana", "preco_mes", "visitas", "reposicao"]);
     $$("[data-k]", main).forEach(el => {
       el.oninput = el.onchange = () => {
         const k = el.dataset.k;
@@ -1196,6 +1350,7 @@
         if (k === "instalacao") ajustarGeracao();
         if (k === "grupo") mostrarGrupo();
         if (k === "bat_modo") mostrarModo();
+        if (k === "modo" && p.tipo === "analisador") { if (d.modo === "equipamento" && !(d.equipamentos || []).length) d.equipamentos = [{ nome: "", dias: 1 }]; desenharEqs(); mostrarModoAn(); }
         if (["bat_kwh", "bat_qtd", "bat_modo"].includes(k)) resumoCargas();
         if (k === "fatura_uso") aplicarFatura();
       };
@@ -1219,6 +1374,19 @@
       $("#prInvMais", box).onclick = () => { d.investimento.push({ descricao: "", detalhe: "", valor: 0 }); desenharInv(); };
     };
     if (p.tipo === "ev") desenharInv();
+
+    // Análise por equipamento: nome e dias de medição de cada um.
+    const desenharEqs = () => {
+      const box = $("#prEqs", main); if (!box) return;
+      if (!Array.isArray(d.equipamentos)) d.equipamentos = [];
+      box.innerHTML = `<div class="pr-inv-t">Equipamentos a analisar</div>${d.equipamentos.map((e, i) => `<div class="pr-inv"><input data-e="${i}" data-c="nome" value="${esc(e.nome || "")}" placeholder="Equipamento (ex.: compressor 1)" aria-label="Equipamento"><input data-e="${i}" data-c="dias" inputmode="decimal" value="${esc(String(e.dias ?? "").replace(".", ","))}" placeholder="Dias" aria-label="Dias de medição"><span></span><button type="button" class="btn ghost sm" data-edel="${i}" aria-label="Tirar equipamento">✕</button></div>`).join("")}
+        <button type="button" class="btn sm" id="prEqMais">+ Equipamento</button>`;
+      $$("[data-e]", box).forEach(el => el.oninput = () => { const e = d.equipamentos[Number(el.dataset.e)]; e[el.dataset.c] = el.dataset.c === "dias" ? n(el.value) : el.value; sujo = true; atualizar(); });
+      $$("[data-edel]", box).forEach(b => b.onclick = () => { d.equipamentos.splice(Number(b.dataset.edel), 1); desenharEqs(); sujo = true; atualizar(); });
+      $("#prEqMais", box).onclick = () => { d.equipamentos.push({ nome: "", dias: 1 }); desenharEqs(); sujo = true; atualizar(); const ins = $$("[data-c='nome']", box); if (ins.length) ins[ins.length - 1].focus(); };
+    };
+    const mostrarModoAn = () => { $$("[data-am]", main).forEach(el => { el.style.display = el.dataset.am === (d.modo === "equipamento" ? "equipamento" : "periodo") ? "" : "none"; }); };
+    if (p.tipo === "analisador") { desenharEqs(); mostrarModoAn(); }
 
     // Modo da proposta de bateria: esconde o que é só do solar (ou só da opção sem solar).
     const mostrarModo = () => {
@@ -1487,10 +1655,10 @@
     const obra = $("#prObra", main);
     if (obra) obra.onclick = async () => {
       const c = calc(p);
-      const tipoObra = p.tipo === "manutencao" ? "Manutenção" : p.tipo === "ev" ? (d.corrente === "DC" ? "Eletroposto DC" : "Carregador EV comercial") : c.kwp >= 75 ? "Usina solar" : "Sistema solar residencial";
+      const tipoObra = p.tipo === "manutencao" ? "Manutenção" : p.tipo === "analisador" ? "Outros" : p.tipo === "ev" ? (d.corrente === "DC" ? "Eletroposto DC" : "Carregador EV comercial") : c.kwp >= 75 ? "Usina solar" : "Sistema solar residencial";
       if (!await confirmar("Virar obra", `Cria a obra "${esc(d.cliente || p.numero)}" (${esc(tipoObra)}) com venda de ${brl(c.investimento)} na tela Obras. Continuar?`, "Criar obra")) return;
       try {
-        const corpo = { nome: d.cliente || p.numero, contratante: p.tipo === "ev" ? "terceiro" : "p3", tipo: tipoObra, cidade: d.cidade, vendedor: (VENDEDORES[d.vendedor] || {}).nome, status: "andamento", modo: "simples", venda: c.investimento, kwp: p.tipo === "ev" ? null : c.kwp, custo: p.tipo === "manutencao" ? c.custoTotal : null, carregadores_dc: p.tipo === "ev" && d.corrente === "DC" ? c.qtd : null, carregadores_ac: p.tipo === "ev" && d.corrente === "AC" ? c.qtd : null, potencia_kw: p.tipo === "ev" ? n(d.potencia_kw) * c.qtd : null, data_inicio: hoje(), origem: "proposta", obs: `Gerada da proposta ${p.numero}.` };
+        const corpo = { nome: d.cliente || p.numero, contratante: p.tipo === "ev" ? "terceiro" : "p3", tipo: tipoObra, cidade: d.cidade, vendedor: (VENDEDORES[d.vendedor] || {}).nome, status: "andamento", modo: "simples", venda: c.investimento, kwp: p.tipo === "ev" || p.tipo === "analisador" ? null : c.kwp, custo: p.tipo === "manutencao" || p.tipo === "analisador" ? c.custoTotal : null, carregadores_dc: p.tipo === "ev" && d.corrente === "DC" ? c.qtd : null, carregadores_ac: p.tipo === "ev" && d.corrente === "AC" ? c.qtd : null, potencia_kw: p.tipo === "ev" ? n(d.potencia_kw) * c.qtd : null, data_inicio: hoje(), origem: "proposta", obs: `Gerada da proposta ${p.numero}.` };
         // Solar: a obra já nasce com o orçamento detalhado da planilha de obra solar e o valor da proposta como contratado.
         const os = (p.tipo === "solar" || p.tipo === "bateria") && !soBateria(p) && obraSolar(d, p.tipo);
         if (os) Object.assign(corpo, { modo: "detalhado", itens: os.obra.itens.filter(i => n(i.qtd) * n(i.unit)), solar: os.obra.solar, valor_contratado: c.investimento, custo: os.c.custo });
