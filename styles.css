@@ -362,3 +362,37 @@ tr.grupo td { background: var(--panel-2); font-size: 13px; padding-top: 10px; }
 .cb-alerta { margin: 6px 0; font-size: 12.5px; padding: 6px 9px; }
 .cb-itens li .badge { font-size: 10.5px; padding: 1px 6px; vertical-align: 1px; }
 .cb-itens li.cb-feita { color: var(--muted); text-decoration: line-through; }
+.cb-numeros { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
+.cb-numero { text-align: left; font: inherit; color: inherit; cursor: pointer; background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); padding: 11px 14px; box-shadow: var(--shadow); }
+.cb-numero:hover { border-color: var(--ink-2); }
+.cb-numero small { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); font-weight: 600; }
+.cb-numero b { display: block; font-size: 26px; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.cb-numero span { font-size: 12px; color: var(--muted); }
+.cb-numero.bad { border-left-color: var(--bad); } .cb-numero.bad b { color: var(--bad); }
+.cb-numero.warn { border-left-color: var(--warn); } .cb-numero.warn b { color: var(--warn); }
+.cb-numero.ok { border-left-color: var(--ok); } .cb-numero.ok b { color: var(--ok); }
+.cb-hoje { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 12px; align-items: start; }
+.cb-card-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.cb-card-top h2 { margin: 0; } .cb-card-top .muted { font-size: 12px; }
+.cb-bloco { border-left: 3px solid var(--line); padding: 2px 0 2px 12px; margin: 0 0 14px; }
+.cb-bloco h3 { margin: 0 0 3px; font-size: 13.5px; }
+.cb-bloco p { margin: 0; line-height: 1.55; color: var(--ink-2); max-width: 75ch; }
+.cb-bloco.bad { border-left-color: var(--bad); } .cb-bloco.bad h3 { color: var(--bad); }
+.cb-bloco.warn { border-left-color: var(--warn); } .cb-bloco.warn h3 { color: var(--warn); }
+.cb-bloco.info { border-left-color: var(--info); } .cb-bloco.info h3 { color: var(--info); }
+.cb-urgentes { margin: 4px 0 0; padding-left: 20px; } .cb-urgentes li { margin-bottom: 8px; line-height: 1.4; }
+.cb-urgentes em { display: inline-block; margin-left: 6px; font-style: normal; font-size: 10.5px; font-weight: 600; padding: 0 6px; border-radius: 999px; background: var(--line-2); color: var(--muted); vertical-align: 1px; }
+.cb-prazos { border-top: 1px solid var(--line-2); padding: 6px 0; } .cb-prazos:first-of-type { border-top: 0; }
+.cb-prazos > summary, .cb-mais > summary { cursor: pointer; font-weight: 600; font-size: 13px; }
+.cb-mais > summary { font-weight: 500; color: var(--muted); font-size: 12px; margin: 2px 0 0 52px; }
+.cb-prazos ul { list-style: none; margin: 6px 0 0; padding: 0; }
+.cb-prazos li { display: grid; grid-template-columns: 44px 1fr auto; gap: 8px; align-items: start; padding: 5px 0; font-size: 13px; line-height: 1.35; }
+.cb-prazo-dia { font-size: 11px; font-weight: 700; text-align: center; border-radius: 6px; padding: 2px 0; background: var(--line-2); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.cb-prazo-dia.bad { background: var(--bad-bg); color: var(--bad); } .cb-prazo-dia.warn { background: var(--warn-bg); color: var(--warn); }
+.cb-prazo-txt small { display: block; color: var(--muted); font-size: 11.5px; }
+.cb-prazos li em { font-style: normal; font-size: 11.5px; color: var(--muted); }
+.cb-alertas { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
+.cb-alerta-ficha { border: 1px solid var(--line-2); border-left: 3px solid var(--warn); border-radius: 8px; padding: 9px 12px; background: var(--panel-2); }
+.cb-alerta-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-weight: 600; font-size: 13.5px; }
+.cb-alerta-ficha ul { margin: 6px 0 0; padding-left: 16px; font-size: 13px; line-height: 1.45; color: var(--ink-2); } .cb-alerta-ficha li { margin-bottom: 4px; }
+@media (max-width: 900px) { .cb-hoje { grid-template-columns: 1fr; } .cb-numeros { grid-template-columns: repeat(2, 1fr); } }
