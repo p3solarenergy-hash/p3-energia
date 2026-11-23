@@ -146,51 +146,79 @@
     $$("[data-grupo]", raiz).forEach(a => a.onclick = e => { e.preventDefault(); ui.aba = "grupos"; ui.grupo = a.dataset.grupo; desenhar(document.getElementById("main")); });
   }
 
+  // Resumo do dia em painel: números do dia no topo, o texto em blocos curtos, prazos agrupados e alertas por ficha.
   function abaHoje(el) {
     const r = dados.resumos[0];
     if (!r) { el.innerHTML = `<div class="note">Ainda não há resumo. Todo dia às 7h o Claude lê o que entrou nos grupos, cria as tarefas e deixa o resumo aqui.</div>`; return; }
+    const p = prazos(), alertas = alertasPorFicha();
+    const nAlertas = alertas.reduce((s, a) => s + a.itens.length, 0);
     const urg = r.urgentes || [];
     el.innerHTML = `
-      <div class="grid2">
-        <div class="card"><h2>Resumo de ${esc(fmt.data(r.dia))}</h2><p class="sub">Montado a partir das conversas e dos áudios</p><div class="cb-resumo">${texto(r.texto)}</div></div>
+      <div class="cb-numeros">
+        ${numero("Atrasadas", p.atrasadas.length, "tarefas com prazo vencido", p.atrasadas.length ? "bad" : "ok", "cbPrazos")}
+        ${numero("Vencem hoje", p.hoje.length, fmt.data(hojeISO()), p.hoje.length ? "warn" : "", "cbPrazos")}
+        ${numero("Próximos 3 dias", p.breve.length, "prazos chegando", "", "cbPrazos")}
+        ${numero("Alertas", nAlertas, "do cruzamento entre fichas", nAlertas ? "warn" : "ok", "cbAlertas")}
+      </div>
+      <div class="cb-hoje">
+        <div class="card"><div class="cb-card-top"><h2>Resumo de ${esc(fmt.data(r.dia))}</h2><span class="muted">conversas e áudios</span></div>${blocos(r.texto)}</div>
         <div class="stack">
-          <div class="card"><h2>Urgente</h2>${urg.length ? `<ul class="cb-itens">${urg.map(u => `<li>${typeof u === "string" ? esc(u) : `${esc(u.texto || "")}${u.grupo ? ` <small class="muted">· ${esc(u.grupo)}</small>` : ""}`}</li>`).join("")}</ul>` : `<p class="muted" style="margin:0">Nada urgente.</p>`}</div>
-          ${cruzamentos()}
-          ${dados.resumos.length > 1 ? `<div class="card"><h2>Dias anteriores</h2>${dados.resumos.slice(1).map(x => `<details class="cb-dia"><summary>${esc(fmt.data(x.dia))}</summary><div class="cb-resumo">${texto(x.texto)}</div></details>`).join("")}</div>` : ""}
+          <div class="card"><h2>Urgente</h2>${urg.length ? `<ol class="cb-urgentes">${urg.map(u => { const t = typeof u === "string" ? u : u.texto || ""; const g = typeof u === "string" ? "" : u.grupo || ""; return `<li><span>${esc(t)}</span>${g ? `<em>${esc(g)}</em>` : ""}</li>`; }).join("")}</ol>` : `<p class="muted" style="margin:0">Nada urgente.</p>`}</div>
+          <div class="card" id="cbPrazos"><h2>Prazos</h2>${listaPrazos(p)}</div>
         </div>
-      </div>`;
+      </div>
+      ${alertas.length ? `<div class="card section" id="cbAlertas"><div class="cb-card-top"><h2>Cruzamentos</h2><span class="muted">o que só aparece juntando as fichas</span></div>
+        <div class="cb-alertas">${alertas.map(a => `<div class="cb-alerta-ficha">
+          <div class="cb-alerta-top"><a href="#" data-ficha-hoje="${esc(a.ficha.nome)}">${esc(a.ficha.nome)}</a>${a.selo}</div>
+          ${a.itens.length ? `<ul>${a.itens.map(t => `<li>${esc(t)}</li>`).join("")}</ul>` : ""}</div>`).join("")}</div></div>` : ""}
+      ${dados.resumos.length > 1 ? `<div class="card section"><h2>Dias anteriores</h2>${dados.resumos.slice(1).map(x => `<details class="cb-dia"><summary>${esc(fmt.data(x.dia))}</summary>${blocos(x.texto)}</details>`).join("")}</div>` : ""}`;
     $$("[data-ficha-hoje]", el).forEach(a => a.onclick = e => { e.preventDefault(); ui.aba = "fichas"; ui.ficha = a.dataset.fichaHoje; desenhar(document.getElementById("main")); });
+    $$("[data-ir]", el).forEach(b => b.onclick = () => { const alvo = document.getElementById(b.dataset.ir); if (alvo) alvo.scrollIntoView({ behavior: "smooth", block: "start" }); });
   }
-  // Cruzamentos: o que as fichas e as tarefas dizem juntas — datas vencendo, alertas e tarefas atrasadas.
-  function cruzamentos() {
-    const linhas = [];
-    dados.fichas.forEach(x => {
-      // Período que termina nos próximos 7 dias ou terminou há até 3 dias.
+  const numero = (rotulo, n, sub, tom, alvo) => `<button type="button" class="cb-numero ${tom}" data-ir="${alvo}"><small>${esc(rotulo)}</small><b>${n}</b><span>${esc(sub)}</span></button>`;
+
+  // Todas as tarefas abertas com prazo, separadas em atrasadas, hoje e próximos 3 dias, com a ficha a que pertencem.
+  function prazos() {
+    const h = hojeISO(), fichaDe = {};
+    // A ficha dona do assunto (usina, obra, cliente) ganha da ficha de pessoa.
+    [...dados.fichas].sort((a, b) => (a.tipo === "pessoa") - (b.tipo === "pessoa"))
+      .forEach(x => (x.pendencias || []).forEach(i => { if (i && i.tarefa_id && !fichaDe[i.tarefa_id]) fichaDe[i.tarefa_id] = x.nome; }));
+    const p = { atrasadas: [], hoje: [], breve: [] };
+    dados.tarefas.filter(t => t.status !== "concluida" && t.prazo).forEach(t => {
+      const n = dias(t.prazo.slice(0, 10), h), item = { t, n, ficha: fichaDe[t.id] };
+      if (n > 0) p.atrasadas.push(item); else if (n === 0) p.hoje.push(item); else if (n >= -3) p.breve.push(item);
+    });
+    p.atrasadas.sort((a, b) => b.n - a.n); p.breve.sort((a, b) => b.n - a.n);
+    return p;
+  }
+  function listaPrazos(p) {
+    const linha = ({ t, n, ficha }) => `<li><span class="cb-prazo-dia ${n > 0 ? "bad" : n === 0 ? "warn" : ""}">${n > 0 ? `${n} d` : n === 0 ? "hoje" : ddmm(t.prazo)}</span><span class="cb-prazo-txt">${esc(t.titulo)}${ficha ? `<small>${esc(ficha)}</small>` : ""}</span><em>${esc(t.responsavel || "")}</em></li>`;
+    const grupo = (titulo, lst, max) => lst.length ? `<details class="cb-prazos" open><summary>${titulo} <span class="muted">(${lst.length})</span></summary><ul>${lst.slice(0, max || 99).map(linha).join("")}</ul>${max && lst.length > max ? `<details class="cb-mais"><summary>ver mais ${lst.length - max}</summary><ul>${lst.slice(max).map(linha).join("")}</ul></details>` : ""}</details>` : "";
+    const html = grupo("Vencem hoje", p.hoje) + grupo("Próximos 3 dias", p.breve) + grupo("Atrasadas", p.atrasadas, 6);
+    return html || `<p class="muted" style="margin:0">Nenhum prazo nos próximos dias.</p>`;
+  }
+  // Alertas gravados nas fichas + datas de período perto de hoje, um quadro por ficha.
+  function alertasPorFicha() {
+    return dados.fichas.map(x => {
       const d = x.periodo && x.periodo.fim ? dias(x.periodo.fim, hojeISO()) : null;
       const selo = d !== null && d >= -7 && d <= 3 ? seloPeriodo(x.periodo) : "";
-      if (selo) linhas.push(`<li>${selo} <a href="#" data-ficha-hoje="${esc(x.nome)}">${esc(x.nome)}</a></li>`);
-      (x.alertas || []).forEach(a => linhas.push(`<li><a href="#" data-ficha-hoje="${esc(x.nome)}">${esc(x.nome)}</a>: ${esc(typeof a === "string" ? a : a.texto || "")}</li>`));
-    });
-    const vistas = new Set(), atr = [];
-    dados.fichas.forEach(x => (x.pendencias || []).forEach(i => {
-      const t = tarefaDe(i && i.tarefa_id), e = estadoTarefa(t);
-      if (e && e.atraso && !vistas.has(t.id)) { vistas.add(t.id); atr.push({ t, e, ficha: x.nome }); }
-    }));
-    atr.sort((a, b) => b.e.atraso - a.e.atraso);
-    if (!linhas.length && !atr.length) return "";
-    return `<div class="card"><h2>Cruzamentos</h2><p class="sub">Fichas × tarefas × datas, contado a partir de hoje</p>
-      ${linhas.length ? `<ul class="cb-itens">${linhas.join("")}</ul>` : ""}
-      ${atr.length ? `<h3 style="margin:10px 0 2px;font-size:13px">Tarefas atrasadas ligadas às fichas (${atr.length})</h3><ul class="cb-itens">${atr.map(a => `<li>${esc(a.t.titulo)} ${badge(a.e.txt, "bad")} <small>${esc(a.t.responsavel || "")} · ${esc(a.ficha)}</small></li>`).join("")}</ul>` : ""}</div>`;
+      const itens = (x.alertas || []).map(a => typeof a === "string" ? a : a.texto || "").filter(Boolean);
+      return { ficha: x, selo, itens };
+    }).filter(a => a.itens.length || a.selo);
   }
-  // Texto do resumo: parágrafos, listas com "-" e **negrito**.
-  function texto(t) {
-    return esc(t || "").split(/\n{2,}/).map(bloco => {
+  // Texto do resumo em blocos: cada parágrafo que começa com **Título.** vira um bloco com título e cor.
+  const negrito = s => s.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
+  function blocos(t) {
+    return `<div class="cb-resumo">${esc(t || "").split(/\n{2,}/).map(bloco => {
       const linhas = bloco.split("\n");
-      const html = linhas.every(l => /^\s*[-•]/.test(l))
-        ? `<ul class="cb-itens">${linhas.map(l => `<li>${l.replace(/^\s*[-•]\s*/, "")}</li>`).join("")}</ul>`
-        : `<p>${linhas.join("<br>")}</p>`;
-      return html.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/^<p>#+\s*(.+?)<\/p>$/, "<h3>$1</h3>");
-    }).join("");
+      if (linhas.every(l => /^\s*[-•]/.test(l))) return `<ul class="cb-itens">${linhas.map(l => `<li>${negrito(l.replace(/^\s*[-•]\s*/, ""))}</li>`).join("")}</ul>`;
+      const corpo = s => negrito(s).replace(/\s\((\d{1,2})\)\s/g, "<br>($1) ").replace(/\n/g, "<br>");
+      const m = bloco.match(/^\*\*(.+?)\*\*\s*([\s\S]*)$/);
+      if (!m) return `<p>${corpo(bloco)}</p>`;
+      const titulo = m[1].replace(/[.:—–-]\s*$/, "").trim();
+      const tom = /sem mensagens|captura|parad|desligad/i.test(titulo) ? "bad" : /cruzamento/i.test(titulo) ? "info" : /vencid|vencendo|urgent|prazo/i.test(titulo) ? "warn" : "";
+      return `<section class="cb-bloco ${tom}"><h3>${negrito(titulo)}</h3>${m[2].trim() ? `<p>${corpo(m[2])}</p>` : ""}</section>`;
+    }).join("")}</div>`;
   }
 
   function abaFichas(el) {
