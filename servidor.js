@@ -288,21 +288,6 @@
       }
       if (m === "DELETE" && id) return base.remove(t, id);
     }
-    // Fichas concluídas (obra entregue, assunto resolvido): ficam na config como {id_da_ficha: "data"},
-    // assim a ficha que o Claude atualiza às 7h não perde a marca. concluida=false reabre.
-    if (p[0] === "cerebro" && p[1] === "concluidas") {
-      const ler = async () => { try { return JSON.parse(await base.getConfig("cerebro_fichas_concluidas") || "{}") || {}; } catch (_) { return {}; } };
-      if (m === "GET") return ler();
-      if (m === "PUT") {
-        const id = String(corpo.id || "").slice(0, 120);
-        if (!id) throw new Error("Informe a ficha.");
-        const mapa = await ler();
-        if (corpo.concluida) mapa[id] = new Date().toISOString(); else delete mapa[id];
-        await base.setConfig("cerebro_fichas_concluidas", JSON.stringify(mapa));
-        await base.audit("alterar", "cerebro_fichas", id, `Ficha ${corpo.concluida ? "concluída" : "reaberta"}: ${String(corpo.nome || id).slice(0, 120)}`);
-        return mapa;
-      }
-    }
     // Fichas concluídas (obra entregue, assunto resolvido): ficam na config como {id_da_ficha: "data ISO"},
     // assim a ficha que o Claude reescreve às 7h não perde a marca. concluida=false reabre.
     if (p[0] === "cerebro" && p[1] === "concluidas") {
