@@ -101,8 +101,13 @@
     { nome: "Geladeira", w: 150, h: 8, uso: 40, partida: 5 },
     { nome: "Geladeira duplex / frost free", w: 250, h: 8, uso: 40, partida: 5 },
     { nome: "Freezer", w: 200, h: 8, uso: 45, partida: 5 },
+    // Cervejeira (ex.: Electrolux): compressor pequeno, liga e desliga como a geladeira.
+    { nome: "Cervejeira", w: 150, h: 8, uso: 40, partida: 5 },
     { nome: "Ar-condicionado inverter", btu: 12000, fbtu: 0.09, h: 4, uso: 70, partida: 1.3 },
     { nome: "Ar-condicionado convencional", btu: 12000, fbtu: 0.1, h: 4, uso: 80, partida: 5 },
+    // Cassete de teto (área gourmet, salão): o comum é 36.000 BTU inverter ≈ 3,2 kW.
+    { nome: "Ar-condicionado cassete inverter", btu: 36000, fbtu: 0.09, h: 4, uso: 70, partida: 1.3 },
+    { nome: "Iluminação do jardim LED (por ponto)", w: 20, h: 6, uso: 100, partida: 1 },
     { nome: "Ventilador", w: 80, h: 6, uso: 100, partida: 1 },
     { nome: "TV", w: 100, h: 4, uso: 100, partida: 1 },
     { nome: "Internet (roteador e modem)", w: 20, h: 8, uso: 100, partida: 1 },
@@ -112,6 +117,7 @@
     { nome: "Portão eletrônico", w: 350, h: 0.2, uso: 100, partida: 6 },
     { nome: "Bomba d'água 1/2 cv", w: 450, h: 1, uso: 100, partida: 6 },
     { nome: "Micro-ondas", w: 1200, h: 0.3, uso: 100, partida: 1 },
+    { nome: "Forno elétrico", w: 1800, h: 0.5, uso: 70, partida: 1 },
     { nome: "Máquina de lavar", w: 500, h: 1, uso: 60, partida: 3 },
     { nome: "Chuveiro elétrico", w: 5500, h: 0.5, uso: 100, partida: 1 },
     { nome: "Outro aparelho", w: 100, h: 4, uso: 100, partida: 1 }
