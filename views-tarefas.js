@@ -4,9 +4,24 @@
 (function () {
   "use strict";
   const { api, fmt, esc, $, $$, kpi, badge, opts, modal, confirmar, formData, toast } = window.P3;
-  const ui = { aba: "visao", resp: "", cat: "", situacao: "abertas", busca: "", semanas: 0 };
+  const ui = { aba: "boards", resp: "", cat: "", situacao: "abertas", busca: "", semanas: 0, board: "", boardResp: "" };
   const RESPONSAVEIS = ["Eduardo", "Rafael"];
-  const CATEGORIAS = ["Comercial", "Obras", "Manutenção", "Financeiro", "NFs e cobranças", "Usinas", "Investidores", "Outros"];
+  // Cada categoria é um board, com cor e ícone próprios para bater o olho e saber o que é o quê.
+  const BOARDS = [
+    { nome: "Vistoria", ic: "🔍", cor: "#2f7fc1", desc: "Visitas técnicas, inspeções e laudos" },
+    { nome: "Obras", ic: "🏗️", cor: "#d9771f", desc: "Instalação e montagem de usinas" },
+    { nome: "Manutenção", ic: "🔧", cor: "#c2413a", desc: "Corretivas, preventivas e limpeza" },
+    { nome: "Usinas", ic: "☀️", cor: "#b89b12", desc: "Operação e monitoramento" },
+    { nome: "Comercial", ic: "🤝", cor: "#7a4fc0", desc: "Propostas, clientes e visitas" },
+    { nome: "Financeiro", ic: "💰", cor: "#2c8a50", desc: "Pagamentos, custos e acertos" },
+    { nome: "NFs e cobranças", ic: "🧾", cor: "#178a8a", desc: "Notas fiscais e boletos" },
+    { nome: "Investidores", ic: "📈", cor: "#4b5fc4", desc: "Donos e investidores" },
+    { nome: "Outros", ic: "📌", cor: "#6c7a71", desc: "O que não se encaixa nos outros" }
+  ];
+  const SEM_BOARD = { nome: "", ic: "❔", cor: "#8b998f", desc: "Tarefas sem categoria" };
+  const boardDe = nome => BOARDS.find(b => b.nome === nome) || (nome ? { nome, ic: "📌", cor: "#6c7a71", desc: "" } : SEM_BOARD);
+  const CATEGORIAS = BOARDS.map(b => b.nome);
+  const chipCat = c => c ? `<span class="tf-chip" style="--c:${boardDe(c).cor}">${boardDe(c).ic} ${esc(c)}</span>` : "";
   const PRIORIDADE = { alta: ["Alta", "bad"], media: ["Média", "warn"], baixa: ["Baixa", ""] };
   const SITUACAO = { aberta: ["Aberta", ""], andamento: ["Em andamento", "info"], concluida: ["Concluída", "ok"] };
   const hoje = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
@@ -159,7 +174,7 @@
         <label class="f">Categoria<select name="categoria">${opts(CATEGORIAS.map(c => [c, c]), "", "—")}</select></label>
         <button class="btn" type="submit">Adicionar</button>
       </form>
-      <div class="tabs">${[["visao", "Visão geral"], ["lista", "Todas as tarefas"]].map(([k, l]) => `<button data-aba="${k}" class="${ui.aba === k ? "on" : ""}">${l}</button>`).join("")}</div>
+      <div class="tabs">${[["boards", "Boards"], ["visao", "Visão geral"], ["lista", "Todas as tarefas"]].map(([k, l]) => `<button data-aba="${k}" class="${ui.aba === k ? "on" : ""}">${l}</button>`).join("")}</div>
       <div id="tfAba"></div>`;
     $$(".tabs button", main).forEach(b => b.onclick = () => { ui.aba = b.dataset.aba; desenhar(main); });
     $("#tfNova", main).onclick = () => editar(main, { responsavel: "Eduardo", prioridade: "media", status: "aberta" });
@@ -172,9 +187,106 @@
       try { await api("tarefas", { method: "POST", body: { ...f, prazo: f.prazo || null, categoria: f.categoria || null, status: "aberta", prioridade: "media" } }); toast("Tarefa anotada.", "ok"); await recarregar(main); }
       catch (err) { toast(err.message, "bad"); }
     };
-    (ui.aba === "visao" ? visao : lista)($("#tfAba", main), main);
+    ({ boards, visao, lista }[ui.aba] || boards)($("#tfAba", main), main);
   }
   async function recarregar(main) { await carregar(); desenhar(main); }
+
+  // ───────── Boards (um por tipo de serviço) ─────────
+  // Em cima, um bloco colorido por board com o que está em aberto. Escolhendo "Todos", cada board vira uma coluna
+  // (arrastar um cartão de coluna troca a categoria). Escolhendo um board, ele abre em A fazer / Em andamento / Concluída
+  // (arrastar troca a situação).
+  const iniciais = n => String(n || "?").trim().split(/\s+/).map(p => p[0]).slice(0, 2).join("").toUpperCase();
+  function cartao(t) {
+    const b = boardDe(t.categoria), h = hoje();
+    const prazo = t.prazo ? `<span class="tf-prazo ${atrasada(t) ? "atr" : t.prazo === h && aberta(t) ? "hj" : ""}">📅 ${atrasada(t) ? "atrasada · " : t.prazo === h && aberta(t) ? "hoje · " : ""}${fmt.data(t.prazo)}${t.hora ? ` ${esc(t.hora)}` : ""}</span>` : `<span class="tf-prazo sem">sem prazo</span>`;
+    const prox = t.status === "aberta" ? ["andamento", "▶ Começar"] : t.status === "andamento" ? ["concluida", "✓ Concluir"] : null;
+    return `<article class="tf-card ${t.status === "concluida" ? "feita" : ""} ${atrasada(t) ? "atrasada" : ""}" draggable="true" data-card="${esc(t.id)}" style="--c:${b.cor}" tabindex="0" aria-label="${esc(t.titulo)}">
+      <div class="tf-card-top"><span class="tf-pri ${esc(t.prioridade || "media")}" title="Prioridade ${esc((PRIORIDADE[t.prioridade] || PRIORIDADE.media)[0])}"></span><b>${esc(t.titulo)}</b></div>
+      ${t.cliente || t.descricao ? `<p>${esc([t.cliente, t.descricao].filter(Boolean).join(" · ").slice(0, 120))}</p>` : ""}
+      <div class="tf-card-pe">${prazo}${t.status === "andamento" && !ui.board ? `<span class="badge info">em andamento</span>` : ""}<span class="tf-av" title="${esc(t.responsavel || "Sem responsável")}">${esc(iniciais(t.responsavel))}</span></div>
+      ${prox ? `<button type="button" class="tf-mover" data-mover="${esc(t.id)}" data-para="${prox[0]}">${prox[1]}</button>` : ""}
+    </article>`;
+  }
+  function boards(el, main) {
+    const h = hoje(), daResp = t => !ui.boardResp || t.responsavel === ui.boardResp;
+    const abertas = tarefas.filter(t => aberta(t) && daResp(t));
+    const extras = [...new Set(tarefas.map(t => t.categoria).filter(c => c && !CATEGORIAS.includes(c)))].map(boardDe);
+    const todos = [...BOARDS, ...extras, ...(tarefas.some(t => !t.categoria) ? [SEM_BOARD] : [])];
+    if (ui.board && !todos.some(b => b.nome === ui.board)) ui.board = "";
+    const resp = [...new Set([...RESPONSAVEIS, ...tarefas.map(t => t.responsavel).filter(Boolean)])];
+    const tile = b => {
+      const lst = abertas.filter(t => (t.categoria || "") === b.nome), atr = lst.filter(atrasada).length, and = lst.filter(t => t.status === "andamento").length;
+      const on = ui.board === (b.nome || "__sem");
+      return `<button type="button" class="tf-tile ${on ? "on" : ""} ${lst.length ? "" : "vazio"}" data-board="${esc(b.nome || "__sem")}" style="--c:${b.cor}" title="${esc(b.desc)}">
+        <span class="tf-tile-ic">${b.ic}</span><span class="tf-tile-txt"><b>${esc(b.nome || "Sem categoria")}</b><small>${lst.length ? `${lst.length} em aberto${and ? ` · ${and} andando` : ""}` : "nada em aberto"}</small></span>
+        ${atr ? `<em title="${atr} atrasada(s)">${atr}</em>` : ""}</button>`;
+    };
+    el.innerHTML = `
+      <div class="tf-tiles">
+        <button type="button" class="tf-tile todos ${ui.board === "" ? "on" : ""}" data-board="" style="--c:var(--brand-2)"><span class="tf-tile-ic">🗂️</span><span class="tf-tile-txt"><b>Todos</b><small>${abertas.length} em aberto</small></span>${abertas.filter(atrasada).length ? `<em>${abertas.filter(atrasada).length}</em>` : ""}</button>
+        ${todos.map(tile).join("")}
+      </div>
+      <div class="inline" style="margin:4px 0 12px;justify-content:space-between">
+        <div class="tf-pessoas">${["", ...resp].map(r => `<button type="button" data-bresp="${esc(r)}" class="${ui.boardResp === r ? "on" : ""}">${r ? `<span class="tf-av">${esc(iniciais(r))}</span>${esc(r)}` : "Todos"}</button>`).join("")}</div>
+        <span class="muted" style="font-size:12px">Arraste os cartões para ${ui.board === "" ? "trocar de board" : "mudar a situação"}.</span>
+      </div>
+      <div id="tfQuadro"></div>`;
+    const quadro = $("#tfQuadro", el);
+    if (ui.board === "") {
+      // Todas as colunas: os boards principais sempre aparecem; os outros só quando têm tarefa.
+      const fixos = ["Vistoria", "Obras", "Manutenção"];
+      const cols = todos.filter(b => fixos.includes(b.nome) || abertas.some(t => (t.categoria || "") === b.nome));
+      quadro.innerHTML = `<div class="tf-quadro">${cols.map(b => {
+        const lst = abertas.filter(t => (t.categoria || "") === b.nome).sort(ordem);
+        return `<section class="tf-col" data-col-cat="${esc(b.nome || "__sem")}" style="--c:${b.cor}">
+          <header><span>${b.ic}</span><div><b>${esc(b.nome || "Sem categoria")}</b><small>${lst.length} em aberto</small></div><button type="button" class="tf-add" data-novo-cat="${esc(b.nome)}" title="Nova tarefa em ${esc(b.nome || "sem categoria")}">+</button></header>
+          <div class="tf-lista">${lst.map(cartao).join("") || `<div class="tf-vazio">Nada aqui.<br>Solte um cartão ou toque em +</div>`}</div></section>`;
+      }).join("")}</div>`;
+    } else {
+      const nome = ui.board === "__sem" ? "" : ui.board, b = boardDe(nome);
+      const doBoard = tarefas.filter(t => (t.categoria || "") === nome && daResp(t));
+      const limite = somaDias(h, -30);
+      const colunas = [["aberta", "A fazer", "📋"], ["andamento", "Em andamento", "⚙️"], ["concluida", "Concluída", "✅"]];
+      const atr = doBoard.filter(atrasada).length, feitas = doBoard.filter(t => t.status === "concluida" && String(t.concluida_em || "") >= limite);
+      quadro.innerHTML = `
+        <div class="tf-board-head" style="--c:${b.cor}"><span class="tf-tile-ic">${b.ic}</span><div><h2>${esc(nome || "Sem categoria")}</h2><p>${esc(b.desc)}</p></div>
+          <div class="tf-board-nums"><span><b>${doBoard.filter(aberta).length}</b>em aberto</span><span class="${atr ? "neg" : ""}"><b>${atr}</b>atrasadas</span><span><b>${feitas.length}</b>feitas em 30 dias</span></div>
+          <button type="button" class="btn primary" data-novo-cat="${esc(nome)}">+ Nova${nome ? ` · ${esc(nome)}` : ""}</button></div>
+        <div class="tf-quadro tres">${colunas.map(([st, rot, ic]) => {
+          const lst = (st === "concluida" ? feitas.sort((a, b) => String(b.concluida_em || "").localeCompare(String(a.concluida_em || ""))) : doBoard.filter(t => t.status === st).sort(ordem));
+          return `<section class="tf-col st-${st}" data-col-st="${st}" style="--c:${b.cor}">
+            <header><span>${ic}</span><div><b>${rot}</b><small>${lst.length}${st === "concluida" ? " nos últimos 30 dias" : ""}</small></div></header>
+            <div class="tf-lista">${lst.map(cartao).join("") || `<div class="tf-vazio">${st === "concluida" ? "Nada concluído ainda." : "Vazio. Solte um cartão aqui."}</div>`}</div></section>`;
+        }).join("")}</div>`;
+    }
+    $$("[data-board]", el).forEach(x => x.onclick = () => { ui.board = x.dataset.board; boards(el, main); });
+    $$("[data-bresp]", el).forEach(x => x.onclick = () => { ui.boardResp = x.dataset.bresp; boards(el, main); });
+    $$("[data-novo-cat]", el).forEach(x => x.onclick = () => editar(main, { categoria: x.dataset.novoCat || null, responsavel: ui.boardResp || "Eduardo", prioridade: "media", status: "aberta" }));
+    const salvar = async (id, campos, msg) => {
+      try { await api(`tarefas/${encodeURIComponent(id)}`, { method: "PUT", body: campos }); toast(msg, "ok"); await recarregar(main); }
+      catch (e) { toast(e.message, "bad"); }
+    };
+    const mudarSituacao = (id, st) => salvar(id, { status: st, concluida_em: st === "concluida" ? hoje() : null }, st === "concluida" ? "Tarefa concluída." : st === "andamento" ? "Tarefa em andamento." : "Tarefa voltou para A fazer.");
+    $$("[data-card]", el).forEach(c => {
+      const t = tarefas.find(x => x.id === c.dataset.card);
+      c.onclick = e => { if (!e.target.closest("[data-mover]")) editar(main, t); };
+      c.onkeydown = e => { if (e.key === "Enter") editar(main, t); };
+      c.ondragstart = e => { e.dataTransfer.setData("text/plain", t.id); e.dataTransfer.effectAllowed = "move"; c.classList.add("arrastando"); };
+      c.ondragend = () => c.classList.remove("arrastando");
+    });
+    $$("[data-mover]", el).forEach(x => x.onclick = () => mudarSituacao(x.dataset.mover, x.dataset.para));
+    $$(".tf-col", el).forEach(col => {
+      col.ondragover = e => { e.preventDefault(); col.classList.add("alvo"); };
+      col.ondragleave = e => { if (!col.contains(e.relatedTarget)) col.classList.remove("alvo"); };
+      col.ondrop = e => {
+        e.preventDefault(); col.classList.remove("alvo");
+        const t = tarefas.find(x => x.id === e.dataTransfer.getData("text/plain")); if (!t) return;
+        if (col.dataset.colSt) { if (t.status !== col.dataset.colSt) mudarSituacao(t.id, col.dataset.colSt); return; }
+        const cat = col.dataset.colCat === "__sem" ? null : col.dataset.colCat;
+        if ((t.categoria || null) !== cat) salvar(t.id, { categoria: cat }, `Movida para ${cat || "sem categoria"}.`);
+      };
+    });
+  }
 
   // ───────── Visão geral ─────────
   function visao(el, main) {
@@ -349,7 +461,7 @@
       ${lst.map(t => `<tr>
         <td><input type="checkbox" data-feito="${esc(t.id)}" ${t.status === "concluida" ? "checked" : ""} aria-label="Concluir ${esc(t.titulo)}" style="width:18px;height:18px"></td>
         <td style="white-space:nowrap">${t.prazo ? `${fmt.data(t.prazo)}${t.hora ? ` ${esc(t.hora)}` : ""}` : `<span class="muted">sem prazo</span>`}${atrasada(t) ? `<small class="neg">atrasada</small>` : t.prazo === hoje() && aberta(t) ? `<small class="neg">hoje</small>` : ""}</td>
-        <td><b style="${t.status === "concluida" ? "text-decoration:line-through;opacity:.6" : ""}">${esc(t.titulo)}</b><small>${esc([t.categoria, t.descricao].filter(Boolean).join(" · "))}${t.status === "concluida" && t.concluida_em ? ` · concluída em ${fmt.data(t.concluida_em)}` : ""}${t.tipo === "evento" ? " · evento" : ""}</small>${t.google_erro ? `<small class="neg" title="${esc(t.google_erro)}">não foi para o Google</small>` : ""}</td>
+        <td><b style="${t.status === "concluida" ? "text-decoration:line-through;opacity:.6" : ""}">${esc(t.titulo)}</b><small>${chipCat(t.categoria)}${esc(t.descricao || "")}${t.status === "concluida" && t.concluida_em ? ` · concluída em ${fmt.data(t.concluida_em)}` : ""}${t.tipo === "evento" ? " · evento" : ""}</small>${t.google_erro ? `<small class="neg" title="${esc(t.google_erro)}">não foi para o Google</small>` : ""}</td>
         <td>${esc(t.responsavel || "—")}</td>
         <td>${badge(...(PRIORIDADE[t.prioridade] || PRIORIDADE.media))}</td>
         <td>${badge(...(SITUACAO[t.status] || SITUACAO.aberta))}</td>
