@@ -105,6 +105,22 @@
     dados = { grupos: grupos || [], fichas: fichas || [], resumos: resumos || [], tarefas };
   }
 
+  // As tarefas mudam fora desta tela (outro computador, tela Tarefas, o resumo das 7h). Reler a cada 60 s e ao
+  // voltar para a janela; só redesenha se algo mudou, para não atrapalhar quem está digitando ou rolando.
+  const assinatura = lst => (lst || []).map(t => `${t.id}|${t.status}|${t.prazo}|${t.responsavel}|${t.titulo}`).join("\n");
+  async function atualizarTarefas() {
+    const main = document.getElementById("main");
+    if (!main || window.P3.state.route !== "cerebro" || document.hidden || !document.getElementById("cbAba")) return;
+    if (document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName) && document.activeElement.type !== "checkbox") return;
+    let novas; try { novas = await api("tarefas"); } catch { return; }
+    if (!novas || window.P3.state.route !== "cerebro" || assinatura(novas) === assinatura(dados.tarefas)) return;
+    dados.tarefas = novas;
+    if (ui.aba === "hoje" || ui.aba === "fichas") desenhar(main);
+  }
+  let tarefasTimer = null;
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) atualizarTarefas(); });
+  window.addEventListener("focus", atualizarTarefas);
+
   async function render(main) {
     main.innerHTML = `<div class="loading">Abrindo o cérebro…</div>`;
     try { await carregar(); } catch (e) { main.innerHTML = `<div class="note bad">${esc(e.message)}</div>`; return; }
@@ -132,6 +148,7 @@
       <div class="tabs section">${[["hoje", "Resumo do dia"], ["fichas", "Fichas"], ["grupos", "Grupos"], ["busca", "Busca"]].map(([k, l]) => `<button data-aba="${k}" class="${ui.aba === k ? "on" : ""}">${l}</button>`).join("")}</div>
       <div id="cbAba"></div>`;
     clearInterval(pontesTimer); pontesTimer = setInterval(atualizarPonte, 15000);
+    clearInterval(tarefasTimer); tarefasTimer = setInterval(atualizarTarefas, 60000);
     $$(".tabs button", main).forEach(b => b.onclick = () => { ui.aba = b.dataset.aba; ui.grupo = null; desenhar(main); });
     $("#cbBusca", main).onsubmit = e => { e.preventDefault(); ui.busca = e.target.q.value.trim(); ui.aba = "busca"; desenhar(main); };
     const el = $("#cbAba", main);
@@ -175,6 +192,17 @@
           ${a.itens.length ? `<ul>${a.itens.map(t => `<li>${esc(t)}</li>`).join("")}</ul>` : ""}</div>`).join("")}</div></div>` : ""}
       ${dados.resumos.length > 1 ? `<div class="card section"><h2>Dias anteriores</h2>${dados.resumos.slice(1).map(x => `<details class="cb-dia"><summary>${esc(fmt.data(x.dia))}</summary>${blocos(x.texto)}</details>`).join("")}</div>` : ""}`;
     $$("[data-ficha-hoje]", el).forEach(a => a.onclick = e => { e.preventDefault(); ui.aba = "fichas"; ui.ficha = a.dataset.fichaHoje; desenhar(document.getElementById("main")); });
+    // Tique de "feito" nos prazos: grava na hora (mesma regra da tela Tarefas) e o item sai da lista.
+    $$("[data-prazo-feito]", el).forEach(c => c.onchange = async () => {
+      const t = tarefaDe(c.dataset.prazoFeito); if (!t) return;
+      c.disabled = true;
+      try {
+        const r = await api(`tarefas/${encodeURIComponent(t.id)}`, { method: "PUT", body: { status: "concluida", concluida_em: hojeISO() } });
+        Object.assign(t, r && r.id ? r : { status: "concluida", concluida_em: hojeISO() });
+        toast("Tarefa concluída.", "ok");
+        desenhar(document.getElementById("main"));
+      } catch (e) { c.checked = false; c.disabled = false; toast(e.message, "bad"); }
+    });
     $$("[data-ir]", el).forEach(b => b.onclick = () => { const alvo = document.getElementById(b.dataset.ir); if (alvo) alvo.scrollIntoView({ behavior: "smooth", block: "start" }); });
   }
   const numero = (rotulo, n, sub, tom, alvo) => `<button type="button" class="cb-numero ${tom}" data-ir="${alvo}"><small>${esc(rotulo)}</small><b>${n}</b><span>${esc(sub)}</span></button>`;
@@ -194,7 +222,7 @@
     return p;
   }
   function listaPrazos(p) {
-    const linha = ({ t, n, ficha }) => `<li><span class="cb-prazo-dia ${n > 0 ? "bad" : n === 0 ? "warn" : ""}">${n > 0 ? `${n} d` : n === 0 ? "hoje" : ddmm(t.prazo)}</span><span class="cb-prazo-txt">${esc(t.titulo)}${ficha ? `<small>${esc(ficha)}</small>` : ""}</span><em>${esc(t.responsavel || "")}</em></li>`;
+    const linha = ({ t, n, ficha }) => `<li><input type="checkbox" class="cb-prazo-ok" data-prazo-feito="${esc(t.id)}" aria-label="Marcar como feito: ${esc(t.titulo)}" title="Marcar como feito"><span class="cb-prazo-dia ${n > 0 ? "bad" : n === 0 ? "warn" : ""}">${n > 0 ? `${n} d` : n === 0 ? "hoje" : ddmm(t.prazo)}</span><span class="cb-prazo-txt">${esc(t.titulo)}${ficha ? `<small>${esc(ficha)}</small>` : ""}</span><em>${esc(t.responsavel || "")}</em></li>`;
     const grupo = (titulo, lst, max) => lst.length ? `<details class="cb-prazos" open><summary>${titulo} <span class="muted">(${lst.length})</span></summary><ul>${lst.slice(0, max || 99).map(linha).join("")}</ul>${max && lst.length > max ? `<details class="cb-mais"><summary>ver mais ${lst.length - max}</summary><ul>${lst.slice(max).map(linha).join("")}</ul></details>` : ""}</details>` : "";
     const html = grupo("Vencem hoje", p.hoje) + grupo("Próximos 3 dias", p.breve) + grupo("Atrasadas", p.atrasadas, 6);
     return html || `<p class="muted" style="margin:0">Nenhum prazo nos próximos dias.</p>`;
