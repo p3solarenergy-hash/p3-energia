@@ -6,8 +6,8 @@
 (function () {
   "use strict";
   const TABLES = {
-    donos: { prefix: "do", fields: ["nome", "documento", "email", "telefone", "pix", "obs"], required: ["nome"] },
-    clientes: { prefix: "cl", fields: ["nome", "documento", "email", "telefone", "obs"], required: ["nome"] },
+    donos: { prefix: "do", fields: ["nome", "documento", "email", "telefone", "pix", "rel_atraso", "obs"], required: ["nome"] },
+    clientes: { prefix: "cl", fields: ["nome", "documento", "email", "telefone", "rel_atraso", "obs"], required: ["nome"] },
     usinas: { prefix: "us", required: ["nome"], fields: ["nome", "dono_id", "uc_geradora", "uc_geradora_conces", "potencia_kwp", "cidade", "valor_investido", "arrendamento_mensal", "gestao_modo", "gestao_pct", "gestao_valor", "rateio_modo", "geradora_paga_por", "arrendamento_recebe", "inicio_operacao", "fim_operacao", "status", "obs"] },
     custos_fixos: { prefix: "cf", required: ["descricao"], fields: ["usina_id", "descricao", "categoria", "valor", "dia_vencimento", "pago_por", "reembolso", "inicio", "fim", "ativo", "obs"] },
     custos: { prefix: "ct", required: ["competencia", "descricao", "valor"], fields: ["usina_id", "competencia", "descricao", "categoria", "valor", "vencimento", "pago_por", "reembolso", "status", "pago_em", "reembolso_status", "reembolsado_em", "fixo_id", "obs"] },
@@ -27,10 +27,12 @@
     tarefas: { prefix: "tf", required: ["titulo"], fields: ["titulo", "descricao", "responsavel", "categoria", "prioridade", "status", "prazo", "hora", "concluida_em", "tipo", "duracao", "origem_tipo", "origem_id", "cliente", "cobrar_valor", "cobrar_dias", "cobranca_id"] },
     // Endereço secreto da agenda do Google (só admin; fica fora das cópias de segurança de propósito).
     agendas_google: { prefix: "ag", required: ["nome", "url"], fields: ["nome", "url", "cor", "ativo"] },
+    // Controle de envio dos relatórios: quem recebeu o relatório de qual mês, e quando.
+    envios: { prefix: "ev", required: ["tipo", "mes_envio", "referencia"], fields: ["tipo", "cliente_id", "dono_id", "mes_envio", "referencia", "enviado_em", "obs"] },
     scee: { prefix: "sc", required: ["referencia"], fields: ["uc", "uc_conces", "papel", "geradora", "geradora_conces", "referencia", "saldo_anterior", "cred_recebido", "energia_injetada", "energia_ativa", "credito_utilizado", "percentual", "saldo_final", "documento_id", "emitido_em"] }
   };
-  const NUMERIC = new Set(["potencia_kwp", "duracao", "cobrar_valor", "cobrar_dias", "valor_investido", "arrendamento_mensal", "gestao_pct", "gestao_valor", "defasagem", "ativa", "percentual", "dias", "total", "valor_creditos", "sem_usina", "consumo_kwh", "compensado_kwh", "iluminacao_publica", "encargos", "bandeira_valor", "saldo_creditos_kwh", "arrendamento", "geracao_kwh", "saldo_anterior", "cred_recebido", "energia_injetada", "energia_ativa", "credito_utilizado", "saldo_final", "valor", "dia_vencimento", "kwp", "carregadores_dc", "carregadores_ac", "potencia_kw", "venda", "custo", "custo_material", "custo_mao_obra", "custo_outros", "imposto_pct", "admin_pct", "gestao_pct", "desconto", "valor_contratado", "dia", "valor_padrao", "repasse", "repasse_valor", "custo_pct", "geradora_valor", "custos_valor", "valor_total", "incluir_uc"]);
-  const TODAS = ["config", "donos", "clientes", "usinas", "ucs", "vinculos", "documentos", "faturas", "usina_mes", "scee", "projecoes", "custos_fixos", "custos", "obras", "nf_regras", "notas_fiscais", "propostas", "tarefas", "laudos", "p3_contas", "creditos_lotes", "creditos_mov"];
+  const NUMERIC = new Set(["potencia_kwp", "duracao", "cobrar_valor", "cobrar_dias", "valor_investido", "arrendamento_mensal", "gestao_pct", "gestao_valor", "defasagem", "ativa", "percentual", "dias", "total", "valor_creditos", "sem_usina", "consumo_kwh", "compensado_kwh", "iluminacao_publica", "encargos", "bandeira_valor", "saldo_creditos_kwh", "arrendamento", "geracao_kwh", "saldo_anterior", "cred_recebido", "energia_injetada", "energia_ativa", "credito_utilizado", "saldo_final", "valor", "dia_vencimento", "kwp", "carregadores_dc", "carregadores_ac", "potencia_kw", "venda", "custo", "custo_material", "custo_mao_obra", "custo_outros", "imposto_pct", "admin_pct", "gestao_pct", "desconto", "valor_contratado", "dia", "valor_padrao", "repasse", "repasse_valor", "custo_pct", "geradora_valor", "custos_valor", "valor_total", "incluir_uc", "rel_atraso"]);
+  const TODAS = ["config", "donos", "clientes", "usinas", "ucs", "vinculos", "documentos", "faturas", "usina_mes", "scee", "projecoes", "custos_fixos", "custos", "obras", "nf_regras", "notas_fiscais", "propostas", "tarefas", "laudos", "p3_contas", "creditos_lotes", "creditos_mov", "envios"];
 
   const now = () => new Date().toISOString();
   const newId = prefix => `${prefix}_${[...crypto.getRandomValues(new Uint8Array(5))].map(b => b.toString(16).padStart(2, "0")).join("")}`;
