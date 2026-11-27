@@ -191,6 +191,7 @@
       <label class="f">CPF/CNPJ<input name="documento" value="${esc(v.documento || "")}"></label>
       <label class="f">E-mail<input name="email" value="${esc(v.email || "")}"></label>
       <label class="f">Telefone<input name="telefone" value="${esc(v.telefone || "")}"></label>
+      <label class="f">Relatório mensal<select name="rel_atraso">${opts([["", "Do mês anterior (padrão)"], ["2", "De 2 meses atrás"], ["0", "Do próprio mês"], ["-1", "Não recebe relatório"]], v.rel_atraso == null || v.rel_atraso === 1 ? "" : String(v.rel_atraso))}</select><small>De qual mês é o extrato que vai em cada envio</small></label>
       <label class="f wide">Observação<textarea name="obs">${esc(v.obs || "")}</textarea></label></div>
       ${c ? `<hr class="sep"><button class="btn danger sm" id="exCli">Excluir cliente</button>` : ""}`;
     const p = modal(c ? `Editar ${c.nome}` : "Novo cliente", html, { onSave: async bg => salvarEAtualizar("clientes", formData(bg), c && c.id, "Cliente salvo.") });
@@ -270,6 +271,7 @@
       <label class="f">PIX para repasse<input name="pix" value="${esc(v.pix || "")}"></label>
       <label class="f">E-mail<input name="email" value="${esc(v.email || "")}"></label>
       <label class="f">Telefone<input name="telefone" value="${esc(v.telefone || "")}"></label>
+      <label class="f">Relatório mensal<select name="rel_atraso">${opts([["", "Do mês anterior (padrão)"], ["2", "De 2 meses atrás"], ["0", "Do próprio mês"], ["-1", "Não recebe relatório"]], v.rel_atraso == null || v.rel_atraso === 1 ? "" : String(v.rel_atraso))}</select><small>De qual mês é o extrato que vai em cada envio</small></label>
       <label class="f wide">Observação<textarea name="obs">${esc(v.obs || "")}</textarea></label></div>
       ${d ? `<hr class="sep"><button class="btn danger sm" id="exDono">Excluir dono</button>` : ""}`;
     const p = modal(d ? `Editar ${d.nome}` : "Novo dono", html, { onSave: async bg => salvarEAtualizar("donos", formData(bg), d && d.id, "Dono salvo.") });

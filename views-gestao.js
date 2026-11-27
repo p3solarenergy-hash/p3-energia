@@ -26,7 +26,7 @@
     main.innerHTML = `
       <div class="head"><div><p class="kicker">Visão P3</p><h1>Painel</h1><p>Números de ${esc(fmt.mesLongo(comp))}, calculados das faturas da Copel lançadas.</p></div>
         <div class="actions"><label class="f">Competência${P3.mesSelect("selComp", comp)}</label></div></div>
-      ${conf.resumo.erro || faltam.length ? `<div class="note ${conf.resumo.erro ? "bad" : "warn"}" style="margin-bottom:14px">${faltam.length ? `Faltam <b>${faltam.length}</b> fatura(s) de clientes em ${esc(fmt.mes(comp))}. ` : ""}${conf.resumo.erro ? `A conferência encontrou <b>${conf.resumo.erro}</b> erro(s) que mudam números. ` : ""}<a href="#/auditoria">Ver na Auditoria →</a></div>` : ""}${window.P3_NF ? window.P3_NF.aviso() : ""}
+      ${conf.resumo.erro || faltam.length ? `<div class="note ${conf.resumo.erro ? "bad" : "warn"}" style="margin-bottom:14px">${faltam.length ? `Faltam <b>${faltam.length}</b> fatura(s) de clientes em ${esc(fmt.mes(comp))}. ` : ""}${conf.resumo.erro ? `A conferência encontrou <b>${conf.resumo.erro}</b> erro(s) que mudam números. ` : ""}<a href="#/auditoria">Ver na Auditoria →</a></div>` : ""}${window.P3_NF ? window.P3_NF.aviso() : ""}${window.P3_ENVIOS ? window.P3_ENVIOS.aviso() : ""}
       <div class="kpis">
         ${kpi("Economia dos clientes", fmt.brl(T.economia), `${fmt.pct(T.economiaPct)} da conta sem usina`, "lead")}
         ${kpi("Arrendamento do mês", fmt.brl(T.arrendamento), `${m.usinas.filter(u => u.arrendamento > 0).length} usina(s)`)}
@@ -164,6 +164,7 @@
           <hr class="sep" style="margin:4px 0">
           <button class="btn primary" id="gerar">Gerar PDF</button>${!["consolidado", "creditos"].includes(ui.relTipo) ? `<button class="btn" id="publicar">Publicar no portal</button>` : ""}
           
+          <div id="relEnvio"></div>
           <div id="gerados"></div>
           <hr class="sep" style="margin:4px 0">
           <p class="muted" style="font-size:12.5px;margin:0">Fim do mês: gere de uma vez os extratos de todos.</p>
@@ -172,6 +173,21 @@
         </div>
         <iframe class="preview" id="prev" title="Prévia do relatório" src="${esc(url())}"></iframe>
       </div>`;
+    envioInfo();
+    function envioInfo() {
+      const E = window.P3_ENVIOS, el = $("#relEnvio");
+      if (!E || !el || !["cliente", "dono"].includes(ui.relTipo) || !ui.relAlvo) return;
+      const s = E.situacao(ui.relTipo, ui.relAlvo);
+      if (!s) { E.carregar().then(() => { if ($("#relEnvio") === el) envioInfo(); }).catch(() => {}); return; }
+      const certo = ui.relDe === s.ref && ui.relAte === s.ref;
+      el.innerHTML = `<div class="note ${s.enviado ? "ok" : certo ? "info" : "warn"}" style="font-size:12.5px">Este mês, o relatório de <b>${esc(s.nome)}</b> é o de <b>${esc(fmt.mesLongo(s.ref))}</b>${s.enviado ? ` — já enviado${s.enviado.enviado_em ? ` em ${esc(fmt.data(s.enviado.enviado_em))}` : ""}.` : "."}
+        ${!certo ? `<div style="margin-top:6px"><button class="btn sm" id="relIrCerto">Ir para ${esc(fmt.mes(s.ref))}</button></div>` : !s.enviado ? `<div style="margin-top:6px"><button class="btn sm primary" id="relMarcar">Marcar como enviado</button></div>` : ""}</div>`;
+      if ($("#relIrCerto")) $("#relIrCerto").onclick = () => { ui.relDe = ui.relAte = s.ref; relatorios(main); };
+      if ($("#relMarcar")) $("#relMarcar").onclick = async () => {
+        try { await E.marcar(s.tipo, s.id, s.ref); toast(`Marcado: relatório de ${fmt.mes(s.ref)} enviado a ${s.nome}.`, "ok"); envioInfo(); }
+        catch (e) { toast(e.message, "bad"); }
+      };
+    }
     const set = (k, v) => { ui[k] = v; if (ui.relDe > ui.relAte) { if (k === "relDe") ui.relAte = v; else ui.relDe = v; } relatorios(main); };
     $("#rTipo").onchange = e => { ui.relTipo = e.target.value; ui.relAlvo = ""; relatorios(main); };
     if ($("#rAlvo")) $("#rAlvo").onchange = e => set("relAlvo", e.target.value);
