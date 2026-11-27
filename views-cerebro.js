@@ -3,9 +3,16 @@
 // transcritos, e a conversa de cada grupo com fotos, PDFs e áudios. Só leitura: nada daqui vai para o WhatsApp.
 (function () {
   "use strict";
-  const { api, fmt, esc, $, $$, kpi, badge, toast } = window.P3;
+  const { api, fmt, esc, $, $$, kpi, badge, toast, confirmar } = window.P3;
   const ui = { aba: "hoje", busca: "", grupo: null, filtroGrupo: "", ficha: "" };
-  let dados = { grupos: [], fichas: [], resumos: [], tarefas: [] };
+  let dados = { grupos: [], fichas: [], resumos: [], tarefas: [], concluidas: {} };
+  // Ficha concluída (obra entregue, assunto resolvido) sai das ativas e vai para "Concluídas", embaixo.
+  const concluida = x => !!(dados.concluidas || {})[x.id];
+  const ativas = () => dados.fichas.filter(x => !concluida(x));
+  // Fichas minimizadas ficam guardadas neste aparelho.
+  const MIN = "p3_fichas_minimizadas";
+  const minimizadas = new Set((() => { try { return JSON.parse(localStorage.getItem(MIN) || "[]"); } catch (_) { return []; } })());
+  const guardarMin = () => { try { localStorage.setItem(MIN, JSON.stringify([...minimizadas])); } catch (_) {} };
 
   const quando = iso => {
     if (!iso) return "—";
@@ -103,7 +110,9 @@
     const [grupos, fichas, resumos] = await Promise.all([api("cerebro/grupos"), api("cerebro/fichas"), api("cerebro/resumos")]);
     let tarefas = [];
     try { tarefas = await api("tarefas") || []; } catch { tarefas = []; }
-    dados = { grupos: grupos || [], fichas: fichas || [], resumos: resumos || [], tarefas };
+    let concluidas = {};
+    try { concluidas = await api("cerebro/concluidas") || {}; } catch { concluidas = {}; }
+    dados = { grupos: grupos || [], fichas: fichas || [], resumos: resumos || [], tarefas, concluidas };
   }
 
   // As tarefas mudam fora desta tela (outro computador, tela Tarefas, o resumo das 7h). Reler a cada 60 s e ao
@@ -143,7 +152,7 @@
       <div class="kpis">
         ${kpi("Grupos de trabalho", String(dados.grupos.length), `${ativos.length} com conversa na semana`, "lead")}
         ${kpi("Mensagens na semana", fmt.num(msgs7, 0), "últimos 7 dias")}
-        ${kpi("Fichas vivas", String(dados.fichas.length), "usinas, obras e temas")}
+        ${kpi("Fichas vivas", String(ativas().length), dados.fichas.length > ativas().length ? `${dados.fichas.length - ativas().length} concluída${dados.fichas.length - ativas().length > 1 ? "s" : ""}` : "usinas, obras e temas")}
         ${kpi("Última mensagem", ultima ? esc(quando(ultima.ultima)) : "—", ultima ? esc(ultima.nome) : "ponte desligada?")}
       </div>
       <div class="tabs section">${[["hoje", "Resumo do dia"], ["fichas", "Fichas"], ["grupos", "Grupos"], ["busca", "Busca"]].map(([k, l]) => `<button data-aba="${k}" class="${ui.aba === k ? "on" : ""}">${l}</button>`).join("")}</div>
@@ -232,7 +241,7 @@
   }
   // Alertas gravados nas fichas + datas de período perto de hoje, um quadro por ficha.
   function alertasPorFicha() {
-    return dados.fichas.map(x => {
+    return ativas().map(x => {
       const d = x.periodo && x.periodo.fim ? dias(x.periodo.fim, hojeISO()) : null;
       const selo = d !== null && d >= -7 && d <= 3 ? seloPeriodo(x.periodo) : "";
       const itens = (x.alertas || []).map(a => typeof a === "string" ? a : a.texto || "").filter(Boolean);
@@ -257,18 +266,25 @@
   function abaFichas(el) {
     const tipos = { usina: "Usina", obra: "Obra", cliente: "Cliente", fornecedor: "Fornecedor", tema: "Tema", pessoa: "Pessoa" };
     const f = ui.ficha.toLowerCase();
-    // Fichas que pedem atenção (alerta do cruzamento ou tarefa atrasada) vêm primeiro.
+    // Fichas que pedem atenção (alerta do cruzamento ou tarefa atrasada) vêm primeiro; as concluídas ficam numa seção embaixo.
     const peso = x => (x.alertas || []).length * 2 + atrasadas(x);
-    const lista = dados.fichas.filter(x => !f || `${x.nome} ${x.situacao || ""}`.toLowerCase().includes(f))
+    const filtradas = dados.fichas.filter(x => !f || `${x.nome} ${x.situacao || ""}`.toLowerCase().includes(f));
+    const lista = filtradas.filter(x => !concluida(x))
       .map((x, i) => [x, i]).sort((a, b) => peso(b[0]) - peso(a[0]) || a[1] - b[1]).map(a => a[0]);
+    const feitas = filtradas.filter(concluida).sort((a, b) => String(dados.concluidas[b.id]).localeCompare(String(dados.concluidas[a.id])));
     const nomeFicha = id => (dados.fichas.find(z => z.id === id) || {}).nome;
-    el.innerHTML = `
-      <form class="inline" id="cbFiltroFicha" style="margin-bottom:12px"><label class="f" style="flex:1 1 260px">Filtrar fichas<input name="f" value="${esc(ui.ficha)}" placeholder="Nome da usina, obra, cliente…" autocomplete="off"></label>${ui.ficha ? `<button type="button" class="btn ghost sm" id="cbLimpaFicha">Ver todas</button>` : ""}</form>
-      ${lista.length ? `<div class="cb-fichas">${lista.map(x => {
-        const atr = atrasadas(x), lig = (x.ligacoes || []).filter(l => nomeFicha(l.id));
-        return `
-        <div class="card cb-ficha">
-          <div class="cb-ficha-top"><h2>${esc(x.nome)}</h2><span class="cb-selos">${seloPeriodo(x.periodo)}${atr ? badge(`${atr} atrasada${atr > 1 ? "s" : ""}`, "bad") : ""}${badge(tipos[x.tipo] || x.tipo, x.tipo === "obra" ? "info" : x.tipo === "usina" ? "ok" : "")}</span></div>
+    const cartao = x => {
+      const fim = concluida(x), min = fim || minimizadas.has(x.id);
+      const atr = fim ? 0 : atrasadas(x), lig = (x.ligacoes || []).filter(l => nomeFicha(l.id));
+      const resumo = String(x.situacao || "").split(/(?<=\.)\s/)[0].slice(0, 160);
+      return `
+        <div class="card cb-ficha ${min ? "min" : ""} ${fim ? "feita" : ""}">
+          <div class="cb-ficha-top">
+            <button type="button" class="cb-min" data-min="${esc(x.id)}" aria-expanded="${!min}" title="${min ? "Abrir a ficha" : "Minimizar a ficha"}">${min ? "▸" : "▾"}</button>
+            <h2>${esc(x.nome)}</h2>
+            <span class="cb-selos">${fim ? badge(`✓ Concluída ${ddmm(String(dados.concluidas[x.id]).slice(0, 10))}`, "ok") : `${seloPeriodo(x.periodo)}${atr ? badge(`${atr} atrasada${atr > 1 ? "s" : ""}`, "bad") : ""}${(x.alertas || []).length ? badge(`⚠ ${x.alertas.length}`, "warn") : ""}`}${badge(tipos[x.tipo] || x.tipo, x.tipo === "obra" ? "info" : x.tipo === "usina" ? "ok" : "")}</span></div>
+          <p class="cb-sit-curta">${esc(resumo || "Sem situação registrada.")}</p>
+          <div class="cb-ficha-corpo">
           ${x.periodo && x.periodo.fim ? `<p class="muted cb-periodo">${esc(x.periodo.texto || "Período")}: ${x.periodo.inicio && x.periodo.inicio !== x.periodo.fim ? `${ddmm(x.periodo.inicio)} a ` : ""}${ddmm(x.periodo.fim)}</p>` : ""}
           <p class="cb-sit">${esc(x.situacao || "Sem situação registrada.")}</p>
           ${(x.alertas || []).map(a => `<div class="note warn cb-alerta">${esc(typeof a === "string" ? a : a.texto || "")}</div>`).join("")}
@@ -279,12 +295,42 @@
           ${(x.documentos || []).length ? `<details><summary>Documentos (${x.documentos.length})</summary><ul class="cb-itens">${x.documentos.map(d => `<li>${d.midia ? `<a href="#" data-midia="${esc(d.midia)}">${esc(d.nome || "arquivo")}</a>` : esc(d.nome || "")}${d.data ? ` <small class="muted">${esc(fmt.data(d.data))}</small>` : ""}</li>`).join("")}</ul></details>` : ""}
           ${(x.contatos || []).length ? `<details><summary>Contatos</summary>${itens(x.contatos.map(c => typeof c === "string" ? c : `${c.nome || ""}${c.papel ? " — " + c.papel : ""}${c.telefone ? " · " + c.telefone : ""}`), "")}</details>` : ""}
           <p class="muted cb-rodape">${(x.grupos || []).map(g => { const gr = dados.grupos.find(z => z.jid === g || z.nome === g); return gr ? `<a href="#" data-grupo="${esc(gr.jid)}">${esc(gr.nome)}</a>` : esc(g); }).join(" · ")}${(x.grupos || []).length ? " · " : ""}atualizada ${esc(quando(x.atualizado_em))}</p>
-        </div>`; }).join("")}</div>` : `<div class="note">${dados.fichas.length ? "Nenhuma ficha com esse nome." : "As fichas vivas aparecem aqui conforme o Claude lê as conversas."}</div>`}`;
-    $$("[data-ficha]", el).forEach(a => a.onclick = e => { e.preventDefault(); ui.ficha = a.dataset.ficha; abaFichas(el); ligar(el); window.scrollTo({ top: el.offsetTop - 80, behavior: "smooth" }); });
+          </div>
+          <div class="cb-ficha-acoes">${fim
+            ? `<button type="button" class="btn ghost sm" data-reabrir="${esc(x.id)}">↺ Reabrir</button>`
+            : `<button type="button" class="btn sm cb-concluir" data-concluir="${esc(x.id)}">✓ Concluir ficha</button>`}</div>
+        </div>`;
+    };
+    el.innerHTML = `
+      <form class="inline" id="cbFiltroFicha" style="margin-bottom:12px;align-items:flex-end"><label class="f" style="flex:1 1 260px">Filtrar fichas<input name="f" value="${esc(ui.ficha)}" placeholder="Nome da usina, obra, cliente…" autocomplete="off"></label>${ui.ficha ? `<button type="button" class="btn ghost sm" id="cbLimpaFicha">Ver todas</button>` : ""}
+        ${lista.length ? `<button type="button" class="btn ghost sm" id="cbMinTodas">${lista.every(x => minimizadas.has(x.id)) ? "▾ Abrir todas" : "▸ Minimizar todas"}</button>` : ""}</form>
+      ${lista.length ? `<div class="cb-fichas">${lista.map(cartao).join("")}</div>` : `<div class="note">${dados.fichas.length ? (feitas.length ? "Nenhuma ficha ativa com esse nome." : "Nenhuma ficha com esse nome.") : "As fichas vivas aparecem aqui conforme o Claude lê as conversas."}</div>`}
+      ${feitas.length ? `<details class="cb-concluidas section" ${ui.ficha || ui.verConcluidas ? "open" : ""}><summary>✓ Concluídas <span class="badge ok">${feitas.length}</span> <small>obras entregues e assuntos resolvidos</small></summary>
+        <div class="cb-fichas">${feitas.map(cartao).join("")}</div></details>` : ""}`;
+    const redesenhar = () => { abaFichas(el); ligar(el); };
+    $$("[data-ficha]", el).forEach(a => a.onclick = e => { e.preventDefault(); ui.ficha = a.dataset.ficha; redesenhar(); window.scrollTo({ top: el.offsetTop - 80, behavior: "smooth" }); });
+    // Minimizar: nas ativas fica guardado no aparelho; nas concluídas só abre para olhar.
+    $$("[data-min]", el).forEach(b => b.onclick = () => {
+      const id = b.dataset.min, c = b.closest(".cb-ficha");
+      if (c.classList.contains("feita")) { c.classList.toggle("min"); b.textContent = c.classList.contains("min") ? "▸" : "▾"; return; }
+      minimizadas.has(id) ? minimizadas.delete(id) : minimizadas.add(id); guardarMin(); redesenhar();
+    });
+    const todas = $("#cbMinTodas", el);
+    if (todas) todas.onclick = () => { const fechar = !lista.every(x => minimizadas.has(x.id)); lista.forEach(x => fechar ? minimizadas.add(x.id) : minimizadas.delete(x.id)); guardarMin(); redesenhar(); };
+    const det = $(".cb-concluidas", el);
+    if (det) det.ontoggle = () => { ui.verConcluidas = det.open; };
+    const marcar = async (id, sim) => {
+      const x = dados.fichas.find(z => z.id === id) || { nome: id };
+      if (sim && !await confirmar("Concluir ficha", `Marcar <b>${esc(x.nome)}</b> como concluída? Ela sai das fichas ativas e do Resumo do dia e fica guardada em Concluídas, lá embaixo. Dá para reabrir quando quiser.`, "Concluir")) return;
+      try { dados.concluidas = await api("cerebro/concluidas", { method: "PUT", body: { id, nome: x.nome, concluida: sim } }) || {}; toast(sim ? "Ficha concluída. Está em Concluídas, lá embaixo." : "Ficha reaberta.", "ok"); const y = window.scrollY; desenhar(document.getElementById("main")); window.scrollTo(0, y); }
+      catch (e) { toast(e.message, "bad"); }
+    };
+    $$("[data-concluir]", el).forEach(b => b.onclick = () => marcar(b.dataset.concluir, true));
+    $$("[data-reabrir]", el).forEach(b => b.onclick = () => marcar(b.dataset.reabrir, false));
     const limpa = $("#cbLimpaFicha", el);
-    if (limpa) limpa.onclick = () => { ui.ficha = ""; abaFichas(el); ligar(el); };
+    if (limpa) limpa.onclick = () => { ui.ficha = ""; redesenhar(); };
     const fm = $("#cbFiltroFicha", el);
-    fm.f.oninput = () => { ui.ficha = fm.f.value; const pos = fm.f.selectionStart; abaFichas(el); ligar(el); const i = $("#cbFiltroFicha", el).f; i.focus(); i.setSelectionRange(pos, pos); };
+    fm.f.oninput = () => { ui.ficha = fm.f.value; const pos = fm.f.selectionStart; redesenhar(); const i = $("#cbFiltroFicha", el).f; i.focus(); i.setSelectionRange(pos, pos); };
     fm.onsubmit = e => e.preventDefault();
   }
 
