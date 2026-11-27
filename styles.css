@@ -361,6 +361,8 @@ tr.grupo td { background: var(--panel-2); font-size: 13px; padding-top: 10px; }
 .cb-periodo { font-size: 12px; margin: 4px 0 0; }
 .cb-alerta { margin: 6px 0; font-size: 12.5px; padding: 6px 9px; }
 .cb-itens li .badge { font-size: 10.5px; padding: 1px 6px; vertical-align: 1px; }
+.cb-itens li:has(> .cb-pend-ok) { list-style: none; margin-left: -18px; }
+.cb-pend-ok { margin-right: 8px; vertical-align: -3px; }
 .cb-itens li.cb-feita { color: var(--muted); text-decoration: line-through; }
 .cb-numeros { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
 .cb-numero { text-align: left; font: inherit; color: inherit; cursor: pointer; background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); padding: 11px 14px; box-shadow: var(--shadow); }

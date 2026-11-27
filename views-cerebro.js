@@ -57,7 +57,8 @@
       if (typeof i === "string") return `<li>${esc(i)}</li>`;
       const t = tarefaDe(i.tarefa_id), e = estadoTarefa(t);
       const tag = e ? ` ${badge(e.txt, e.tom)}${t.responsavel ? ` <small>${esc(t.responsavel)}</small>` : ""}` : (i.tarefa_id ? ` <small>tarefa não encontrada</small>` : ` <small>sem tarefa</small>`);
-      return `<li class="${e && e.feita ? "cb-feita" : ""}"${t ? ` title="Tarefa: ${esc(t.titulo)}"` : ""}>${esc(i.texto || "")}${tag}${i.nota ? `<br><small>${esc(i.nota)}</small>` : ""}</li>`;
+      const tique = t ? `<input type="checkbox" class="cb-prazo-ok cb-pend-ok" data-tarefa-tique="${esc(t.id)}" ${e.feita ? "checked" : ""} aria-label="${e.feita ? "Reabrir" : "Marcar como feito"}: ${esc(i.texto || t.titulo)}" title="${e.feita ? "Feita. Desmarque para reabrir" : "Marcar como feito"}">` : "";
+      return `<li class="${e && e.feita ? "cb-feita" : ""}"${t ? ` title="Tarefa: ${esc(t.titulo)}"` : ""}>${tique}${esc(i.texto || "")}${tag}${i.nota ? `<br><small>${esc(i.nota)}</small>` : ""}</li>`;
     }).join("")}</ul>`;
   }
   const atrasadas = x => (x.pendencias || []).filter(i => { const e = estadoTarefa(tarefaDe(i && i.tarefa_id)); return e && e.atraso; }).length;
@@ -158,6 +159,19 @@
 
   // Botões comuns: abrir mídia e ir para a conversa de um grupo.
   function ligar(raiz) {
+    // Tique de "feito" (prazos e pendências das fichas): grava na hora, com a mesma regra da tela Tarefas.
+    // Marcar conclui; desmarcar uma já feita reabre.
+    $$("[data-tarefa-tique]", raiz).forEach(c => c.onchange = async () => {
+      const t = tarefaDe(c.dataset.tarefaTique); if (!t) return;
+      const feito = c.checked, campos = { status: feito ? "concluida" : "aberta", concluida_em: feito ? hojeISO() : null };
+      c.disabled = true;
+      try {
+        const r = await api(`tarefas/${encodeURIComponent(t.id)}`, { method: "PUT", body: campos });
+        Object.assign(t, r && r.id ? r : campos);
+        toast(feito ? "Tarefa concluída." : "Tarefa reaberta.", "ok");
+        desenhar(document.getElementById("main"));
+      } catch (e) { c.checked = !feito; c.disabled = false; toast(e.message, "bad"); }
+    });
     $$("[data-midia]", raiz).forEach(b => b.onclick = async () => {
       try { const r = await api(`cerebro/midia?caminho=${encodeURIComponent(b.dataset.midia)}`); window.open(r.url, "_blank", "noopener"); }
       catch (e) { toast(e.message, "bad"); }
@@ -192,17 +206,6 @@
           ${a.itens.length ? `<ul>${a.itens.map(t => `<li>${esc(t)}</li>`).join("")}</ul>` : ""}</div>`).join("")}</div></div>` : ""}
       ${dados.resumos.length > 1 ? `<div class="card section"><h2>Dias anteriores</h2>${dados.resumos.slice(1).map(x => `<details class="cb-dia"><summary>${esc(fmt.data(x.dia))}</summary>${blocos(x.texto)}</details>`).join("")}</div>` : ""}`;
     $$("[data-ficha-hoje]", el).forEach(a => a.onclick = e => { e.preventDefault(); ui.aba = "fichas"; ui.ficha = a.dataset.fichaHoje; desenhar(document.getElementById("main")); });
-    // Tique de "feito" nos prazos: grava na hora (mesma regra da tela Tarefas) e o item sai da lista.
-    $$("[data-prazo-feito]", el).forEach(c => c.onchange = async () => {
-      const t = tarefaDe(c.dataset.prazoFeito); if (!t) return;
-      c.disabled = true;
-      try {
-        const r = await api(`tarefas/${encodeURIComponent(t.id)}`, { method: "PUT", body: { status: "concluida", concluida_em: hojeISO() } });
-        Object.assign(t, r && r.id ? r : { status: "concluida", concluida_em: hojeISO() });
-        toast("Tarefa concluída.", "ok");
-        desenhar(document.getElementById("main"));
-      } catch (e) { c.checked = false; c.disabled = false; toast(e.message, "bad"); }
-    });
     $$("[data-ir]", el).forEach(b => b.onclick = () => { const alvo = document.getElementById(b.dataset.ir); if (alvo) alvo.scrollIntoView({ behavior: "smooth", block: "start" }); });
   }
   const numero = (rotulo, n, sub, tom, alvo) => `<button type="button" class="cb-numero ${tom}" data-ir="${alvo}"><small>${esc(rotulo)}</small><b>${n}</b><span>${esc(sub)}</span></button>`;
@@ -222,7 +225,7 @@
     return p;
   }
   function listaPrazos(p) {
-    const linha = ({ t, n, ficha }) => `<li><input type="checkbox" class="cb-prazo-ok" data-prazo-feito="${esc(t.id)}" aria-label="Marcar como feito: ${esc(t.titulo)}" title="Marcar como feito"><span class="cb-prazo-dia ${n > 0 ? "bad" : n === 0 ? "warn" : ""}">${n > 0 ? `${n} d` : n === 0 ? "hoje" : ddmm(t.prazo)}</span><span class="cb-prazo-txt">${esc(t.titulo)}${ficha ? `<small>${esc(ficha)}</small>` : ""}</span><em>${esc(t.responsavel || "")}</em></li>`;
+    const linha = ({ t, n, ficha }) => `<li><input type="checkbox" class="cb-prazo-ok" data-tarefa-tique="${esc(t.id)}" aria-label="Marcar como feito: ${esc(t.titulo)}" title="Marcar como feito"><span class="cb-prazo-dia ${n > 0 ? "bad" : n === 0 ? "warn" : ""}">${n > 0 ? `${n} d` : n === 0 ? "hoje" : ddmm(t.prazo)}</span><span class="cb-prazo-txt">${esc(t.titulo)}${ficha ? `<small>${esc(ficha)}</small>` : ""}</span><em>${esc(t.responsavel || "")}</em></li>`;
     const grupo = (titulo, lst, max) => lst.length ? `<details class="cb-prazos" open><summary>${titulo} <span class="muted">(${lst.length})</span></summary><ul>${lst.slice(0, max || 99).map(linha).join("")}</ul>${max && lst.length > max ? `<details class="cb-mais"><summary>ver mais ${lst.length - max}</summary><ul>${lst.slice(max).map(linha).join("")}</ul></details>` : ""}</details>` : "";
     const html = grupo("Vencem hoje", p.hoje) + grupo("Próximos 3 dias", p.breve) + grupo("Atrasadas", p.atrasadas, 6);
     return html || `<p class="muted" style="margin:0">Nenhum prazo nos próximos dias.</p>`;
