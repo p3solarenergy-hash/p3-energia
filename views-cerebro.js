@@ -87,7 +87,8 @@
     if (sinal > PONTE_VELHA_MS) return { tom: "bad", rotulo: "Desligada", msg: `Sem sinal desde ${quando(p.atualizado_em)}. O programa da ponte não está rodando no computador do escritório: abra o INICIAR PONTE WHATSAPP.` };
     if (!p.conectado) return { tom: "warn", rotulo: p.qr ? "Precisa reconectar" : "Reconectando…", msg: p.qr ? "No celular: WhatsApp → ⋮ → Aparelhos conectados → Conectar um aparelho, e aponte para o código abaixo." : (p.erro ? esc(p.erro) : "Tentando reconectar sozinha. Se demorar, o código aparece aqui.") };
     // Conectada mas sem conseguir abrir as mensagens (chaves fora de sincronia): parece ligada, mas está cega.
-    if (p.erro) return { tom: "bad", rotulo: "Ligada, mas sem ler", msg: `${esc(p.erro)} Para isso o programa da ponte precisa mostrar um QR novo: peça no Claude.` };
+    // A ponte avisa quando está conectada mas travada (atrasadas que não terminam ou mensagens que não abrem).
+    if (p.erro) return { tom: "bad", rotulo: "Ligada, mas travada", msg: `${esc(p.erro)} Peça ao Claude para olhar a ponte no computador do escritório.` };
     return { tom: "ok", rotulo: "Ligada", msg: `Recebendo mensagens (sinal ${quando(p.atualizado_em)}).` };
   };
   function painelPonte() {
