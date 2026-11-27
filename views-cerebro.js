@@ -57,7 +57,8 @@
       if (typeof i === "string") return `<li>${esc(i)}</li>`;
       const t = tarefaDe(i.tarefa_id), e = estadoTarefa(t);
       const tag = e ? ` ${badge(e.txt, e.tom)}${t.responsavel ? ` <small>${esc(t.responsavel)}</small>` : ""}` : (i.tarefa_id ? ` <small>tarefa não encontrada</small>` : ` <small>sem tarefa</small>`);
-      return `<li class="${e && e.feita ? "cb-feita" : ""}"${t ? ` title="Tarefa: ${esc(t.titulo)}"` : ""}>${esc(i.texto || "")}${tag}${i.nota ? `<br><small>${esc(i.nota)}</small>` : ""}</li>`;
+      const tique = t ? `<input type="checkbox" class="cb-prazo-ok cb-pend-ok" data-tarefa-tique="${esc(t.id)}" ${e.feita ? "checked" : ""} aria-label="${e.feita ? "Reabrir" : "Marcar como feito"}: ${esc(i.texto || t.titulo)}" title="${e.feita ? "Feita. Desmarque para reabrir" : "Marcar como feito"}">` : "";
+      return `<li class="${e && e.feita ? "cb-feita" : ""}"${t ? ` title="Tarefa: ${esc(t.titulo)}"` : ""}>${tique}${esc(i.texto || "")}${tag}${i.nota ? `<br><small>${esc(i.nota)}</small>` : ""}</li>`;
     }).join("")}</ul>`;
   }
   const atrasadas = x => (x.pendencias || []).filter(i => { const e = estadoTarefa(tarefaDe(i && i.tarefa_id)); return e && e.atraso; }).length;
@@ -105,6 +106,22 @@
     dados = { grupos: grupos || [], fichas: fichas || [], resumos: resumos || [], tarefas };
   }
 
+  // As tarefas mudam fora desta tela (outro computador, tela Tarefas, o resumo das 7h). Reler a cada 60 s e ao
+  // voltar para a janela; só redesenha se algo mudou, para não atrapalhar quem está digitando ou rolando.
+  const assinatura = lst => (lst || []).map(t => `${t.id}|${t.status}|${t.prazo}|${t.responsavel}|${t.titulo}`).join("\n");
+  async function atualizarTarefas() {
+    const main = document.getElementById("main");
+    if (!main || window.P3.state.route !== "cerebro" || document.hidden || !document.getElementById("cbAba")) return;
+    if (document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName) && document.activeElement.type !== "checkbox") return;
+    let novas; try { novas = await api("tarefas"); } catch { return; }
+    if (!novas || window.P3.state.route !== "cerebro" || assinatura(novas) === assinatura(dados.tarefas)) return;
+    dados.tarefas = novas;
+    if (ui.aba === "hoje" || ui.aba === "fichas") desenhar(main);
+  }
+  let tarefasTimer = null;
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) atualizarTarefas(); });
+  window.addEventListener("focus", atualizarTarefas);
+
   async function render(main) {
     main.innerHTML = `<div class="loading">Abrindo o cérebro…</div>`;
     try { await carregar(); } catch (e) { main.innerHTML = `<div class="note bad">${esc(e.message)}</div>`; return; }
@@ -132,6 +149,7 @@
       <div class="tabs section">${[["hoje", "Resumo do dia"], ["fichas", "Fichas"], ["grupos", "Grupos"], ["busca", "Busca"]].map(([k, l]) => `<button data-aba="${k}" class="${ui.aba === k ? "on" : ""}">${l}</button>`).join("")}</div>
       <div id="cbAba"></div>`;
     clearInterval(pontesTimer); pontesTimer = setInterval(atualizarPonte, 15000);
+    clearInterval(tarefasTimer); tarefasTimer = setInterval(atualizarTarefas, 60000);
     $$(".tabs button", main).forEach(b => b.onclick = () => { ui.aba = b.dataset.aba; ui.grupo = null; desenhar(main); });
     $("#cbBusca", main).onsubmit = e => { e.preventDefault(); ui.busca = e.target.q.value.trim(); ui.aba = "busca"; desenhar(main); };
     const el = $("#cbAba", main);
@@ -141,6 +159,19 @@
 
   // Botões comuns: abrir mídia e ir para a conversa de um grupo.
   function ligar(raiz) {
+    // Tique de "feito" (prazos e pendências das fichas): grava na hora, com a mesma regra da tela Tarefas.
+    // Marcar conclui; desmarcar uma já feita reabre.
+    $$("[data-tarefa-tique]", raiz).forEach(c => c.onchange = async () => {
+      const t = tarefaDe(c.dataset.tarefaTique); if (!t) return;
+      const feito = c.checked, campos = { status: feito ? "concluida" : "aberta", concluida_em: feito ? hojeISO() : null };
+      c.disabled = true;
+      try {
+        const r = await api(`tarefas/${encodeURIComponent(t.id)}`, { method: "PUT", body: campos });
+        Object.assign(t, r && r.id ? r : campos);
+        toast(feito ? "Tarefa concluída." : "Tarefa reaberta.", "ok");
+        desenhar(document.getElementById("main"));
+      } catch (e) { c.checked = !feito; c.disabled = false; toast(e.message, "bad"); }
+    });
     $$("[data-midia]", raiz).forEach(b => b.onclick = async () => {
       try { const r = await api(`cerebro/midia?caminho=${encodeURIComponent(b.dataset.midia)}`); window.open(r.url, "_blank", "noopener"); }
       catch (e) { toast(e.message, "bad"); }
@@ -194,7 +225,7 @@
     return p;
   }
   function listaPrazos(p) {
-    const linha = ({ t, n, ficha }) => `<li><span class="cb-prazo-dia ${n > 0 ? "bad" : n === 0 ? "warn" : ""}">${n > 0 ? `${n} d` : n === 0 ? "hoje" : ddmm(t.prazo)}</span><span class="cb-prazo-txt">${esc(t.titulo)}${ficha ? `<small>${esc(ficha)}</small>` : ""}</span><em>${esc(t.responsavel || "")}</em></li>`;
+    const linha = ({ t, n, ficha }) => `<li><input type="checkbox" class="cb-prazo-ok" data-tarefa-tique="${esc(t.id)}" aria-label="Marcar como feito: ${esc(t.titulo)}" title="Marcar como feito"><span class="cb-prazo-dia ${n > 0 ? "bad" : n === 0 ? "warn" : ""}">${n > 0 ? `${n} d` : n === 0 ? "hoje" : ddmm(t.prazo)}</span><span class="cb-prazo-txt">${esc(t.titulo)}${ficha ? `<small>${esc(ficha)}</small>` : ""}</span><em>${esc(t.responsavel || "")}</em></li>`;
     const grupo = (titulo, lst, max) => lst.length ? `<details class="cb-prazos" open><summary>${titulo} <span class="muted">(${lst.length})</span></summary><ul>${lst.slice(0, max || 99).map(linha).join("")}</ul>${max && lst.length > max ? `<details class="cb-mais"><summary>ver mais ${lst.length - max}</summary><ul>${lst.slice(max).map(linha).join("")}</ul></details>` : ""}</details>` : "";
     const html = grupo("Vencem hoje", p.hoje) + grupo("Próximos 3 dias", p.breve) + grupo("Atrasadas", p.atrasadas, 6);
     return html || `<p class="muted" style="margin:0">Nenhum prazo nos próximos dias.</p>`;

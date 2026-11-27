@@ -361,6 +361,8 @@ tr.grupo td { background: var(--panel-2); font-size: 13px; padding-top: 10px; }
 .cb-periodo { font-size: 12px; margin: 4px 0 0; }
 .cb-alerta { margin: 6px 0; font-size: 12.5px; padding: 6px 9px; }
 .cb-itens li .badge { font-size: 10.5px; padding: 1px 6px; vertical-align: 1px; }
+.cb-itens li:has(> .cb-pend-ok) { list-style: none; margin-left: -18px; }
+.cb-pend-ok { margin-right: 8px; vertical-align: -3px; }
 .cb-itens li.cb-feita { color: var(--muted); text-decoration: line-through; }
 .cb-numeros { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
 .cb-numero { text-align: left; font: inherit; color: inherit; cursor: pointer; background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: var(--radius); padding: 11px 14px; box-shadow: var(--shadow); }
@@ -386,7 +388,8 @@ tr.grupo td { background: var(--panel-2); font-size: 13px; padding-top: 10px; }
 .cb-prazos > summary, .cb-mais > summary { cursor: pointer; font-weight: 600; font-size: 13px; }
 .cb-mais > summary { font-weight: 500; color: var(--muted); font-size: 12px; margin: 2px 0 0 52px; }
 .cb-prazos ul { list-style: none; margin: 6px 0 0; padding: 0; }
-.cb-prazos li { display: grid; grid-template-columns: 44px 1fr auto; gap: 8px; align-items: start; padding: 5px 0; font-size: 13px; line-height: 1.35; }
+.cb-prazo-ok { width: 18px; height: 18px; margin: 1px 0 0; cursor: pointer; accent-color: var(--ok, #2e9e5b); }
+.cb-prazos li { display: grid; grid-template-columns: 22px 44px 1fr auto; gap: 8px; align-items: start; padding: 5px 0; font-size: 13px; line-height: 1.35; }
 .cb-prazo-dia { font-size: 11px; font-weight: 700; text-align: center; border-radius: 6px; padding: 2px 0; background: var(--line-2); color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .cb-prazo-dia.bad { background: var(--bad-bg); color: var(--bad); } .cb-prazo-dia.warn { background: var(--warn-bg); color: var(--warn); }
 .cb-prazo-txt small { display: block; color: var(--muted); font-size: 11.5px; }
